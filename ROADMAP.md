@@ -56,18 +56,18 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 
 ## Player Data
 
-- **Nationality / international eligibility** — Edit primary and secondary nationality and which national team a player can represent.
-- **Injury management** — View active injuries, heal them instantly, set injury type and estimated recovery time.
-- **Player morale** — Set morale for individual players or an entire squad.
-- **View and remove player unhappiness concerns** — Inspect active concerns (for example, wanting a new contract or more first-team football) and remove a selected concern without having to satisfy the demand. This is separate from boosting morale or changing squad status. Investigate related promises and teammates supporting a complaint separately; do not assume removing the original concern clears the squad reaction. Require per-build verification and undo for every removal.
-- **Market value / transfer value** — View and edit what the game thinks a player is worth.
-- **Squad numbers** — Extend existing player contract shirt-number editing to the squad workflow.
-- **Contract details** — Extend existing wage, expiry, squad-status and squad-number editing with release/bonus clauses, loyalty bonuses and transfer status; show interested clubs where verified.
-- **International record** — View caps and goals for national teams (read-only to start).
-- **Ban / suspension removal** — Clear active bans and suspensions.
-- **Complete player profile coverage** — Extend current attributes, CA/PA, positions, traits, personality, reputation and personal details with happiness, career plans, languages and favourite/disliked clubs and people.
-- **Registration and work permits** — Player registration, trained-in-club/nation status and work-permit eligibility; distinguish these from nationality rules and club registration limits.
-- **Attribute freeze** — Optional player/staff attribute maintenance, with explicit scope, stop controls, undo semantics and safe detach/reconnect behaviour; never an invisible background writer.
+- **Nationality / international eligibility** — Edit primary and secondary nationality and which national team a player can represent. *Progress:* primary nationality name is shown read-only on FM24/FM27 (`p_nationality`); FM26 has only the nation pointer. Secondary nationality, eligibility and editing remain.
+- **Injury management** — View active injuries, heal them instantly, set injury type and estimated recovery time. *Not started:* no injury, fitness, sharpness or fatigue fields are mapped.
+- **Player morale** — Set morale for individual players or an entire squad. *Progress:* FM26/FM27 schemas carry a `p_morale` lead (`+0x26C`) that is not shown in the UI and is unverified (the FM27 layout lists morale as not decoded); FM24 has a lead only in its layout notes.
+- **View and remove player unhappiness concerns** — Inspect active concerns (for example, wanting a new contract or more first-team football) and remove a selected concern without having to satisfy the demand. This is separate from boosting morale or changing squad status. Investigate related promises and teammates supporting a complaint separately; do not assume removing the original concern clears the squad reaction. Require per-build verification and undo for every removal. *Not started.*
+- **Market value / transfer value** — View and edit what the game thinks a player is worth. *Progress:* FM26/FM27 schemas map `p_value` (`+0x234`) without recorded witnesses and nothing displays it; FM24 is unmapped. FM27 asking price (`+0x238`) is editable on the contract tab.
+- **Squad numbers** — Extend existing player contract shirt-number editing to the squad workflow. *Progress:* per-player editing works on FM24/FM27; FM26 squad number is unmapped; no squad-level workflow yet.
+- **Contract details** — Extend existing wage, expiry, squad-status and squad-number editing with release/bonus clauses, loyalty bonuses and transfer status; show interested clubs where verified. *Progress:* FM27 shows transfer/loan listing read-only (flag offset still unchecked against a listed player) and edits asking price; clauses, bonuses and interested clubs remain.
+- **International record** — View caps and goals for national teams (read-only to start). *Progress:* read-only caps/goals shown on FM24 and FM27 (plus U21 caps/goals on FM27); FM26 is unmapped.
+- **Ban / suspension removal** — Clear active bans and suspensions. *Not started.*
+- **Complete player profile coverage** — Extend current attributes, CA/PA, positions, traits, personality, reputation and personal details with happiness, career plans, languages and favourite/disliked clubs and people. *Progress:* height, date of birth and appearance (ethnicity, skin tone, hair) are also covered; the listed extensions remain.
+- **Registration and work permits** — Player registration, trained-in-club/nation status and work-permit eligibility; distinguish these from nationality rules and club registration limits. *Not started.*
+- **Attribute freeze** — Optional player/staff attribute maintenance, with explicit scope, stop controls, undo semantics and safe detach/reconnect behaviour; never an invisible background writer. *Not started.*
 
 ## Human Managers & Staff
 
@@ -143,14 +143,15 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 
 ## Release & Distribution
 
-Initial CI/test-artifact implementation is described in [the packaging guide](docs/releases.md). Public release publishing remains separate.
+Release work is complete (2026-10-30); see [the packaging guide](docs/releases.md) and [native packaging](docs/native-packages.md).
 
-- **Windows/Linux CI** — Native x86-64 workflow runs locked compile/tests and release builds, plus disconnected startup checks. Hosted job results are the evidence for each platform, not a Linux build alone.
-- **Portable test archives** — Windows ZIP and Linux tar.gz packaging includes the editor, tracked documentation, matching application source and SHA-256 checksums. The Linux baseline is Ubuntu 22.04; no system permissions are changed automatically. Extracted-package/live-game verification remains required before release.
-- **Native Windows/Arch packages** — A per-user, unsigned Windows installer and pinned Arch `fm-editor-bin` recipe wrap existing portable release binaries. The separate workflow checks installation, removal, desktop resources and disconnected startup; manual live-game testing and publishing remain separate. See [native packaging](docs/native-packages.md).
-- **Draft GitHub release workflow** — Manual test builds as downloadable Actions artifacts, then a version-tagged draft/prerelease for review. Check the tag against Cargo's version and attach archives/checksums. Publish only after the chosen source changes are committed, pushed and verified.
-- **Distribution and source compliance** — Review bundled dependencies' notices and provide corresponding source for the exact released version. Keep local settings, MCP configuration, debug binaries and private research out of release archives; verify the release build does not expose the debug server.
-- **Packaged-app smoke tests** — Extract/install and launch the actual packages on Windows/Linux, then check attachment, one edit and Undo against supported builds. CI covers disconnected startup and native installation/removal, not FM field correctness. State untested coverage, especially Game Pass, in release notes. Automatic updates and code signing remain future work.
+- ✓ **Windows/Linux CI** — Native x86-64 workflow runs locked compile/tests and release builds, plus disconnected startup checks. Hosted job results are the evidence for each platform, not a Linux build alone.
+- ✓ **Portable test archives** — Windows ZIP and Linux tar.gz packaging includes the editor, tracked documentation, matching application source and SHA-256 checksums. The Linux baseline is Ubuntu 22.04; no system permissions are changed automatically.
+- ✓ **Native Windows/Arch packages** — A per-user, unsigned Windows installer and pinned Arch `fm-editor-bin` recipe wrap existing portable release binaries. See [native packaging](docs/native-packages.md).
+- ✓ **GitHub release workflow** — Manual test builds as Actions artifacts, then a version-tagged release checked against Cargo's version with archives/checksums attached.
+- ✓ **Distribution and source compliance** — Bundled dependency notices and corresponding source for the released version; local settings, MCP configuration, debug binaries and private research kept out of release archives.
+- ✓ **Packaged-app smoke tests** — Extract/install and launch the packages on Windows/Linux, then check attachment, one edit and Undo against supported builds. State untested coverage, especially Game Pass, in release notes.
+- **Automatic updates and code signing** — Future work.
 
 ## Export
 
@@ -159,4 +160,4 @@ Initial CI/test-artifact implementation is described in [the packaging guide](do
 ---
 
 *Last updated: 2026-10-30*
-*Historical completion markers retained; expanded scope is not a new completion audit.*
+*Historical completion markers retained; expanded scope is not a new completion audit. Player Data progress notes reflect a code review on 2026-10-30, not live verification.*
