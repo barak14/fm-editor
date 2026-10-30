@@ -45,9 +45,39 @@ the `home_stadium` sub-record, so `rva_stadium_base` is 0.
   0x200/0x202, height 0x14E, UID 0x284, name FmString 0x2C0, name subs
   0x2D0/0x2D8, DOB 0x2BC, personality 0x2F0..0x2F7, club ptr 0x3B0.
 - Names: 40% direct FmString, 59% first/last sub-records, 0.5% neither.
+- Added 2026-10-30 from FM27€0's FM24 table (leads), each confirmed on Harry
+  Kane, Lionel Messi, Cristiano Ronaldo, Kevin De Bruyne and Joe Ward against
+  their real-world records:
+  - International record, four u8 at 0x3DC..0x3DF: caps, U21 caps, goals,
+    U21 goals (Kane 84/14/58/8, Messi 175/18/103/14, Ronaldo 200/10/123/3,
+    De Bruyne 99/2/26/0). FM27 widens caps and goals to u16.
+  - Nation pointer 0x2E8 (name FmString at nation+0x18): England, Argentina,
+    Portugal, Belgium, England.
+  - Birth city pointer 0x300 (name at city+0x18): London, Rosario (SF),
+    Funchal, Ghent, Chelmsford.
+  - Team pointer 0x130, club at team+0x30: FC Bayern, Inter Miami, Al-Nassr,
+    Man City, Derby.
+  - Contract pointer 0x340: wage i32 £/week +0x18, expiry +0x40, squad status
+    +0x4C, squad number +0x55. Expiry and number match real contracts (Kane
+    30 Jun 2027 #9, Messi 31 Dec 2025 #10, Ronaldo 30 Jun 2025 #7, De Bruyne
+    30 Jun 2025 #17); squad status 1 (Star Player) for the four stars. Squad
+    number edited and undone in game on Cristian Romero (#17, Tottenham).
+    Wage values (Kane 361,779, Romero 175,000) are not yet checked in game.
+- Leads read but not yet confirmed in game: condition u16 0x1F8 and sharpness
+  u16 0x1F4 (0..10000), morale u16 0x25E, jadedness i16 0x1F6, weight u16
+  0x14C (Kane 86, Messi 67, Ronaldo 84, De Bruyne 68, Ward 68), asking price i32
+  0x1D4 (-1 = none), looks 0x309..0x30C, traits 0x368. Cristian Romero
+  (Tottenham) is consistent with FM's condition popup: condition 10000 "Peak",
+  sharpness 5100 "Needs match practice", jadedness -125 "Fresh" (one witness).
 
 ## Staff (vs FM26)
 
+- FM24 names two attributes differently from FM26/FM27: the coaching
+  attribute at 0x3D is "Mental" (FM26: Possession) and the mental attribute at
+  0x1C is "Level of Discipline" (FM26: Authority). Mile Jedinak's FM24 profile
+  (2026-10-30) shows Mental 12 and Level of Discipline 14, matching 0x3D = 60
+  (encoded) and 0x1C = 14; his Judging Staff Ability 9 matches the FM27€0 lead
+  0x4A = 46 (encoded), a first witness for that unmapped field.
 - Attribute block (< 0x50) is FM26 **+8**. Seven fields disagree with the
   Guardiola witness at +8 and are left unmapped: judge staff, data analysis,
   sports science, versatility, business, interference, resources.
@@ -68,9 +98,19 @@ from the sub-records. Verified on the test save's human manager (role ratings Ma
 - Info sub-record (ptr +0x100) is FM26 **+8**: abbreviations 0x00/0x08/0x10,
   season tickets 0xC0, founded 0xD8, owner status 0xDE, social 0xF8,
   supporter % 0x106..0x10B, supporter attributes 0x114..0x119, facilities
-  0x120..0x12D.
+  0x120..0x12D. Training is **0x120** and youth facilities **0x12B** (swapped
+  until 2026-10-30): Arsenal reads 19 / 16 and FM24's Club Info shows "Superb
+  training facilities" / "Excellent youth facilities", with junior coaching
+  0x12C = 17 "Excellent" and youth recruitment 0x12D = 15 "Good" on the same
+  screen. FM27 uses the same offsets.
 - Finance (+0x150), budget (finance+0x48) and attendance (stadium-sub +0xB0,
-  0x68/0x6C/0x70) unchanged.
+  0x68/0x6C/0x70) unchanged. The wage budget is **finance+0x810** (i32 £/week),
+  not budget+0x0C: Spurs' finance screen shows Wage Budget £3,421,987 p/w
+  (+0x810), currently spending £3,271,987 (+0x81C) and next season's minimum
+  guaranteed transfer budget £25.92M (+0x7D4 = 25,925,482). budget+0x0C read
+  3,464,579 for Spurs and equals +0x810 for Arsenal, Barcelona and Derby.
+  Transfer budget £5.7M is both budget+0x04 and finance+0x7CC. The average
+  ticket price float is at both finance+0x18 (mapped) and +0x870.
 - Home stadium: club+0x18 → [0] senior team → +0x78, same chain as FM26.
 - Not mapped: gender (+0x161 holds 0/2/4/8/10/32, not FM26's 0/1), nickname
   (stadium-sub +0x90 is a short name here), team UID, training ground,
@@ -99,6 +139,6 @@ r=0.89, DL/WBL r=0.82, attribute bytes ≤ 100, max(left, right foot) = 20 for a
 
 ## Unmapped worklist
 
-Player: value, wage, contract sub-record, morale, traits, apps/goals, dates
-(transfer/join/debut/listing), nation ptr, secondary name block. Staff: the
+Player: value, morale and condition (leads above), traits, apps/goals, dates
+(transfer/join/debut/listing), secondary name block, contract clauses and listing. Staff: the
 seven attributes above. Club and stadium: see above.

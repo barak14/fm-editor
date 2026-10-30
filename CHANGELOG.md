@@ -4,6 +4,15 @@
 
 ### Usability
 
+- Add real FM27 screenshots to the README for player profiles, player search and club facilities.
+- Keep player position cells in a compact, evenly spaced formation instead of stretching across the panel; place Sweeper between DC and GK in the centre column.
+- Leave the platform-account entry FM27 creates for your Steam profile ("(<account name>)") out of the staff list; it is not a person in the game world.
+- Show staff job code 16 as "Manager", the title FM27 uses, instead of "Head Coach".
+- Add calendar popups beside date inputs, with month/year navigation and explicit day selection through the existing undo-aware edit path.
+- Show the attached version in the editor/window title while retaining worktree identity; simplify the connection block to avoid repeating the status bar's version/PID.
+- Replace colour-dependent pitch toggles with explicit position checkboxes and per-position numeric familiarity minima; make Advanced Search resizable and scrollable with an always-reachable footer and Sweeper option.
+- Retain the left sidebar with grouped Browse/Management destinations and a separate connection block; move Undo and Change history into the editing toolbar. Add bordered identity summaries and attribute sections.
+- Align shared profile value boxes, including reputation, with a fixed-width label column and hover text for truncated labels; add a render-only alignment regression test.
 - Standardize player, staff, human-manager and club identity headers, section presentation and attribute controls; adapt attribute layouts to narrower windows.
 - Add related club-name links using existing schema chains/cached identities, and a ground-name shortcut to the club Stadium tab.
 - Make Back/Forward history span entity types and search pages while retaining search filters.
@@ -27,6 +36,8 @@
 
 ### Editing
 
+- FM24 players show international caps and goals, nationality, place of birth and club, and their contract wage, expiry, squad status and squad number (mapped from FM27€0 leads, confirmed against five players' real records; squad-number edit and undo checked in game on Cristian Romero).
+- FM24 clubs: training and youth facilities were swapped, and the wage budget read a copy that can differ from FM's screen; both now match FM24's Club Info and Finances. FM24 staff show FM24's own attribute names (Mental, Level of Discipline).
 - Player contracts are editable: wage, expiry, squad status (FM's selectable statuses only) and squad number, plus asking price; transfer listing stays read-only.
 - Player height and appearance (ethnicity, skin tone, hair colour and length, FM27) are editable.
 - Staff and human-manager contract wage and expiry, and club reputation, are editable.
@@ -34,6 +45,13 @@
 
 ### Project
 
+- Keep unregistered worktree directories and failed cleanup targets intact instead of force-deleting them; report incomplete post-merge cleanup explicitly.
+- Remove the superseded GUI plan and old UI-session verification logs, and clarify that uncalibrated builds can attach without a fingerprint guard.
+- Remove obsolete witness snapshots and their active references; retain field-specific mapping evidence in the per-version memory-layout documentation.
+- Add read-only-permission GitHub Actions jobs for native Windows/Linux checks, release startup smoke tests and portable test-build artifacts, with matching source archives, build metadata and SHA-256 checksums. Automatic release publishing is not enabled.
+- Expand the roadmap using FMLE26's advertised capability scope, distinguish existing foundations from follow-up work, and propose a distinct search-and-inspect UI direction. These are planning changes, not implemented features.
+- Explicitly track removing active player-unhappiness concerns separately from morale/squad status, and add a first-release CI/packaging checklist to the roadmap.
+- Consolidate project safety and verification rules in a harness-neutral AGENTS.md, move detailed procedures into docs/development.md, and archive the original GUI implementation plan rather than treating it as current tasks.
 - Add a README and license the project under GPL-3.0-or-later.
 - Remove one-off research scripts, the snapshot-analysis toolchain and unused diagnostic binaries; keep `scan_arrays` and `dump_manager`.
 - Keep local agent and editor configuration out of the repository; `.mcp.json` is now a cross-platform example for the fm-debug MCP server.

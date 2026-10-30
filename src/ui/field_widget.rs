@@ -1,4 +1,4 @@
-//! FMLE-style colored value widgets and editable attribute grids.
+//! Aligned profile field rows with colored numeric editors and attribute grids.
 
 use eframe::egui;
 
@@ -8,6 +8,20 @@ use crate::settings::{Theme, theme_data_id};
 use super::navigation;
 
 const VALUE_SIZE: [f32; 2] = [44.0, 22.0];
+
+/// A fixed label slot keeps profile values aligned without centering short labels.
+/// Truncated labels automatically show their full text on hover in egui.
+fn profile_label(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>) -> egui::Response {
+    ui.allocate_ui_with_layout(
+        egui::vec2(130.0, VALUE_SIZE[1]),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.set_min_size(egui::vec2(130.0, VALUE_SIZE[1]));
+            ui.add(egui::Label::new(label).truncate())
+        },
+    )
+    .inner
+}
 
 /// Keep disabled controls visible, but never commit their temporary values.
 fn number_edit(ui: &mut egui::Ui, value: egui::DragValue<'_>, width: f32) -> bool {
@@ -78,10 +92,7 @@ pub fn stub_checkbox(ui: &mut egui::Ui, label: &str, reason: &str) -> egui::Resp
 pub fn stub_field(ui: &mut egui::Ui, label: &str, reason: &str) {
     let grey = egui::Color32::from_rgb(110, 110, 110);
     let resp = ui.horizontal(|ui| {
-        ui.add_sized(
-            [130.0, VALUE_SIZE[1]],
-            egui::Label::new(egui::RichText::new(label).color(grey)),
-        );
+        profile_label(ui, egui::RichText::new(label).color(grey));
         ui.add_sized(
             VALUE_SIZE,
             egui::Label::new(egui::RichText::new("—").color(grey)),
@@ -97,10 +108,7 @@ pub fn stub_field(ui: &mut egui::Ui, label: &str, reason: &str) {
 fn render_out_of_range_label(ui: &mut egui::Ui, label: &str, raw_text: String, width: f32) {
     let grey = egui::Color32::from_rgb(110, 110, 110);
     ui.horizontal(|ui| {
-        ui.add_sized(
-            [130.0, VALUE_SIZE[1]],
-            egui::Label::new(egui::RichText::new(label).color(grey)),
-        );
+        profile_label(ui, egui::RichText::new(label).color(grey));
         ui.add_sized(
             [width.max(VALUE_SIZE[0]), VALUE_SIZE[1]],
             egui::Label::new(egui::RichText::new(raw_text).color(grey)),
@@ -142,7 +150,7 @@ pub fn attr_edit(
     let mut changed = false;
 
     ui.horizontal(|ui| {
-        ui.add_sized([130.0, VALUE_SIZE[1]], egui::Label::new(field.label));
+        profile_label(ui, field.label);
         ui.visuals_mut().override_text_color = Some(color);
         changed = number_edit(
             ui,
@@ -193,7 +201,7 @@ pub fn attr_cell_compact(
     if !(1..=20).contains(&displayed) {
         let grey = egui::Color32::from_rgb(110, 110, 110);
         ui.vertical(|ui| {
-            ui.set_min_width(44.0);
+            ui.set_width(56.0);
             ui.vertical_centered(|ui| {
                 ui.label(egui::RichText::new(field.label).color(grey));
                 ui.add_sized(
@@ -210,7 +218,7 @@ pub fn attr_cell_compact(
     let mut changed = false;
 
     ui.vertical(|ui| {
-        ui.set_min_width(44.0);
+        ui.set_width(56.0);
         ui.vertical_centered(|ui| {
             ui.label(field.label);
             ui.visuals_mut().override_text_color = Some(color);
@@ -293,7 +301,7 @@ pub fn roles_column(
                         if skip_zeros && val == 0 {
                             continue;
                         }
-                        ui.label(f.label);
+                        profile_label(ui, f.label);
                         ui.colored_label(value_color(val), format!("{val:>2}"));
                         ui.end_row();
                     }
@@ -350,7 +358,7 @@ pub fn raw_u8_edit(
     let mut changed = false;
 
     ui.horizontal(|ui| {
-        ui.label(label);
+        profile_label(ui, label);
         changed = number_edit(
             ui,
             egui::DragValue::new(&mut val)
@@ -402,7 +410,7 @@ pub fn raw_u16_edit(
     let mut changed = false;
 
     ui.horizontal(|ui| {
-        ui.label(label);
+        profile_label(ui, label);
         changed = number_edit(
             ui,
             egui::DragValue::new(&mut val)
@@ -454,7 +462,7 @@ pub fn raw_u32_edit(
     let mut changed = false;
 
     ui.horizontal(|ui| {
-        ui.label(label);
+        profile_label(ui, label);
         changed = number_edit(
             ui,
             egui::DragValue::new(&mut val)
@@ -597,7 +605,15 @@ pub fn dob_edit(
     if end > raw.len() {
         return edits;
     }
-    let mut edits_block = date_edit_inner(ui, "DOB", raw, doy_offset, year_offset, entity_addr, 1900..=2030);
+    let mut edits_block = date_edit_inner(
+        ui,
+        "DOB",
+        raw,
+        doy_offset,
+        year_offset,
+        entity_addr,
+        1900..=2030,
+    );
     edits.append(&mut edits_block);
     edits
 }
@@ -613,8 +629,12 @@ pub fn date_edit(
     base_addr: u64,
     years: std::ops::RangeInclusive<u16>,
 ) -> Vec<FieldEdit> {
-    let Some(loc) = field.offset.as_ref() else { return Vec::new() };
-    let Ok(doy_offset) = usize::try_from(loc.offset()) else { return Vec::new() };
+    let Some(loc) = field.offset.as_ref() else {
+        return Vec::new();
+    };
+    let Ok(doy_offset) = usize::try_from(loc.offset()) else {
+        return Vec::new();
+    };
     if doy_offset.checked_add(4).is_none_or(|end| end > raw.len()) {
         return Vec::new();
     }
@@ -628,6 +648,223 @@ const DOY_MASK: u16 = 0x1FF;
 /// `word` with its day-of-year bits replaced by `doy`, keeping FM's flags.
 fn replace_doy(word: u16, doy: u16) -> u16 {
     (word & !DOY_MASK) | (doy & DOY_MASK)
+}
+
+/// Popup and draft identity follows the record, not its position in a panel.
+fn calendar_id(entity_addr: u64, doy_offset: usize) -> egui::Id {
+    egui::Id::new(("date_calendar", entity_addr, doy_offset))
+}
+
+fn days_in_month(year: u16, month: i32) -> u16 {
+    match month {
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        _ => 0,
+    }
+}
+
+/// Monday-based weekday, using the proleptic Gregorian calendar.
+fn first_weekday(year: u16, month: i32) -> usize {
+    let y = i64::from(year) - i64::from(month < 3);
+    let offsets = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+    let sunday = (y + y.div_euclid(4) - y.div_euclid(100)
+        + y.div_euclid(400)
+        + offsets[(month - 1) as usize]
+        + 1)
+    .rem_euclid(7);
+    ((sunday + 6) % 7) as usize
+}
+
+#[derive(Clone)]
+struct CalendarDraft {
+    year: u16,
+    month: i32,
+    year_text: String,
+}
+
+impl CalendarDraft {
+    fn shift_month(&mut self, delta: i32, years: &std::ops::RangeInclusive<u16>) {
+        let index = i32::from(self.year) * 12 + self.month - 1 + delta;
+        let year = index.div_euclid(12);
+        if year >= i32::from(*years.start()) && year <= i32::from(*years.end()) {
+            self.year = year as u16;
+            self.month = index.rem_euclid(12) + 1;
+            self.year_text = self.year.to_string();
+        }
+    }
+}
+
+/// Browsing is local UI state. Only a day button returns a proposed date.
+fn calendar_button(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    year: u16,
+    month: i32,
+    day: i32,
+    years: &std::ops::RangeInclusive<u16>,
+) -> Option<(u16, i32, i32)> {
+    let enabled = navigation::editing_enabled(ui) && ui.is_enabled();
+    let button = ui.add_enabled(enabled, egui::Button::new("Calendar"));
+    if !enabled {
+        if ui.memory(|memory| memory.is_popup_open(id)) {
+            ui.memory_mut(|memory| memory.close_popup());
+        }
+        ui.data_mut(|data| data.remove::<CalendarDraft>(id));
+        return None;
+    }
+    if button.clicked() {
+        // Reopening always starts from the current record, never a cancelled draft.
+        ui.data_mut(|data| {
+            data.insert_temp(
+                id,
+                CalendarDraft {
+                    year,
+                    month,
+                    year_text: year.to_string(),
+                },
+            )
+        });
+        ui.memory_mut(|memory| memory.toggle_popup(id));
+    }
+    let mut chosen = None;
+    egui::popup_below_widget(
+        ui,
+        id,
+        &button,
+        egui::PopupCloseBehavior::CloseOnClickOutside,
+        |ui| {
+            let mut draft = ui
+                .data_mut(|data| data.get_temp::<CalendarDraft>(id))
+                .unwrap_or(CalendarDraft {
+                    year,
+                    month,
+                    year_text: year.to_string(),
+                });
+            ui.set_min_width(250.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(draft.year > *years.start(), egui::Button::new("Year -"))
+                    .clicked()
+                {
+                    draft.shift_month(-12, years);
+                }
+                ui.label("Year");
+                let response =
+                    ui.add(egui::TextEdit::singleline(&mut draft.year_text).desired_width(48.0));
+                if response.changed() {
+                    if let Ok(value) = draft.year_text.parse::<u16>() {
+                        if years.contains(&value) {
+                            draft.year = value;
+                        }
+                    }
+                }
+                if ui
+                    .add_enabled(draft.year < *years.end(), egui::Button::new("Year +"))
+                    .clicked()
+                {
+                    draft.shift_month(12, years);
+                }
+            });
+            let valid_year = draft
+                .year_text
+                .parse::<u16>()
+                .is_ok_and(|value| years.contains(&value));
+            if !valid_year {
+                ui.label(format!(
+                    "Enter a year from {} to {}",
+                    years.start(),
+                    years.end()
+                ));
+            }
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        draft.year > *years.start() || draft.month > 1,
+                        egui::Button::new("<"),
+                    )
+                    .clicked()
+                {
+                    draft.shift_month(-1, years);
+                }
+                const MONTHS: [&str; 12] = [
+                    "January",
+                    "February",
+                    "March",
+                    "April",
+                    "May",
+                    "June",
+                    "July",
+                    "August",
+                    "September",
+                    "October",
+                    "November",
+                    "December",
+                ];
+                ui.label(format!(
+                    "{} {}",
+                    MONTHS[(draft.month - 1) as usize],
+                    draft.year
+                ));
+                if ui
+                    .add_enabled(
+                        draft.year < *years.end() || draft.month < 12,
+                        egui::Button::new(">"),
+                    )
+                    .clicked()
+                {
+                    draft.shift_month(1, years);
+                }
+            });
+            egui::Grid::new(id.with("days"))
+                .num_columns(7)
+                .show(ui, |ui| {
+                    for weekday in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"] {
+                        ui.label(weekday);
+                    }
+                    ui.end_row();
+                    let start = first_weekday(draft.year, draft.month);
+                    let count = days_in_month(draft.year, draft.month) as usize;
+                    for cell in 0..(start + count).div_ceil(7) * 7 {
+                        if cell < start || cell >= start + count {
+                            ui.label("");
+                        } else {
+                            let date_day = (cell - start + 1) as i32;
+                            let selected =
+                                draft.year == year && draft.month == month && date_day == day;
+                            let text = if selected {
+                                format!("[{date_day}]")
+                            } else {
+                                date_day.to_string()
+                            };
+                            if ui
+                                .add_enabled(
+                                    valid_year,
+                                    egui::Button::new(text).min_size(egui::vec2(28.0, 22.0)),
+                                )
+                                .on_hover_text(if selected {
+                                    "Current date"
+                                } else {
+                                    "Choose date"
+                                })
+                                .clicked()
+                            {
+                                chosen = Some((draft.year, date_day, draft.month));
+                            }
+                        }
+                        if cell % 7 == 6 {
+                            ui.end_row();
+                        }
+                    }
+                });
+            if ui.button("Cancel").clicked() || chosen.is_some() {
+                ui.memory_mut(|memory| memory.close_popup());
+            }
+            ui.data_mut(|data| data.insert_temp(id, draft));
+        },
+    );
+    chosen
 }
 
 fn date_edit_inner(
@@ -649,7 +886,7 @@ fn date_edit_inner(
 
     // Out-of-range date: render read-only so the DragValue doesn't clamp the
     // year into range (overwriting genuine zeros/blanks in memory).
-    if !years.contains(&year) || doy == 0 || doy > 366 {
+    if !years.contains(&year) || doy == 0 || doy > day_month_to_doy(year, 31, 12) {
         let grey = egui::Color32::from_rgb(110, 110, 110);
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(label).color(grey));
@@ -667,67 +904,81 @@ fn date_edit_inner(
     let orig_year = yr;
     let (min_year, max_year) = (*years.start() as i32, *years.end() as i32);
 
-    ui.horizontal(|ui| {
-        ui.label(label);
-        let day_changed = number_edit(
-            ui,
-            egui::DragValue::new(&mut day)
-                .update_while_editing(false)
-                .range(1..=31)
-                .speed(0.2),
-            VALUE_SIZE[0],
-        );
-        ui.label("/");
-        let month_changed = number_edit(
-            ui,
-            egui::DragValue::new(&mut month)
-                .update_while_editing(false)
-                .range(1..=12)
-                .speed(0.2),
-            VALUE_SIZE[0],
-        );
-        ui.label("/");
-        let year_changed = number_edit(
-            ui,
-            egui::DragValue::new(&mut yr)
-                .update_while_editing(false)
-                .range(min_year..=max_year)
-                .speed(0.5),
-            50.0,
-        );
+    let mut changed = false;
+    let id = calendar_id(entity_addr, doy_offset);
+    ui.push_id(id, |ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(label);
+            let day_changed = number_edit(
+                ui,
+                egui::DragValue::new(&mut day)
+                    .update_while_editing(false)
+                    .range(1..=31)
+                    .speed(0.2),
+                VALUE_SIZE[0],
+            );
+            ui.label("/");
+            let month_changed = number_edit(
+                ui,
+                egui::DragValue::new(&mut month)
+                    .update_while_editing(false)
+                    .range(1..=12)
+                    .speed(0.2),
+                VALUE_SIZE[0],
+            );
+            ui.label("/");
+            let year_changed = number_edit(
+                ui,
+                egui::DragValue::new(&mut yr)
+                    .update_while_editing(false)
+                    .range(min_year..=max_year)
+                    .speed(0.5),
+                50.0,
+            );
 
-        if day_changed || month_changed || year_changed {
-            let new_year = yr.clamp(min_year, max_year) as u16;
-            let new_doy = day_month_to_doy(new_year, day.clamp(1, 31), month.clamp(1, 12));
-
-            let new_doy_bytes = replace_doy(doy_word, new_doy).to_le_bytes();
-            let new_year_bytes = new_year.to_le_bytes();
-
-            if new_doy_bytes != old_doy_bytes {
-                raw[doy_offset] = new_doy_bytes[0];
-                raw[doy_offset + 1] = new_doy_bytes[1];
-                edits.push(FieldEdit {
-                    addr: entity_addr + doy_offset as u64,
-                    old_raw: old_doy_bytes.to_vec(),
-                    new_raw: new_doy_bytes.to_vec(),
-                    description: format!(
-                        "{label} day: {}/{} \u{2192} {}/{}",
-                        orig_day, orig_month, day, month
-                    ),
-                });
+            changed = day_changed || month_changed || year_changed;
+            if let Some((new_year, new_day, new_month)) =
+                calendar_button(ui, id, year, orig_month, orig_day, &years)
+            {
+                yr = i32::from(new_year);
+                day = new_day;
+                month = new_month;
+                changed = true;
             }
-            if new_year_bytes != old_year_bytes {
-                raw[year_offset] = new_year_bytes[0];
-                raw[year_offset + 1] = new_year_bytes[1];
-                edits.push(FieldEdit {
-                    addr: entity_addr + year_offset as u64,
-                    old_raw: old_year_bytes.to_vec(),
-                    new_raw: new_year_bytes.to_vec(),
-                    description: format!("{label} year: {} \u{2192} {}", orig_year, yr),
-                });
-            }
-        }
+        });
     });
+
+    if changed {
+        let new_year = yr.clamp(min_year, max_year) as u16;
+        let new_doy = day_month_to_doy(new_year, day.clamp(1, 31), month.clamp(1, 12));
+
+        let new_doy_bytes = replace_doy(doy_word, new_doy).to_le_bytes();
+        let new_year_bytes = new_year.to_le_bytes();
+
+        if new_doy_bytes != old_doy_bytes {
+            raw[doy_offset] = new_doy_bytes[0];
+            raw[doy_offset + 1] = new_doy_bytes[1];
+            edits.push(FieldEdit {
+                addr: entity_addr + doy_offset as u64,
+                old_raw: old_doy_bytes.to_vec(),
+                new_raw: new_doy_bytes.to_vec(),
+                description: format!(
+                    "{label} day: {}/{} \u{2192} {}/{}",
+                    orig_day, orig_month, day, month
+                ),
+            });
+        }
+        if new_year_bytes != old_year_bytes {
+            raw[year_offset] = new_year_bytes[0];
+            raw[year_offset + 1] = new_year_bytes[1];
+            edits.push(FieldEdit {
+                addr: entity_addr + year_offset as u64,
+                old_raw: old_year_bytes.to_vec(),
+                new_raw: new_year_bytes.to_vec(),
+                description: format!("{label} year: {} \u{2192} {}", orig_year, yr),
+            });
+        }
+    }
 
     edits
 }
@@ -751,7 +1002,7 @@ pub fn choice_u8_edit(
     let mut new = old;
     let enabled = navigation::editing_enabled(ui) && ui.is_enabled();
     ui.horizontal(|ui| {
-        ui.label(label);
+        profile_label(ui, label);
         ui.add_enabled_ui(enabled, |ui| {
             egui::ComboBox::from_id_salt(("choice_u8", label, base_addr, offset))
                 .selected_text(old_name)
@@ -766,7 +1017,10 @@ pub fn choice_u8_edit(
         return None;
     }
     raw[offset] = new;
-    let new_name = options.iter().find(|(code, _)| *code == new).map_or("?", |(_, n)| n);
+    let new_name = options
+        .iter()
+        .find(|(code, _)| *code == new)
+        .map_or("?", |(_, n)| n);
     Some(FieldEdit {
         addr: base_addr + offset as u64,
         old_raw: vec![old],
@@ -795,26 +1049,42 @@ pub fn optional_u8_edit(
     let mut val: i32 = if old == none { 0 } else { old as i32 };
     let mut changed = false;
     ui.horizontal(|ui| {
-        ui.label(label);
+        profile_label(ui, label);
         changed = number_edit(
             ui,
             egui::DragValue::new(&mut val)
                 .update_while_editing(false)
                 .range(0..=max as i32)
                 .speed(0.2)
-                .custom_formatter(|n, _| if n == 0.0 { "None".into() } else { format!("{n:.0}") }),
+                .custom_formatter(|n, _| {
+                    if n == 0.0 {
+                        "None".into()
+                    } else {
+                        format!("{n:.0}")
+                    }
+                }),
             VALUE_SIZE[0],
         );
     });
     if !changed {
         return None;
     }
-    let new = if val <= 0 { none } else { val.min(max as i32) as u8 };
+    let new = if val <= 0 {
+        none
+    } else {
+        val.min(max as i32) as u8
+    };
     if new == old {
         return None;
     }
     raw[offset] = new;
-    let show = |v: u8| if v == none { "None".to_string() } else { v.to_string() };
+    let show = |v: u8| {
+        if v == none {
+            "None".to_string()
+        } else {
+            v.to_string()
+        }
+    };
     Some(FieldEdit {
         addr: base_addr + offset as u64,
         old_raw: vec![old],
@@ -842,17 +1112,27 @@ pub fn optional_money_edit(
     let mut val = old as i64;
     let mut changed = false;
     ui.horizontal(|ui| {
-        ui.label(label);
+        profile_label(ui, label);
         changed = number_edit(
             ui,
             egui::DragValue::new(&mut val)
                 .update_while_editing(false)
                 .range(-1..=i32::MAX as i64)
                 .speed(10_000.0)
-                .custom_formatter(|n, _| if n < 0.0 { "Not set".into() } else { format!("£{n:.0}") })
+                .custom_formatter(|n, _| {
+                    if n < 0.0 {
+                        "Not set".into()
+                    } else {
+                        format!("£{n:.0}")
+                    }
+                })
                 .custom_parser(|s| {
                     let t = s.trim().trim_start_matches('£').replace(',', "");
-                    if t.is_empty() || t.eq_ignore_ascii_case("not set") { Some(-1.0) } else { t.parse().ok() }
+                    if t.is_empty() || t.eq_ignore_ascii_case("not set") {
+                        Some(-1.0)
+                    } else {
+                        t.parse().ok()
+                    }
                 }),
             90.0,
         );
@@ -866,7 +1146,13 @@ pub fn optional_money_edit(
     }
     let new_bytes = new.to_le_bytes();
     raw[offset..offset + 4].copy_from_slice(&new_bytes);
-    let show = |v: i32| if v < 0 { "Not set".to_string() } else { format!("£{v}") };
+    let show = |v: i32| {
+        if v < 0 {
+            "Not set".to_string()
+        } else {
+            format!("£{v}")
+        }
+    };
     Some(FieldEdit {
         addr: base_addr + offset as u64,
         old_raw: old_bytes.to_vec(),
@@ -913,13 +1199,182 @@ fn day_month_to_doy(year: u16, day: i32, month: i32) -> u16 {
 /// Read-only label for a numeric value.
 pub fn info_label(ui: &mut egui::Ui, label: &str, value: impl std::fmt::Display) {
     ui.horizontal(|ui| {
-        ui.label(label);
+        profile_label(ui, label);
         ui.label(format!("{value}"));
     });
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn calendar_math_and_range_boundaries() {
+        for (year, february) in [(1900, 28), (2000, 29), (2024, 29), (2100, 28)] {
+            assert_eq!(days_in_month(year, 2), february);
+            for month in 1..=12 {
+                for day in 1..=i32::from(days_in_month(year, month)) {
+                    let doy = day_month_to_doy(year, day, month);
+                    assert_eq!(doy_to_day_month(year, doy), (day, month));
+                }
+            }
+        }
+        assert_eq!(first_weekday(2000, 1), 5); // Saturday
+        assert_eq!(first_weekday(2024, 2), 3); // Thursday
+        assert_eq!(first_weekday(2026, 6), 0); // Monday
+        let mut draft = CalendarDraft {
+            year: 1900,
+            month: 1,
+            year_text: "1900".into(),
+        };
+        draft.shift_month(-1, &(1900..=2030));
+        assert_eq!((draft.year, draft.month), (1900, 1));
+        draft.shift_month(12, &(1900..=2030));
+        assert_eq!((draft.year, draft.month), (1901, 1));
+        draft.year = 2030;
+        draft.month = 12;
+        draft.shift_month(1, &(1900..=2030));
+        assert_eq!((draft.year, draft.month), (2030, 12));
+    }
+
+    fn date_frame(
+        ctx: &egui::Context,
+        raw: &mut [u8],
+        addr: u64,
+        enabled: bool,
+        events: Vec<egui::Event>,
+    ) -> (egui::FullOutput, Vec<FieldEdit>) {
+        let mut edits = Vec::new();
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0, 600.0),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.add_enabled_ui(enabled, |ui| {
+                        edits = date_edit_inner(ui, "DOB", raw, 0, 2, addr, 1900..=2030);
+                    });
+                });
+            },
+        );
+        (output, edits)
+    }
+
+    fn click_text(output: &egui::FullOutput, text: &str) -> Vec<egui::Event> {
+        let texts = text_shapes(&output.shapes);
+        let shape = texts
+            .iter()
+            .find(|shape| shape.galley.text() == text)
+            .unwrap_or_else(|| panic!("missing {text}"));
+        let pos = shape.pos + shape.galley.size() / 2.0;
+        vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]
+    }
+
+    #[test]
+    fn calendar_browsing_cancel_and_selection_use_existing_edits() {
+        let ctx = egui::Context::default();
+        navigation::set_editing_enabled(&ctx, true);
+        let mut raw = [0, 0, 208, 7];
+        raw[..2].copy_from_slice(&(0x1A00u16 | 1).to_le_bytes());
+        let original = raw;
+        let (output, edits) = date_frame(&ctx, &mut raw, 100, true, vec![]);
+        assert!(edits.is_empty());
+        let (_, edits) = date_frame(&ctx, &mut raw, 100, true, click_text(&output, "Calendar"));
+        assert!(edits.is_empty());
+        let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
+        assert!(ctx.memory(|m| m.is_popup_open(calendar_id(100, 0))));
+        let (_, edits) = date_frame(&ctx, &mut raw, 100, true, click_text(&output, ">"));
+        assert!(edits.is_empty());
+        assert_eq!(raw, original);
+        let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
+        let (_, edits) = date_frame(&ctx, &mut raw, 100, true, click_text(&output, "Cancel"));
+        assert!(edits.is_empty());
+        assert_eq!(raw, original);
+        let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
+        date_frame(&ctx, &mut raw, 100, true, click_text(&output, "Calendar"));
+        let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
+        assert!(
+            text_shapes(&output.shapes)
+                .iter()
+                .any(|s| s.galley.text() == "[1]")
+        );
+        let (_, edits) = date_frame(&ctx, &mut raw, 100, true, click_text(&output, "2"));
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].addr, 100);
+        assert_eq!(edits[0].old_raw, original[..2]);
+        assert_eq!(edits[0].new_raw, (0x1A00u16 | 2).to_le_bytes());
+        assert_eq!(&raw[2..], &original[2..]);
+    }
+
+    #[test]
+    fn calendar_identity_gating_and_invalid_dates() {
+        assert_ne!(calendar_id(100, 0), calendar_id(200, 0));
+        assert_ne!(calendar_id(100, 0), calendar_id(100, 4));
+        for (editing, ancestor) in [(false, true), (true, false), (true, true)] {
+            let ctx = egui::Context::default();
+            navigation::set_editing_enabled(&ctx, editing);
+            let id = calendar_id(100, 0);
+            ctx.memory_mut(|m| m.open_popup(id));
+            ctx.data_mut(|d| {
+                d.insert_temp(
+                    id,
+                    CalendarDraft {
+                        year: 2020,
+                        month: 2,
+                        year_text: "2020".into(),
+                    },
+                )
+            });
+            let mut raw = [1, 0, 208, 7];
+            let original = raw;
+            let (_, edits) = date_frame(&ctx, &mut raw, 200, ancestor, vec![]);
+            assert!(edits.is_empty());
+            assert_eq!(raw, original);
+            assert!(
+                ctx.data_mut(|d| d.get_temp::<CalendarDraft>(calendar_id(200, 0)))
+                    .is_none()
+            );
+            let (_, edits) = date_frame(&ctx, &mut raw, 100, ancestor, vec![]);
+            assert!(edits.is_empty());
+            if !editing || !ancestor {
+                assert!(!ctx.memory(|m| m.is_popup_open(id)));
+            }
+        }
+        for (doy, year) in [(0u16, 2000u16), (366, 1900), (511, 2000), (1, 0), (1, 2031)] {
+            let ctx = egui::Context::default();
+            navigation::set_editing_enabled(&ctx, true);
+            let mut raw = [0; 4];
+            raw[..2].copy_from_slice(&doy.to_le_bytes());
+            raw[2..].copy_from_slice(&year.to_le_bytes());
+            let original = raw;
+            let (output, edits) = date_frame(&ctx, &mut raw, 100, true, vec![]);
+            assert!(edits.is_empty());
+            assert_eq!(raw, original);
+            assert!(
+                !text_shapes(&output.shapes)
+                    .iter()
+                    .any(|s| s.galley.text() == "Calendar")
+            );
+        }
+    }
+
     use super::replace_doy;
 
     #[test]
@@ -940,6 +1395,96 @@ mod tests {
             entity: Entity::Player,
             category: Category::General,
             offset: Some(FieldLocation::Direct { offset, encoding }),
+        }
+    }
+
+    fn text_shapes(shapes: &[egui::epaint::ClippedShape]) -> Vec<&egui::epaint::TextShape> {
+        fn collect<'a>(shape: &'a egui::Shape, out: &mut Vec<&'a egui::epaint::TextShape>) {
+            match shape {
+                egui::Shape::Text(text) => out.push(text),
+                egui::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        collect(shape, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        for shape in shapes {
+            collect(&shape.shape, &mut out);
+        }
+        out
+    }
+
+    #[test]
+    fn profile_values_align_and_render_without_edits() {
+        const LABELS: [&str; 3] = [
+            "Rep",
+            "Home Reputation",
+            "An exceptionally long reputation label that must be truncated",
+        ];
+        // Exercise each editor and its read-only fallback, with editing enabled.
+        for kind in 0..10 {
+            let ctx = egui::Context::default();
+            navigation::set_editing_enabled(&ctx, true);
+            let output = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    for label in LABELS {
+                        let mut field = field(Encoding::Direct, 0);
+                        field.label = label;
+                        let mut raw = if matches!(kind, 1 | 3 | 5) {
+                            [250, 0, 0, 0]
+                        } else {
+                            [10, 0, 0, 0]
+                        };
+                        let original = raw;
+                        let edit = match kind {
+                            0 | 1 => attr_edit(ui, &field, &mut raw, 0),
+                            2 | 3 => raw_u8_edit(ui, &field, &mut raw, 200, 0),
+                            4 | 5 => raw_u16_edit(ui, &field, &mut raw, 200, 0),
+                            6 => raw_u32_edit(ui, &field, &mut raw, 0),
+                            7 => optional_u8_edit(ui, label, &mut raw, &field, 0, 99, 255),
+                            8 => optional_money_edit(ui, label, &mut raw, &field, 0),
+                            9 => {
+                                info_label(ui, label, 10);
+                                None
+                            }
+                            _ => unreachable!(),
+                        };
+                        assert!(edit.is_none(), "rendering kind {kind} emitted an edit");
+                        assert_eq!(raw, original);
+                    }
+                });
+            });
+            let texts = text_shapes(&output.shapes);
+            let value_text = if matches!(kind, 1 | 3 | 5) {
+                "raw=250"
+            } else if kind == 8 {
+                "£10"
+            } else {
+                "10"
+            };
+            let values: Vec<_> = texts
+                .iter()
+                .filter(|t| t.galley.text() == value_text)
+                .collect();
+            assert_eq!(values.len(), LABELS.len(), "kind {kind}");
+            for pair in values.windows(2) {
+                assert_eq!(pair[0].pos.x, pair[1].pos.x, "kind {kind}");
+                assert!(
+                    (pair[1].pos.y - pair[0].pos.y - 25.0).abs() < 0.1,
+                    "kind {kind}: rows must retain a consistent 22px height plus spacing"
+                );
+            }
+            let labels: Vec<_> = LABELS
+                .iter()
+                .map(|label| texts.iter().find(|t| t.galley.text() == *label).unwrap())
+                .collect();
+            assert_eq!(labels[0].pos.x, labels[1].pos.x);
+            assert_eq!(labels[0].pos.x, labels[2].pos.x);
+            assert!(labels[2].galley.elided);
+            assert!(labels[2].galley.size().x <= 130.0);
         }
     }
 

@@ -87,15 +87,15 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "s_controversy",     label: "Controversy",      entity: Staff, category: Personality, offset: direct(0x177) },
 
         // Contract (sub-record at staff+0x1A8). Witnesses (job / club / wage
-        // £/week / expiry): Arteta 16 Head Coach / Arsenal / 375000 / 30 Jun
-        // 2030; Flick Head Coach / Barcelona / 99218 / 2028; Xabi Alonso Head
-        // Coach / Chelsea / 210000 / 2030; Maresca Head Coach / Man City /
-        // 150000 / 2029; the test save's human manager Head Coach /
+        // £/week / expiry): Arteta 16 Manager / Arsenal / 375000 / 30 Jun
+        // 2030; Flick Manager / Barcelona / 99218 / 2028; Xabi Alonso
+        // Manager / Chelsea / 210000 / 2030; Maresca Manager / Man City /
+        // 150000 / 2029; the test save's human manager Manager /
         // Tottenham Hotspur / 120000 / 2028. Guardiola, Slot and Ancelotti
         // have no contract in this save (pointer 0).
         Field { key: "s_weekly_wage",     label: "Wage (£ p/w)",     entity: Staff, category: Contract, offset: sub_raw_u32("contract", 0x20) },
         Field { key: "s_contract_expiry", label: "Contract Expiry", entity: Staff, category: Contract, offset: sub_date("contract", 0x48) },
-        // Job code: 16 = Head Coach, 20 = Assistant Coach, 2 = Coach, ...
+        // Job code: 16 = Manager (the job title FM27 shows), 20 = Assistant Coach, 2 = Coach, ...
         // (see `staff::job_name`).
         Field { key: "s_job",             label: "Job",             entity: Staff, category: Contract, offset: sub_direct("contract", 0x26) },
 

@@ -50,6 +50,13 @@ impl PlayerRecord {
         fields::read_field_u16(self, &self.raw, f)
     }
 
+    /// Read an integer field by key at its encoding's width
+    /// (see `fields::read_field_int`).
+    pub fn field_int(&self, key: &str) -> Option<u32> {
+        let f = self.build.schemas().field(key)?;
+        fields::read_field_int(self, &self.raw, f)
+    }
+
     /// Read a field by key as u32.
     pub fn field_u32(&self, key: &str) -> Option<u32> {
         let f = self.build.schemas().field(key)?;

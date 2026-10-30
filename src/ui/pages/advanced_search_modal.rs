@@ -1,14 +1,12 @@
 //! Advanced player search modal.
 //!
-//! Opened from the filter row's "⚙ Advanced" button. Shares `PlayerSearchState`
-//! directly — no separate draft — so filter row and modal are always in sync.
-//! The caller snapshots state before opening and restores it on `ModalResult::Cancel`.
+//! Shares `PlayerSearchState` directly. The caller snapshots before opening and
+//! restores the complete state on `ModalResult::Cancel`.
 
 use eframe::egui;
 
 use super::player_search::{POSITION_OFFSETS, PlayerSearchState};
 
-/// Returned by `show()` each frame.
 #[derive(Default, PartialEq)]
 pub enum ModalResult {
     #[default]
@@ -19,195 +17,237 @@ pub enum ModalResult {
     ClearAll,
 }
 
-/// Render the Advanced Search modal window.
-///
-/// `open` is set to false when the modal is dismissed (OK or Cancel).
+/// Render a resizable window with scrolling inputs and a non-scrolling footer.
 /// The caller is responsible for snapshotting and restoring state on Cancel.
 pub fn show(ctx: &egui::Context, state: &mut PlayerSearchState, open: &mut bool) -> ModalResult {
     let mut result = ModalResult::None;
-
+    let available = ctx.screen_rect().size();
+    // Leave room for the title, window margins, validation and footer even on
+    // short viewports. Content, rather than the whole window, scrolls.
+    let content_height = (available.y - 150.0).clamp(40.0, 480.0);
     egui::Window::new("Advanced Search")
         .open(open)
-        .resizable(false)
+        .resizable(true)
         .collapsible(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .default_width(440.0)
+        .min_width(200.0)
+        .default_width((available.x - 32.0).clamp(200.0, 440.0))
+        .max_width((available.x - 24.0).max(200.0))
         .show(ctx, |ui| {
-            show_general_tab(ui, state);
-            if let Some(error) = state.validation_error() {
-                ui.colored_label(ui.visuals().error_fg_color, error);
-            }
-
+            egui::ScrollArea::vertical()
+                .id_salt("advanced_search_content")
+                .max_height(content_height)
+                .show(ui, |ui| {
+                    show_general_tab(ui, state);
+                    if let Some(error) = state.validation_error() {
+                        ui.colored_label(ui.visuals().error_fg_color, error);
+                    }
+                });
             ui.separator();
-
-            // ── Footer ────────────────────────────────────────────────────────
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if ui.button("Clear All").clicked() {
                     result = ModalResult::ClearAll;
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("OK").clicked() {
-                        result = ModalResult::Ok;
-                    }
-                    if ui.button("Cancel").clicked() {
-                        result = ModalResult::Cancel;
-                    }
-                });
+                if ui.button("Cancel").clicked() {
+                    result = ModalResult::Cancel;
+                }
+                if ui
+                    .add_enabled(state.validation_error().is_none(), egui::Button::new("OK"))
+                    .clicked()
+                {
+                    result = ModalResult::Ok;
+                }
             });
         });
-
-    // OK / Cancel close the modal.
     if result == ModalResult::Ok || result == ModalResult::Cancel {
         *open = false;
     }
-
     result
 }
 
-// ── General tab ──────────────────────────────────────────────────────────────
-
 fn show_general_tab(ui: &mut egui::Ui, state: &mut PlayerSearchState) {
-    ui.horizontal_wrapped(|ui| {
-        ui.vertical(|ui| {
-            section_title(ui, "Inclusive ranges");
-            for (label, min, max) in [
-                ("Age", &mut state.age_min, &mut state.age_max),
-                ("CA", &mut state.ca_min, &mut state.ca_max),
-                ("PA", &mut state.pa_min, &mut state.pa_max),
-            ] {
+    // Stack sections so resizing never strands controls beyond the right edge.
+    section_title(ui, "Inclusive ranges");
+    for (label, min, max) in [
+        ("Age", &mut state.age_min, &mut state.age_max),
+        ("CA", &mut state.ca_min, &mut state.ca_max),
+        ("PA", &mut state.pa_min, &mut state.pa_max),
+    ] {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!("{label} ≥"));
+            ui.add(
+                egui::TextEdit::singleline(min)
+                    .desired_width(44.0)
+                    .hint_text("min"),
+            );
+            ui.label("≤");
+            ui.add(
+                egui::TextEdit::singleline(max)
+                    .desired_width(44.0)
+                    .hint_text("max"),
+            );
+        });
+    }
+    ui.separator();
+    section_title(ui, "Positions");
+    ui.label("Any selected position (OR). Minimum familiarity: 1–20.");
+    ui.label("1 = None · 20 = Natural. Default minimum: 2.");
+    for (bit, &(_, label)) in POSITION_OFFSETS.iter().enumerate() {
+        ui.push_id(bit, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                let mut selected = state.positions & (1 << bit) != 0;
+                let name = if bit == 1 { "SW (Sweeper)" } else { label };
+                ui.allocate_ui_with_layout(
+                    egui::vec2(130.0, ui.spacing().interact_size.y),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        ui.set_min_width(130.0);
+                        if ui.checkbox(&mut selected, name).changed() {
+                            if selected {
+                                state.positions |= 1 << bit;
+                            } else {
+                                state.positions &= !(1 << bit);
+                            }
+                        }
+                    },
+                );
                 ui.horizontal(|ui| {
-                    ui.label(format!("{label} ≥"));
+                    ui.label("≥ min");
                     ui.add(
-                        egui::TextEdit::singleline(min)
-                            .desired_width(44.0)
-                            .hint_text("min"),
-                    );
-                    ui.label("≤");
-                    ui.add(
-                        egui::TextEdit::singleline(max)
-                            .desired_width(44.0)
-                            .hint_text("max"),
+                        egui::DragValue::new(&mut state.position_minimums[bit])
+                            .range(1..=20)
+                            .speed(1),
                     );
                 });
-            }
+            });
         });
-        ui.vertical(|ui| {
-            section_title(ui, "Positions");
-            ui.label("Any selected position (OR)");
-            show_pitch(ui, state);
-        });
-    });
+    }
 }
 
-// ── Positions pitch ───────────────────────────────────────────────────────────
+fn section_title(ui: &mut egui::Ui, title: &str) {
+    ui.label(egui::RichText::new(title).small().strong());
+    ui.add_space(2.0);
+}
 
-/// Formation layout: (bit_index_left, bit_index_center, bit_index_right).
-/// None = empty cell. Matches player_panel::show_positions_formation.
-/// POSITION_OFFSETS order: 0=GK,1=SW,2=DL,3=DC,4=DR,5=DM,6=ML,7=MC,8=MR,
-///                         9=AML,10=AMC,11=AMR,12=ST,13=WBL,14=WBR
-const PITCH_ROWS: &[(Option<usize>, Option<usize>, Option<usize>)] = &[
-    (None, Some(12), None),        // ST
-    (Some(9), Some(10), Some(11)), // AML AMC AMR
-    (Some(6), Some(7), Some(8)),   // ML  MC  MR
-    (Some(13), Some(5), Some(14)), // WBL DM  WBR
-    (Some(2), Some(3), Some(4)),   // DL  DC  DR
-    (None, Some(0), None),         // GK
-];
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
 
-fn show_pitch(ui: &mut egui::Ui, state: &mut PlayerSearchState) {
-    let pitch_bg = egui::Color32::from_rgb(45, 90, 27);
-    let btn_size = egui::vec2(46.0, 26.0);
-    let btn_spacing = 4.0;
-
-    let pitch_width = btn_size.x * 3.0 + btn_spacing * 2.0 + 20.0;
-    let pitch_height = btn_size.y * 6.0 + btn_spacing * 5.0 + 20.0;
-
-    let (pitch_rect, _) =
-        ui.allocate_exact_size(egui::vec2(pitch_width, pitch_height), egui::Sense::hover());
-
-    // Draw green pitch background
-    ui.painter()
-        .rect_filled(pitch_rect, egui::CornerRadius::same(6), pitch_bg);
-    // Pitch inner border
-    let inner = pitch_rect.shrink(4.0);
-    ui.painter().rect_stroke(
-        inner,
-        egui::CornerRadius::same(3),
-        egui::Stroke::new(
-            1.0_f32,
-            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 60),
-        ),
-        egui::StrokeKind::Outside,
-    );
-
-    let origin = pitch_rect.min + egui::vec2(10.0, 10.0);
-
-    for (row_i, &(left, center, right)) in PITCH_ROWS.iter().enumerate() {
-        let y = origin.y + row_i as f32 * (btn_size.y + btn_spacing);
-        for (col_i, opt_bit) in [left, center, right].iter().enumerate() {
-            let x = origin.x + col_i as f32 * (btn_size.x + btn_spacing);
-            let rect = egui::Rect::from_min_size(egui::pos2(x, y), btn_size);
-
-            if let Some(bit) = opt_bit {
-                let label = POSITION_OFFSETS[*bit].1;
-                let selected = state.positions & (1u16 << bit) != 0;
-
-                let btn_resp = ui.put(rect, pos_toggle_button(label, selected));
-                if btn_resp.clicked() {
-                    state.positions ^= 1u16 << bit;
+    fn text_shapes(shape: &egui::epaint::Shape, texts: &mut Vec<(String, egui::Rect)>) {
+        match shape {
+            egui::epaint::Shape::Text(text) => texts.push((
+                text.galley.job.text.clone(),
+                egui::Rect::from_min_size(text.pos, text.galley.size()),
+            )),
+            egui::epaint::Shape::Vec(shapes) => {
+                for shape in shapes {
+                    text_shapes(shape, texts);
                 }
-                btn_resp.on_hover_text(if selected {
-                    format!("Remove {label} filter")
-                } else {
-                    format!("Filter by {label}")
-                });
             }
+            _ => {}
         }
     }
 
-    // SW — shown below the pitch grid as a separate row
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new("Sweeper:")
-                .small()
-                .color(egui::Color32::from_rgb(180, 180, 180)),
+    #[test]
+    fn position_minima_align_despite_different_checkbox_label_lengths() {
+        let ctx = egui::Context::default();
+        let mut state = PlayerSearchState::default();
+        state.position_minimums = [20; 15];
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(500.0, 1000.0),
+                )),
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| show_general_tab(ui, &mut state));
+            },
         );
-        let sw_bit = 1usize; // bit 1 = SW
-        let selected = state.positions & (1u16 << sw_bit) != 0;
-        if ui.add(pos_toggle_button("SW", selected)).clicked() {
-            state.positions ^= 1u16 << sw_bit;
+        let mut texts = Vec::new();
+        for clipped in output.shapes {
+            text_shapes(&clipped.shape, &mut texts);
         }
-    });
-}
+        let numeric_x = |label: &str| {
+            let (_, label_rect) = texts.iter().find(|(text, _)| text == label).unwrap();
+            let (_, numeric_rect) = texts
+                .iter()
+                .find(|(text, rect)| {
+                    text == "20" && (rect.center().y - label_rect.center().y).abs() < 2.0
+                })
+                .unwrap();
+            numeric_rect.min.x
+        };
+        let gk_x = numeric_x("GK");
+        for label in ["SW (Sweeper)", "AML"] {
+            assert!(
+                (numeric_x(label) - gk_x).abs() < 0.1,
+                "{label} minimum must align with GK"
+            );
+        }
+    }
 
-fn pos_toggle_button(label: &str, selected: bool) -> egui::Button<'static> {
-    let label = egui::RichText::new(label.to_string())
-        .small()
-        .strong()
-        .color(if selected {
-            egui::Color32::WHITE
-        } else {
-            egui::Color32::from_rgba_unmultiplied(220, 220, 220, 180)
-        });
-
-    let fill = if selected {
-        egui::Color32::from_rgb(74, 124, 199)
-    } else {
-        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 100)
-    };
-
-    egui::Button::new(label).fill(fill)
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn section_title(ui: &mut egui::Ui, title: &str) {
-    ui.label(
-        egui::RichText::new(title)
-            .small()
-            .strong()
-            .color(egui::Color32::from_rgb(160, 160, 160)),
-    );
-    ui.add_space(2.0);
+    #[test]
+    fn small_viewports_keep_footer_visible_and_all_positions_scroll_into_view() {
+        for size in [egui::vec2(320.0, 300.0), egui::vec2(260.0, 360.0)] {
+            let ctx = egui::Context::default();
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let mut state = PlayerSearchState::default();
+            state.position_minimums = [20; 15];
+            let mut open = true;
+            let mut seen = HashSet::new();
+            for frame in 0..40 {
+                let mut input = egui::RawInput {
+                    screen_rect: Some(screen),
+                    time: Some(frame as f64 / 10.0),
+                    ..Default::default()
+                };
+                input.events.push(egui::Event::PointerMoved(egui::pos2(
+                    size.x / 2.0,
+                    size.y / 2.0,
+                )));
+                if frame > 2 {
+                    input.events.push(egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: egui::vec2(0.0, -55.0),
+                        modifiers: egui::Modifiers::default(),
+                    });
+                }
+                let output = ctx.run(input, |ctx| {
+                    show(ctx, &mut state, &mut open);
+                });
+                if frame < 2 {
+                    continue;
+                }
+                let mut visible = HashSet::new();
+                for clipped in output.shapes {
+                    let mut texts = Vec::new();
+                    text_shapes(&clipped.shape, &mut texts);
+                    for (text, rect) in texts {
+                        if screen.contains_rect(rect) && clipped.clip_rect.contains_rect(rect) {
+                            visible.insert(text.clone());
+                            seen.insert(text);
+                        }
+                    }
+                }
+                for footer in ["Clear All", "Cancel", "OK"] {
+                    assert!(
+                        visible.contains(footer),
+                        "{footer} hidden at {size:?}, frame {frame}"
+                    );
+                }
+            }
+            assert_eq!(
+                state.positions, 0,
+                "Rendering minima must not select positions"
+            );
+            assert_eq!(state.position_minimums, [20; 15]);
+            for (_, label) in POSITION_OFFSETS {
+                let name = if label == "SW" { "SW (Sweeper)" } else { label };
+                assert!(seen.contains(name), "{name} unreachable at {size:?}");
+            }
+        }
+    }
 }

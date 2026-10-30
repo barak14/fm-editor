@@ -12,6 +12,7 @@ mod club;
 mod stadium;
 
 pub(crate) use player::FIELDS as PLAYER_FIELDS;
+pub(crate) use player::PLAYER_SUB_RECORDS;
 pub(crate) use staff::FIELDS as STAFF_FIELDS;
 pub(crate) use club::FIELDS as CLUB_FIELDS;
 pub(crate) use club::CLUB_SUB_RECORDS;
@@ -40,7 +41,7 @@ pub static FM24: VersionedSchemas = VersionedSchemas {
     club_fields: CLUB_FIELDS,
     stadium_fields: STADIUM_FIELDS,
 
-    player_sub_records: &[],
+    player_sub_records: PLAYER_SUB_RECORDS,
     staff_sub_records: &[],
     club_sub_records: CLUB_SUB_RECORDS,
     stadium_sub_records: &[],

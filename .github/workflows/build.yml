@@ -1,0 +1,133 @@
+name: Build and package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            python: python3
+            executable: fm-editor
+            rustflags: ""
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            python: python
+            executable: fm-editor.exe
+            rustflags: -C target-feature=+crt-static
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+      RUSTFLAGS: ${{ matrix.rustflags }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Linux build and smoke-test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential pkg-config libssl-dev libdbus-1-dev \
+            libx11-dev libxi-dev libxcursor-dev libxrandr-dev \
+            libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libgl1-mesa-dev libegl1-mesa-dev \
+            xvfb xauth
+
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version --verbose
+          cargo --version
+
+      - name: Test packaging tools
+        run: ${{ matrix.python }} -m unittest discover -s Tools/tests -p 'test_*.py' -v
+
+      - name: Check all Rust targets
+        run: cargo check --locked --all-targets --target ${{ matrix.target }}
+
+      - name: Run Rust tests
+        run: cargo test --locked --target ${{ matrix.target }}
+
+      - name: Build release editor
+        run: cargo build --release --locked --bin fm-editor --target ${{ matrix.target }}
+
+      - name: Check Linux shared libraries
+        if: runner.os == 'Linux'
+        run: |
+          binary="target/${{ matrix.target }}/release/${{ matrix.executable }}"
+          ldd "$binary" > "$RUNNER_TEMP/runtime-libraries.txt"
+          cat "$RUNNER_TEMP/runtime-libraries.txt"
+          if grep -q 'not found' "$RUNNER_TEMP/runtime-libraries.txt"; then
+            echo 'The release executable has unresolved shared libraries.' >&2
+            exit 1
+          fi
+
+      - name: Smoke-test Linux release startup
+        if: runner.os == 'Linux'
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          unset WAYLAND_DISPLAY
+          xvfb-run -a python3 Tools/smoke-release.py \
+            --binary "target/${{ matrix.target }}/release/${{ matrix.executable }}"
+
+      - name: Prepare Windows software OpenGL smoke environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'mesa-26.2.4.7z'
+          $smoke = Join-Path $env:RUNNER_TEMP 'fm-editor-gl-smoke'
+          Invoke-WebRequest -Uri 'https://github.com/pal1000/mesa-dist-win/releases/download/26.2.4/mesa3d-26.2.4-release-msvc.7z' -OutFile $archive
+          $expected = '351fc8c8b695878ffb3eaa044b3ead08672a48b1a045e3c3e3975811df0f6695'
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) {
+            throw 'Mesa smoke-test dependency SHA-256 mismatch'
+          }
+          New-Item -ItemType Directory -Path $smoke | Out-Null
+          & 7z e $archive 'x64/opengl32.dll' 'x64/libgallium_wgl.dll' "-o$smoke" -y
+          if ($LASTEXITCODE -ne 0) { throw 'Could not extract software OpenGL libraries' }
+          Copy-Item 'target/${{ matrix.target }}/release/${{ matrix.executable }}' (Join-Path $smoke 'fm-editor.exe')
+
+      - name: Smoke-test Windows release startup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GALLIUM_DRIVER: llvmpipe
+          LIBGL_ALWAYS_SOFTWARE: "true"
+          WGL_DISABLE_ERROR_DIALOGS: "1"
+        run: |
+          python Tools/smoke-release.py --binary "$env:RUNNER_TEMP/fm-editor-gl-smoke/fm-editor.exe"
+
+      - name: Package editor and matching source
+        run: ${{ matrix.python }} Tools/package-release.py --target ${{ matrix.target }} --output-dir dist
+
+      - name: Upload test-build artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fm-editor-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14

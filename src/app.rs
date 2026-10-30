@@ -9,8 +9,8 @@ use eframe::egui;
 use crate::bridge::{BridgeCmd, BridgeResult, ClubView, EntityCounts, ProcessBridge, StaffView};
 use crate::cache::{CachedClub, CachedPlayer, CachedStaff, EntityCache};
 use crate::game_version::GameBuild;
-use crate::process::RunningGame;
 use crate::player::PlayerRecord;
+use crate::process::RunningGame;
 use crate::settings::{AppSettings, Scale, Theme, WagePeriod, theme_data_id};
 use crate::staff::StaffRecord;
 use crate::ui::navigation::{self, BrowserHistory};
@@ -123,6 +123,7 @@ pub struct FmEditorApp {
     bridge: ProcessBridge,
     conn: ConnState,
     attached_build: Option<GameBuild>,
+    window_branch: Option<String>,
     /// Games offered by the last `ChooseGame` (several `fm.exe` running and
     /// none chosen yet). Cleared once a game is attached.
     game_choices: Vec<RunningGame>,
@@ -204,6 +205,7 @@ impl FmEditorApp {
             bridge: ProcessBridge::new(),
             conn: ConnState::Disconnected,
             attached_build: None,
+            window_branch: None,
             game_choices: Vec::new(),
             auto_connect: true,
             last_ping: Instant::now(),
@@ -241,6 +243,12 @@ impl FmEditorApp {
             #[cfg(debug_assertions)]
             mcp_state: None,
         }
+    }
+
+    /// Keep the preview/worktree identity when the attached game changes the title.
+    pub fn with_branch(mut self, branch: Option<String>) -> Self {
+        self.window_branch = branch;
+        self
     }
 
     #[cfg(debug_assertions)]
@@ -462,8 +470,14 @@ impl FmEditorApp {
             .values_mut()
             .chain(self.selected_player.iter_mut())
         {
-            patch_player_buffer(&mut p.raw, p.addr, entry.addr, bytes,
-                p.build.schemas().player_person_offset, p.person_shift);
+            patch_player_buffer(
+                &mut p.raw,
+                p.addr,
+                entry.addr,
+                bytes,
+                p.build.schemas().player_person_offset,
+                p.person_shift,
+            );
             if let (Some(raw), Some(base)) = (&mut p.contract_raw, p.contract_addr) {
                 patch_buffer(raw, base, entry.addr, bytes);
             }
@@ -676,6 +690,10 @@ impl eframe::App for FmEditorApp {
         // Background housekeeping (runs before UI so results are fresh)
         self.process_results();
         self.handle_auto_connect();
+        let title = editor_title(self.attached_build, self.window_branch.as_deref());
+        if ctx.input(|i| i.viewport().title.as_deref() != Some(title.as_str())) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        }
         // Let the fm-debug MCP server follow the game this window shows when
         // several are running.
         #[cfg(debug_assertions)]
@@ -684,7 +702,8 @@ impl eframe::App for FmEditorApp {
                 ConnState::Ready(pid) | ConnState::WaitingForSave(pid) => pid,
                 ConnState::ReadOnly(_) | ConnState::Disconnected => 0,
             };
-            mcp.editor_pid.store(pid, std::sync::atomic::Ordering::Relaxed);
+            mcp.editor_pid
+                .store(pid, std::sync::atomic::Ordering::Relaxed);
         }
         self.handle_ping();
         ctx.request_repaint_after(Duration::from_secs(1));
@@ -853,9 +872,17 @@ impl eframe::App for FmEditorApp {
 
         // ===== Sidebar =====
         egui::SidePanel::left("sidebar")
-            .default_width(150.0)
+            .default_width(196.0)
+            .min_width(176.0)
             .show(ctx, |ui| {
-                ui.heading("FM Editor");
+                ui.add_space(8.0);
+                ui.heading(editor_title(self.attached_build, None));
+                ui.label(
+                    egui::RichText::new("YOUR SAVE · YOUR WORKSPACE")
+                        .small()
+                        .weak(),
+                );
+                ui.add_space(12.0);
 
                 // History + reload row — sits right under the title so
                 // Back / Forward / Reload are always the first thing the
@@ -909,115 +936,107 @@ impl eframe::App for FmEditorApp {
                 });
 
                 ui.separator();
-
-                // Connection status
-                match self.conn {
-                    ConnState::Ready(pid) => {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(76, 175, 80),
-                            format!("\u{25CF} {}", self.game_label(pid)),
-                        );
-                    }
-                    ConnState::WaitingForSave(pid) => {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(255, 193, 7),
-                            format!("\u{25CF} {} (no save)", self.game_label(pid)),
-                        );
-                    }
-                    ConnState::ReadOnly(_) => {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(255, 152, 0),
-                            "\u{25CF} Game not running",
-                        );
-                        if ui.button("Reconnect").clicked() {
-                            attach_requested = true;
-                        }
-                    }
-                    ConnState::Disconnected => {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(244, 67, 54),
-                            "\u{25CF} Disconnected",
-                        );
-                        if ui.button("Load Game").clicked() {
-                            attach_requested = true;
-                        }
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new("BROWSE").small().strong().weak());
+                for (page, label) in [
+                    (Page::PlayerSearch, "Players"),
+                    (Page::StaffSearch, "Staff"),
+                    (Page::ClubSearch, "Clubs"),
+                ] {
+                    let selected = self.active_page == page;
+                    if ui
+                        .add_sized(
+                            [ui.available_width(), 30.0],
+                            egui::Button::new(label).selected(selected).frame(selected),
+                        )
+                        .clicked()
+                    {
+                        self.active_page = page;
+                        nav_page_clicked = true;
                     }
                 }
-                // Several fm.exe running: one button per game. Shown while no
-                // game is attached (including read-only after a game exits).
-                if matches!(self.conn, ConnState::Disconnected | ConnState::ReadOnly(_))
-                    && !self.game_choices.is_empty()
-                {
-                    ui.label("Attach:");
-                    for game in &self.game_choices {
-                        if ui.button(game.to_string()).clicked() {
-                            attach_pid_requested = Some(game.pid);
-                        }
-                    }
-                }
-                ui.checkbox(&mut self.auto_connect, "Auto-connect");
-
-                // Reload Save button — available when connected + cache ready
-                if matches!(self.conn, ConnState::Ready(_))
-                    && self.cache_load_state == CacheLoadState::Ready
-                {
-                    if ui.button("\u{21BB} Reload Save").clicked() {
-                        reload_save_clicked = true;
-                    }
-                }
-
-                ui.separator();
-
-                // Undo
-                let undo_label = format!("Undo ({})", self.undo_stack.len());
-                let undo_hint = self
-                    .undo_stack
-                    .last()
-                    .map(|e| format!("Undo: {}", e.description))
-                    .unwrap_or_else(|| "No confirmed edits to undo".to_string());
+                ui.add_space(12.0);
+                ui.label(egui::RichText::new("MANAGEMENT").small().strong().weak());
+                let selected = self.active_page == Page::HumanManager;
                 if ui
-                    .add_enabled(
-                        self.conn.is_writable()
-                            && !self.writes.is_pending()
-                            && !self.undo_stack.is_empty(),
-                        egui::Button::new(undo_label),
+                    .add_sized(
+                        [ui.available_width(), 30.0],
+                        egui::Button::new("Human Manager")
+                            .selected(selected)
+                            .frame(selected),
                     )
-                    .on_hover_text(undo_hint)
                     .clicked()
                 {
-                    undo_requested = true;
+                    self.active_page = Page::HumanManager;
+                    nav_page_clicked = true;
                 }
-                if ui.button("Edit History").clicked() {
-                    self.show_history = !self.show_history;
-                }
+                ui.add_space(20.0);
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(
+                        egui::RichText::new("GAME CONNECTION")
+                            .small()
+                            .strong()
+                            .weak(),
+                    );
+                    ui.add_space(6.0);
 
-                ui.separator();
-                ui.strong("Navigate");
+                    // Connection status
+                    match self.conn {
+                        ConnState::Ready(_) => {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(76, 175, 80),
+                                "\u{25CF} Connected",
+                            );
+                        }
+                        ConnState::WaitingForSave(_) => {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 193, 7),
+                                "\u{25CF} Waiting for save",
+                            );
+                        }
+                        ConnState::ReadOnly(_) => {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(255, 152, 0),
+                                "\u{25CF} Game not running",
+                            );
+                            if ui.button("Reconnect").clicked() {
+                                attach_requested = true;
+                            }
+                        }
+                        ConnState::Disconnected => {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(244, 67, 54),
+                                "\u{25CF} Disconnected",
+                            );
+                            if ui.button("Load Game").clicked() {
+                                attach_requested = true;
+                            }
+                        }
+                    }
+                    // Several fm.exe running: one button per game. Shown while no
+                    // game is attached (including read-only after a game exits).
+                    if matches!(self.conn, ConnState::Disconnected | ConnState::ReadOnly(_))
+                        && !self.game_choices.is_empty()
+                    {
+                        ui.label("Attach:");
+                        for game in &self.game_choices {
+                            if ui.button(game.to_string()).clicked() {
+                                attach_pid_requested = Some(game.pid);
+                            }
+                        }
+                    }
+                    ui.checkbox(&mut self.auto_connect, "Auto-connect");
 
-                if ui
-                    .selectable_value(&mut self.active_page, Page::HumanManager, "Human Manager")
-                    .clicked()
-                {
-                    nav_page_clicked = true;
-                }
-                if ui
-                    .selectable_value(&mut self.active_page, Page::ClubSearch, "Club Search")
-                    .clicked()
-                {
-                    nav_page_clicked = true;
-                }
-                if ui
-                    .selectable_value(&mut self.active_page, Page::PlayerSearch, "Player Search")
-                    .clicked()
-                {
-                    nav_page_clicked = true;
-                }
-                if ui
-                    .selectable_value(&mut self.active_page, Page::StaffSearch, "Staff Search")
-                    .clicked()
-                {
-                    nav_page_clicked = true;
-                }
+                    // Reload Save button — available when connected + cache ready
+                    if matches!(self.conn, ConnState::Ready(_))
+                        && self.cache_load_state == CacheLoadState::Ready
+                    {
+                        if ui.button("\u{21BB} Reload Save").clicked() {
+                            reload_save_clicked = true;
+                        }
+                    }
+                });
             });
 
         // ===== Status Bar =====
@@ -1124,6 +1143,20 @@ impl eframe::App for FmEditorApp {
                     ui.label("Editing live — changes apply immediately. Ctrl+Z to undo.");
                 } else {
                     ui.label("Read-only — editing is disabled until a game and save are connected.");
+                }
+                ui.separator();
+                let undo_label = format!("Undo ({})", self.undo_stack.len());
+                let undo_hint = self.undo_stack.last()
+                    .map(|e| format!("Undo: {}", e.description))
+                    .unwrap_or_else(|| "No confirmed edits to undo".to_string());
+                if ui.add_enabled(
+                    self.conn.is_writable() && !self.writes.is_pending() && !self.undo_stack.is_empty(),
+                    egui::Button::new(undo_label),
+                ).on_hover_text(undo_hint).clicked() {
+                    undo_requested = true;
+                }
+                if ui.button("Change history").clicked() {
+                    self.show_history = !self.show_history;
                 }
             });
             if let Some(error) = self.write_error.clone() {
@@ -1640,13 +1673,23 @@ fn patch_buffer(raw: &mut [u8], base: u64, addr: u64, bytes: &[u8]) {
     }
 }
 
-fn patch_player_buffer(raw: &mut [u8], base: u64, addr: u64, bytes: &[u8], person: usize, shift: usize) {
+fn patch_player_buffer(
+    raw: &mut [u8],
+    base: u64,
+    addr: u64,
+    bytes: &[u8],
+    person: usize,
+    shift: usize,
+) {
     if shift == 0 {
         patch_buffer(raw, base, addr, bytes);
     } else if person <= raw.len() {
         let (prefix, person_raw) = raw.split_at_mut(person);
         patch_buffer(prefix, base, addr, bytes);
-        if let Some(person_base) = base.checked_add(person as u64).and_then(|p| p.checked_add(shift as u64)) {
+        if let Some(person_base) = base
+            .checked_add(person as u64)
+            .and_then(|p| p.checked_add(shift as u64))
+        {
             patch_buffer(person_raw, person_base, addr, bytes);
         }
     }
@@ -1714,5 +1757,37 @@ fn cached_staff_view(cached: &CachedStaff, build: GameBuild) -> StaffView {
         birthplace: None,
         contract_raw: None,
         contract_addr: None,
+    }
+}
+
+fn editor_title(build: Option<GameBuild>, branch: Option<&str>) -> String {
+    let base = build.map_or_else(
+        || "FM Editor".to_string(),
+        |v| format!("{} Editor", v.display_name()),
+    );
+    match branch.filter(|b| !b.is_empty()) {
+        Some(branch) => format!("{base} [{branch}]"),
+        None => base,
+    }
+}
+
+#[cfg(test)]
+mod title_tests {
+    use super::*;
+
+    #[test]
+    fn attached_version_and_worktree_are_both_visible() {
+        assert_eq!(editor_title(None, None), "FM Editor");
+        for version in GameBuild::ALL {
+            assert_eq!(
+                editor_title(Some(version), None),
+                format!("{} Editor", version.display_name())
+            );
+            assert_eq!(
+                editor_title(Some(version), Some("preview")),
+                format!("{} Editor [preview]", version.display_name())
+            );
+        }
+        assert_eq!(editor_title(None, Some("preview")), "FM Editor [preview]");
     }
 }

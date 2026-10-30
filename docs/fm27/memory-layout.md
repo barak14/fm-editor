@@ -106,6 +106,13 @@ their identity block at +0x340, including the name sub-records at
 nameless ID-0 staff until the staff reader patched the shift back for this
 class (`human_manager_vtable_rva`).
 
+The Steam profile entry is not a person in the game world: its DOB is FM's
+empty date (1 Jan 1900; the manager's is 1980), and its nation (+0x4A8),
+birth city (+0x4C0), contract (+0x4E8) and name FmString (+0x480) pointers are
+null where the manager's are set (compared 2026-10-30). The staff list leaves
+out any human-manager-class entry with an empty DOB
+(`staff::is_account_placeholder`).
+
 At +0x350 the same slots read zeros and unrelated data. The role sub-record
 pointer (0x1D0 + shift) is unverified: it reads an unaligned value
 (0x263009D03), as does a normal staff member's 0x1D0.
@@ -213,7 +220,7 @@ player base + 0x288, staff base + 0x100.
 | Field | Location | Values |
 |-------|----------|--------|
 | Contract pointer | +0x1A8 (manager +0x1A8+0x340); contract+0x08 → person | all five; Guardiola, Slot, Ancelotti have none |
-| Job code | contract+0x26 | 16 Head Coach for all five |
+| Job code | contract+0x26 | 16 for all five; FM27 titles the job "Manager" (the user's profile, 2026-10-30) |
 | Employer | contract+0x10 → team → +0x30 club | Arsenal / Barcelona / Chelsea / Manchester City / Tottenham Hotspur |
 | Wage (i32 £/week) | contract+0x20 | 375,000 / 99,218 / 210,000 / 150,000 / 120,000 |
 | Expiry | contract+0x48 | 2030 / 2028 / 2030 / 2029 / 2028 |

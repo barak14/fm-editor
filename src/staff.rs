@@ -156,6 +156,19 @@ pub fn identity_shift(fm: &FmProcess, addr: u64) -> usize {
     }
 }
 
+/// True for the staff entry FM creates for the player's platform account
+/// (FM27 on Steam: "(<account name>)", no club, CA/PA 100/200). It is an
+/// object of the human-manager class, like the real human manager, but it
+/// is not a person in the game world: it has no date of birth (FM's empty
+/// date, year 1900), no nationality and no contract. The real human manager
+/// always has a date of birth, so the empty date is what tells them apart.
+///
+/// `identity_shift` is the record's shift (non-zero only for the
+/// human-manager class); `dob_year` is the year of its schema `s_dob`.
+pub fn is_account_placeholder(identity_shift: usize, dob_year: u16) -> bool {
+    identity_shift != 0 && (dob_year == 0 || dob_year == 1900)
+}
+
 /// Read a staff struct in schema layout, plus its identity shift.
 pub fn read_staff_raw(fm: &FmProcess, addr: u64) -> Result<(Vec<u8>, usize), String> {
     let shift = identity_shift(fm, addr);
@@ -223,7 +236,7 @@ pub fn job_name(code: u8) -> Option<&'static str> {
         6 => "Director",
         12 => "Physio",
         14 => "Scout",
-        16 => "Head Coach",
+        16 => "Manager",
         20 => "Assistant Coach",
         22 => "Set Piece Coach",
         26 => "Fitness Coach",
@@ -245,6 +258,16 @@ pub fn job_name(code: u8) -> Option<&'static str> {
 mod tests {
     use super::*;
     use crate::game_version::GameBuild;
+
+    #[test]
+    fn account_placeholder_is_a_human_manager_class_entry_without_birth_date() {
+        // FM27 witnesses: the Steam profile entry (DOB 1 Jan 1900) and the
+        // human manager (DOB in 1980), both with the 0x340 identity shift.
+        assert!(is_account_placeholder(0x340, 1900));
+        assert!(!is_account_placeholder(0x340, 1980));
+        // Ordinary staff are never placeholders, whatever their date.
+        assert!(!is_account_placeholder(0, 1900));
+    }
 
     #[test]
     fn records_decode_with_their_own_build() {

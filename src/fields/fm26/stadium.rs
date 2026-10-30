@@ -13,8 +13,7 @@
 //!
 //! Re-mapped against the 2026-10 FM26 patch. Witnesses: Allianz-Arena,
 //! Tottenham Hotspur Stadium, Etihad Stadium, Santiago Bernabéu, Wembley,
-//! Melbourne Cricket Ground, Michigan Stadium (`witnesses/stadiums.md`,
-//! `witnesses/bayern_915.txt`, `witnesses/spurs_728.txt`).
+//! Melbourne Cricket Ground, Michigan Stadium.
 
 use crate::fields::{fm_string, pointer, raw, raw_u32, Field};
 use crate::fields::Category::*;

@@ -12,8 +12,7 @@
 //!
 //! Re-mapped against the 2026-10 FM26 patch. Witnesses: Allianz-Arena,
 //! Tottenham Hotspur Stadium, Etihad Stadium, Santiago Bernabéu, Wembley,
-//! Melbourne Cricket Ground, Michigan Stadium (`witnesses/stadiums.md`,
-//! `witnesses/bayern_915.txt`, `witnesses/spurs_728.txt`).
+//! Melbourne Cricket Ground, Michigan Stadium.
 //!
 //! UNVERIFIED: copied from the FM26 schema as the FM27 starting point.
 //! Every offset below must be re-verified against FM27 witnesses.

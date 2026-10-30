@@ -63,6 +63,8 @@ pub struct PlayerSearchState {
     /// Bitmask of selected positions; bit layout matches POSITION_OFFSETS.
     /// 0 = no position filter (show all).
     pub positions: u16,
+    /// Inclusive familiarity minimum per position (1..=20), active only when selected.
+    pub position_minimums: [u8; 15],
     // --- Sort state ---
     pub sort_col: SortColumn,
     pub sort_dir: SortDir,
@@ -79,6 +81,7 @@ impl Default for PlayerSearchState {
             ca_max: String::new(),
             pa_max: String::new(),
             positions: 0,
+            position_minimums: [2; 15],
             sort_col: SortColumn::Pa,
             sort_dir: SortDir::Desc,
         }
@@ -95,6 +98,7 @@ impl PlayerSearchState {
         self.age_min.clear();
         self.age_max.clear();
         self.positions = 0;
+        self.position_minimums = [2; 15];
     }
 
     pub fn clear_filters(&mut self) {
@@ -125,6 +129,14 @@ impl PlayerSearchState {
             };
             if matches!((lo, hi), (Some(lo), Some(hi)) if lo > hi) {
                 return Some(format!("{label}: minimum must not exceed maximum."));
+            }
+        }
+        for (bit, &(_, label)) in POSITION_OFFSETS.iter().enumerate() {
+            if self.positions & (1 << bit) != 0 && !(1..=20).contains(&self.position_minimums[bit])
+            {
+                return Some(format!(
+                    "{label}: minimum familiarity must be from 1 to 20."
+                ));
             }
         }
         None
@@ -214,8 +226,8 @@ pub fn filter<'a>(
             } else if age_min.is_some() || age_max.is_some() {
                 return false;
             }
-            // Position filter: player must have familiarity > 1 in at least one
-            // selected position (OR semantics). Familiarity 1 = "none".
+            // Selected positions combine with OR; only valid, mapped familiarity
+            // values can match, including when the inclusive minimum is 1.
             if state.positions != 0 {
                 let any_match = POSITION_OFFSETS.iter().enumerate().any(|(bit, &(key, _))| {
                     if state.positions & (1u16 << bit) == 0 {
@@ -224,8 +236,9 @@ pub fn filter<'a>(
                     schemas
                         .offset_of(key)
                         .and_then(|o| p.raw.get(o).copied())
-                        .unwrap_or(1)
-                        > 1
+                        .is_some_and(|value| {
+                            (1..=20).contains(&value) && value >= state.position_minimums[bit]
+                        })
                 });
                 if !any_match {
                     return false;
@@ -697,5 +710,98 @@ mod search_tests {
             )
             .is_empty()
         );
+    }
+}
+
+#[cfg(test)]
+mod position_tests {
+    use super::*;
+
+    fn witness(values: &[(usize, u8)]) -> CachedPlayer {
+        let schemas = crate::game_version::GameBuild::Fm26Steam.schemas();
+        let mut raw = vec![0; schemas.player_struct_size];
+        for &(bit, value) in values {
+            raw[schemas.offset_of(POSITION_OFFSETS[bit].0).unwrap()] = value;
+        }
+        CachedPlayer {
+            addr: 1,
+            index: 0,
+            name: "Witness".into(),
+            uid: 1,
+            ca: 100,
+            pa: 150,
+            dob_year: 2000,
+            raw,
+            person_shift: 0,
+            nation_id: None,
+            club_id: None,
+            value: None,
+        }
+    }
+
+    #[test]
+    fn inclusive_per_position_minima_and_or_semantics() {
+        let schemas = crate::game_version::GameBuild::Fm26Steam.schemas();
+        let cache = [witness(&[(0, 1), (1, 20)]), witness(&[(0, 10), (1, 19)])];
+        let mut state = PlayerSearchState::default();
+        assert_eq!(state.position_minimums, [2; 15]);
+        assert_eq!(filter(schemas, &cache, &state).len(), 2);
+        state.position_minimums = [20; 15];
+        assert_eq!(filter(schemas, &cache, &state).len(), 2);
+        assert_eq!(advanced_filter_count(&state), 0);
+        state.position_minimums = [2; 15];
+        state.positions = 1;
+        assert_eq!(filter(schemas, &cache, &state).len(), 1);
+        state.position_minimums[0] = 1;
+        assert_eq!(filter(schemas, &cache, &state).len(), 2);
+        state.position_minimums[0] = 11;
+        assert!(filter(schemas, &cache, &state).is_empty());
+        state.positions |= 1 << 1;
+        state.position_minimums[1] = 20;
+        let matches = filter(schemas, &cache, &state);
+        assert_eq!(matches.len(), 1);
+        assert!(std::ptr::eq(matches[0], &cache[0]));
+    }
+
+    #[test]
+    fn missing_unmapped_and_corrupt_familiarity_never_match() {
+        let schemas = crate::game_version::GameBuild::Fm26Steam.schemas();
+        let mut state = PlayerSearchState::default();
+        state.positions = 1;
+        state.position_minimums[0] = 1;
+        for value in [0, 21, 255] {
+            assert!(filter(schemas, &[witness(&[(0, value)])], &state).is_empty());
+        }
+        let mut missing = witness(&[(0, 20)]);
+        missing.raw.clear();
+        assert!(filter(schemas, &[missing], &state).is_empty());
+        static UNMAPPED: crate::fields::VersionedSchemas = crate::fields::VersionedSchemas {
+            player_fields: &[],
+            ..crate::fields::fm26::FM26
+        };
+        assert!(filter(&UNMAPPED, &[witness(&[(0, 20)])], &state).is_empty());
+    }
+
+    #[test]
+    fn selected_minima_validate_and_reset_and_cancel_restores_snapshot() {
+        let mut state = PlayerSearchState::default();
+        state.positions = 1 << 14;
+        state.position_minimums[14] = 20;
+        let snapshot = state.clone();
+        for invalid in [0, 21, 255] {
+            state.position_minimums[14] = invalid;
+            assert!(state.validation_error().is_some());
+        }
+        state.positions = 0;
+        assert!(state.validation_error().is_none());
+        state = snapshot.clone(); // Same complete-state restoration used by Cancel.
+        assert_eq!(state.positions, 1 << 14);
+        assert_eq!(state.position_minimums[14], 20);
+        state.clear_advanced();
+        assert_eq!(state.positions, 0);
+        assert_eq!(state.position_minimums, [2; 15]);
+        state.position_minimums = [20; 15];
+        state.clear_filters();
+        assert_eq!(state.position_minimums, [2; 15]);
     }
 }

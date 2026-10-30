@@ -120,7 +120,13 @@ fn show_overview(
             ui.strong("Identity");
             edits.extend(field_widget::dob_edit(ui, &mut player.raw, &p_dob, addr));
             if let Some(f) = schemas.field("p_height") {
-                edits.extend(field_widget::raw_u16_edit(ui, &f, &mut player.raw, 250, addr));
+                edits.extend(field_widget::raw_u16_edit(
+                    ui,
+                    &f,
+                    &mut player.raw,
+                    250,
+                    addr,
+                ));
             }
             if let Some(birthplace) = &player.birthplace {
                 field_widget::info_label(ui, "Place of Birth", birthplace);
@@ -134,12 +140,27 @@ fn show_overview(
                 ui.strong("Appearance");
                 if let Some(f) = schemas.field("p_ethnicity") {
                     edits.extend(field_widget::choice_u8_edit(
-                        ui, "Ethnicity", &mut player.raw, &f, addr, ETHNICITIES,
+                        ui,
+                        "Ethnicity",
+                        &mut player.raw,
+                        &f,
+                        addr,
+                        ETHNICITIES,
                     ));
                 }
-                for (key, max) in [("p_skin_tone", 19), ("p_hair_colour", 18), ("p_hair_length", 6)] {
+                for (key, max) in [
+                    ("p_skin_tone", 19),
+                    ("p_hair_colour", 18),
+                    ("p_hair_length", 6),
+                ] {
                     if let Some(f) = schemas.field(key) {
-                        edits.extend(field_widget::raw_u8_edit(ui, &f, &mut player.raw, max, addr));
+                        edits.extend(field_widget::raw_u8_edit(
+                            ui,
+                            &f,
+                            &mut player.raw,
+                            max,
+                            addr,
+                        ));
                     }
                 }
             });
@@ -191,14 +212,14 @@ fn show_overview(
                 field_widget::info_label(ui, "Snr Apps", apps);
             }
             if let (Some(caps), Some(goals)) = (
-                player.field_u16("p_intl_caps"),
-                player.field_u16("p_intl_goals"),
+                player.field_int("p_intl_caps"),
+                player.field_int("p_intl_goals"),
             ) {
                 field_widget::info_label(ui, "Intl Caps / Goals", format!("{caps} / {goals}"));
             }
             if let (Some(caps), Some(goals)) = (
-                player.field_u8("p_u21_caps"),
-                player.field_u8("p_u21_goals"),
+                player.field_int("p_u21_caps"),
+                player.field_int("p_u21_goals"),
             ) {
                 field_widget::info_label(ui, "U21 Caps / Goals", format!("{caps} / {goals}"));
             }
@@ -341,8 +362,8 @@ fn show_positions_traits(
 ///   row 2: ML  MC  MR
 ///   row 3: WBL DM  WBR
 ///   row 4: DL  DC  DR
-///   row 5: .   GK  .
-/// SW is shown on its own below (not part of the pitch grid).
+///   row 5: .   SW  .
+///   row 6: .   GK  .
 fn show_positions_formation(
     schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
@@ -357,6 +378,7 @@ fn show_positions_formation(
         (Some("pos_ml"), Some("pos_mc"), Some("pos_mr")),
         (Some("pos_wbl"), Some("pos_dm"), Some("pos_wbr")),
         (Some("pos_dl"), Some("pos_dc"), Some("pos_dr")),
+        (None, Some("pos_sw"), None),
         (None, Some("pos_gk"), None),
     ];
 
@@ -372,17 +394,6 @@ fn show_positions_formation(
                 ui.end_row();
             }
         });
-
-    // SW doesn't fit into the pitch layout above — render it on its own row.
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        ui.label("Sweeper:");
-        if let Some(f) = schemas.field("pos_sw") {
-            if let Some(edit) = field_widget::attr_edit(ui, &f, &mut player.raw, addr) {
-                edits.push(edit);
-            }
-        }
-    });
 }
 
 fn pos_cell(
@@ -403,7 +414,7 @@ fn pos_cell(
         }
         None => {
             // Empty cell — reserve space so the grid stays aligned.
-            ui.allocate_space(egui::vec2(44.0, 38.0));
+            ui.allocate_space(egui::vec2(56.0, 38.0));
         }
     }
 }
@@ -536,25 +547,51 @@ fn show_contract(
             edits.extend(field_widget::raw_u32_edit(ui, &f, cr, caddr));
         }
         if let Some(f) = schemas.field("p_contract_expiry") {
-            edits.extend(field_widget::date_edit(ui, "Expiry", cr, &f, caddr, 2000..=2060));
+            edits.extend(field_widget::date_edit(
+                ui,
+                "Expiry",
+                cr,
+                &f,
+                caddr,
+                2000..=2060,
+            ));
         }
         if let Some(f) = schemas.field("p_squad_status") {
-            let code = schemas.offset_of("p_squad_status").and_then(|o| cr.get(o).copied());
+            let code = schemas
+                .offset_of("p_squad_status")
+                .and_then(|o| cr.get(o).copied());
             match code {
                 // FM's own statuses (Out On Loan, ...) are shown, not offered.
                 Some(c) if !SQUAD_STATUS_OFFERED.iter().any(|(o, _)| *o == c) => {
-                    let name = squad_status_name(c).map_or(format!("code {c}"), |n| format!("{n} ({c})"));
+                    let name =
+                        squad_status_name(c).map_or(format!("code {c}"), |n| format!("{n} ({c})"));
                     field_widget::info_label(ui, "Squad Status", name);
                 }
                 _ => edits.extend(field_widget::choice_u8_edit(
-                    ui, "Squad Status", cr, &f, caddr, SQUAD_STATUS_OFFERED,
+                    ui,
+                    "Squad Status",
+                    cr,
+                    &f,
+                    caddr,
+                    SQUAD_STATUS_OFFERED,
                 )),
             }
         }
         if let Some(f) = schemas.field("p_squad_number") {
-            edits.extend(field_widget::optional_u8_edit(ui, "Squad Number", cr, &f, caddr, 99, 255));
+            edits.extend(field_widget::optional_u8_edit(
+                ui,
+                "Squad Number",
+                cr,
+                &f,
+                caddr,
+                99,
+                255,
+            ));
         }
-        if let Some(flags) = schemas.offset_of("p_list_flags").and_then(|o| cr.get(o).copied()) {
+        if let Some(flags) = schemas
+            .offset_of("p_list_flags")
+            .and_then(|o| cr.get(o).copied())
+        {
             let status = match (flags & 1 != 0, flags & 2 != 0) {
                 (true, true) => "Transfer and loan listed",
                 (true, false) => "Transfer listed",
@@ -563,7 +600,10 @@ fn show_contract(
             };
             field_widget::info_label(ui, "Listing (read-only)", status);
         }
-        if let Some(s) = schemas.offset_of("p_contract_signed").and_then(|o| fmt_date_at(cr, o)) {
+        if let Some(s) = schemas
+            .offset_of("p_contract_signed")
+            .and_then(|o| fmt_date_at(cr, o))
+        {
             field_widget::info_label(ui, "Signed", s);
         }
     } else {
@@ -571,7 +611,13 @@ fn show_contract(
     }
     if let Some(f) = schemas.field("p_asking_price") {
         let addr = player.addr;
-        edits.extend(field_widget::optional_money_edit(ui, "Asking Price", &mut player.raw, &f, addr));
+        edits.extend(field_widget::optional_money_edit(
+            ui,
+            "Asking Price",
+            &mut player.raw,
+            &f,
+            addr,
+        ));
     }
 
     ui.add_space(4.0);
@@ -596,19 +642,39 @@ fn show_contract(
 /// 24 (Out On Loan) are FM's own and not offered. A stored code outside
 /// this list is shown read-only.
 const SQUAD_STATUS_OFFERED: &[(u8, &str)] = &[
-    (1, "Star Player"), (2, "Important Player"), (3, "Regular Starter"), (4, "Squad Player"),
-    (5, "Impact Sub"), (7, "Fringe Player"), (9, "Emergency Backup"),
-    (10, "Breakthrough Prospect"), (11, "Future Prospect"), (12, "Hot Prospect"),
-    (13, "Youngster"), (14, "Regular"), (15, "First-Choice Goalkeeper"), (16, "Cup Goalkeeper"),
-    (17, "Domestic Cup Goalkeeper"), (18, "Continental Cup Goalkeeper"), (20, "Backup"),
+    (1, "Star Player"),
+    (2, "Important Player"),
+    (3, "Regular Starter"),
+    (4, "Squad Player"),
+    (5, "Impact Sub"),
+    (7, "Fringe Player"),
+    (9, "Emergency Backup"),
+    (10, "Breakthrough Prospect"),
+    (11, "Future Prospect"),
+    (12, "Hot Prospect"),
+    (13, "Youngster"),
+    (14, "Regular"),
+    (15, "First-Choice Goalkeeper"),
+    (16, "Cup Goalkeeper"),
+    (17, "Domestic Cup Goalkeeper"),
+    (18, "Continental Cup Goalkeeper"),
+    (20, "Backup"),
     (22, "Surplus to Requirements"),
 ];
 
 /// FM's ethnicity codes (`p_ethnicity`).
 const ETHNICITIES: &[(u8, &str)] = &[
-    (0, "Northern European"), (1, "Mediterranean/Hispanic"), (2, "North African/Middle Eastern"),
-    (3, "African/Caribbean"), (4, "Asian"), (5, "South East Asian"), (6, "Pacific Islander"),
-    (7, "Native American"), (8, "Native Australian"), (9, "Mixed Race"), (10, "East Asian"),
+    (0, "Northern European"),
+    (1, "Mediterranean/Hispanic"),
+    (2, "North African/Middle Eastern"),
+    (3, "African/Caribbean"),
+    (4, "Asian"),
+    (5, "South East Asian"),
+    (6, "Pacific Islander"),
+    (7, "Native American"),
+    (8, "Native Australian"),
+    (9, "Mixed Race"),
+    (10, "East Asian"),
 ];
 
 /// FM's label for a squad-status code (contract "agreed playing time").
@@ -698,6 +764,115 @@ mod tests {
             encoding: fields::Encoding::Raw,
         })
     }
+    #[test]
+    fn formation_stays_compact_and_rendering_preserves_values() {
+        fn text_centers(
+            shape: &egui::Shape,
+            centers: &mut std::collections::HashMap<String, egui::Pos2>,
+        ) {
+            match shape {
+                egui::Shape::Text(text) => {
+                    centers.insert(
+                        text.galley.text().to_owned(),
+                        text.pos + text.galley.size() * 0.5,
+                    );
+                }
+                egui::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        text_centers(shape, centers);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let build = crate::game_version::GameBuild::Fm26Steam;
+        let schemas = build.schemas();
+        for invalid_right_cell in [false, true] {
+            for width in [1200.0, 280.0] {
+                let ctx = egui::Context::default();
+                crate::ui::navigation::set_editing_enabled(&ctx, true);
+                let mut player = PlayerRecord {
+                    build,
+                    addr: 0x20000,
+                    index: 0,
+                    name: None,
+                    raw: vec![0; 1024],
+                    person_shift: 0,
+                    contract_raw: None,
+                    contract_addr: None,
+                    club_name: None,
+                    club_addr: None,
+                    nationality: None,
+                    birthplace: None,
+                };
+                for field in schemas.fields_for_category(Entity::Player, Category::Positions) {
+                    let loc = field.offset.as_ref().unwrap();
+                    player.raw[loc.offset() as usize] = loc.encode_u8(10);
+                }
+                if invalid_right_cell {
+                    let loc = schemas.field("pos_amr").unwrap().offset.unwrap();
+                    player.raw[loc.offset() as usize] = 255;
+                }
+                let original = player.raw.clone();
+                let mut centers = std::collections::HashMap::new();
+                // Grid column sizes are retained across frames; check both the
+                // first layout and subsequent layouts with cached geometry.
+                for _ in 0..3 {
+                    let mut edits = Vec::new();
+                    let output = ctx.run(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(width, 700.0),
+                            )),
+                            ..Default::default()
+                        },
+                        |ctx| {
+                            egui::CentralPanel::default().show(ctx, |ui| {
+                                show_positions_formation(
+                                    schemas,
+                                    ui,
+                                    &mut player,
+                                    0x20000,
+                                    &mut edits,
+                                );
+                            });
+                        },
+                    );
+                    assert!(edits.is_empty());
+                    assert_eq!(player.raw, original);
+                    centers.clear();
+                    for shape in &output.shapes {
+                        text_centers(&shape.shape, &mut centers);
+                    }
+                    let aml = centers["AML"];
+                    let amc = centers["AMC"];
+                    let amr = centers["AMR"];
+                    // Text origins are pixel-rounded independently, so their
+                    // painted centers can differ by one pixel.
+                    let close = |a: f32, b: f32| assert!((a - b).abs() <= 1.0, "{a} != {b}");
+                    close(amc.x - aml.x, 70.0);
+                    close(amr.x - amc.x, 70.0);
+                    close(aml.y, amc.y);
+                    close(amc.y, amr.y);
+                    assert!(aml.x < 50.0, "formation must stay near the left edge");
+                    assert!(amr.x < 200.0, "formation must not stretch to page width");
+                    let dc = centers["DC"];
+                    let sw = centers["SW"];
+                    let gk = centers["GK"];
+                    close(sw.x, dc.x);
+                    close(sw.x, gk.x);
+                    assert!(dc.y < sw.y && sw.y < gk.y);
+                    assert!(!centers.contains_key("Sweeper:"));
+                    if invalid_right_cell {
+                        close(centers["r255"].x, amr.x);
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn traits_require_mapping_and_complete_buffer() {
         assert_eq!(trait_value(&[0; 16], None), None);

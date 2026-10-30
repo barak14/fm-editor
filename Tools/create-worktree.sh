@@ -54,13 +54,9 @@ fi
 
 echo "=== Creating worktree: $NAME ==="
 
-# Prune stale git worktree refs and remove orphaned directories under
-# .claude/worktrees/ that git no longer tracks. The path comparison MUST
-# strip the trailing slash from the globbed dir and use grep -xF against
-# the exact "worktree <path>" line — using a substring match here is
-# buggy because the glob adds a trailing slash that the porcelain output
-# doesn't have, so every existing worktree looks orphaned and gets
-# rm -rf'd. (ChampMan hit this bug in their original implementation.)
+# Prune stale Git metadata only. Unregistered directories may contain valuable
+# local work, so report them without changing their contents. Compare exact
+# porcelain paths (with the glob's trailing slash removed).
 git -C "$PROJECT_PATH" worktree prune 2>/dev/null || true
 if [ -d "$PROJECT_PATH/.claude/worktrees" ]; then
   registered="$(git -C "$PROJECT_PATH" worktree list --porcelain 2>/dev/null || true)"
@@ -68,8 +64,7 @@ if [ -d "$PROJECT_PATH/.claude/worktrees" ]; then
     [ -d "$dir" ] || continue
     if ! printf '%s\n' "$registered" | grep -qxF "worktree ${dir%/}"; then
       orphan=$(basename "$dir")
-      echo "Removing orphaned worktree directory: $orphan"
-      rm -rf "$dir"
+      echo "WARN: skipping unregistered worktree directory: $orphan ($dir)" >&2
     fi
   done
 fi

@@ -4,6 +4,10 @@
 
 Player, Staff, Human Manager and Club detail views share a persistent name/identity header. Player and staff headers show age and the club/nation information available in the attached game's schema. Unknown information is labelled explicitly rather than guessed.
 
+The left sidebar groups **Players**, **Staff** and **Clubs** under Browse, with **Human Manager** under Management. Connection controls have their own Game Connection block. Back/Forward/Reload remain at the top; **Undo** and **Change history** are in the editing toolbar above the main workspace, not among navigation destinations. Profile identity summaries and attribute groups use bordered sections.
+
+When a game's version is known, the window title and sidebar heading identify it (for example, **FM27 Editor**); worktree titles retain their branch suffix. The connection block shows Connected/Waiting for save rather than repeating version and PID. The status bar retains attached-game details.
+
 - Click a blue club name to open its club details. Where a club address is resolved through an existing schema chain, it must match an entry in the loaded club cache. Without an address, only a unique cached name is navigable. Full and short club names can differ; address-based links do not depend on their spelling.
 - Click a club's ground name to open its **Stadium (read-only)** tab. This is the existing ground information associated with that club, not a separate searchable ground entity.
 - **Back** and **Forward** follow one browser-style history across entity types and search pages. Search filters are retained when following related links.
@@ -22,8 +26,10 @@ Every search starts with **Name/UID**, followed by its supported filters and **R
 - Click supported column headings to sort. Unknown ages remain last in either direction.
 - When a text field or advanced search does not have keyboard focus, use Up/Down to select a result and Enter to open it. The selected/last-opened row is highlighted.
 - Player **Advanced** exposes only implemented filters. **Clear All** clears the fields shown there; Cancel restores the state from before the dialog opened.
+- Position filters use explicit checkboxes and an editable **minimum familiarity (1–20)** per position. A player must meet at least one selected position's minimum (OR); no selected positions means no position restriction. Defaults are 2, preserving the previous “greater than 1” filter. Unmapped/missing or invalid familiarity values never match a selected position. No colour cycling is required.
+- Advanced Search is resizable and its inputs scroll independently of Clear All/Cancel/OK. Sweeper is included with the other positions; scroll to reach lower options in short windows.
 
-Blank placeholder columns and non-functional filters/buttons have been removed. Column widths remain fixed in this pass; resizable/customizable tables are separate follow-up work.
+Column widths are currently fixed; resizable/customizable tables are separate follow-up work.
 
 ## Editing and undo
 
@@ -31,6 +37,7 @@ The banner distinguishes **Editing live**, **Applying changes**, and **Read-only
 
 - Changes apply immediately to game memory. There is no separate Save action.
 - Numeric fields can be clicked to type exact values, or dragged where supported.
+- Date rows also offer **Calendar**: browse months, type a year or use year controls, then choose a day. The current date is marked with brackets as well as styling. Browsing or cancelling does not write anything; choosing a day uses the same live editing and undo path as direct entry. Calendar controls are unavailable in read-only mode.
 - Editing is disabled while disconnected/read-only or awaiting write acknowledgements. Tabs and relationship navigation remain usable.
 - **Undo** (Ctrl+Z when not editing text) applies to confirmed writes only. Its tooltip names the next entity/field change.
 - Failed writes produce a persistent, dismissible error, restore the unsuccessful edit's local bytes, and refresh the active view when connected. Failed undo remains available to retry.
@@ -39,14 +46,6 @@ The banner distinguishes **Editing live**, **Applying changes**, and **Read-only
 
 Read-only sections/tabs are labelled. Attributes use four columns on wide views and two or one on narrower views; labels use proportional text and numeric hit targets are consistent.
 
-## Verification of this pass
+Shared profile field rows, including reputation, use a fixed-width, left-aligned label column so value boxes line up regardless of label length. Long labels truncate with their full text available on hover. Compact CA/PA pairs, position cells and date controls retain their specialized layouts.
 
-Verified on Linux against the running FM27 save:
-
-- `cargo check` and `cargo test`: 39 library tests passed, plus binary/doc-test targets.
-- `Tools/build-and-launch.sh` startup/survival gate.
-- Private headless Wayland screenshots and real pointer/keyboard input: Human Manager -> Tottenham Hotspur -> Stadium -> Back; Harry Kane -> Bayern -> Back, with the player search retained.
-- Four-column desktop and two-column narrow player layouts.
-- Human manager CA: 146 -> 147 -> Undo -> 146, confirmed in the displayed editor and with `read_entity_fields` against live game memory; PA stayed 200. The original value was restored.
-
-No memory offsets or encodings were changed. FM24/FM26 layouts, actual process-loss UI transitions and visual refresh inside the game's own window were not live-tested in this pass; do not treat this as verification of inherited field mappings.
+The player **Positions & Traits** formation uses a compact, left-aligned grid with equally spaced left/centre/right columns. Sweeper is in the centre column below DC and above GK, using the same compact label/value cell as the other positions.

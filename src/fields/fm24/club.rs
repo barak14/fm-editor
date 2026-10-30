@@ -18,7 +18,7 @@ use crate::fields::Entity::Club;
 /// Sub-records reachable from the club base pointer. Parents before children.
 pub(crate) const CLUB_SUB_RECORDS: &[SubRecord] = &[
     SubRecord { id: "info",         parent: SubRecordParent::Direct,            ptr_offset: 0x100, size: 0x138 },
-    SubRecord { id: "finance",      parent: SubRecordParent::Direct,            ptr_offset: 0x150, size: 0x50  },
+    SubRecord { id: "finance",      parent: SubRecordParent::Direct,            ptr_offset: 0x150, size: 0x820 },
     SubRecord { id: "budget",       parent: SubRecordParent::In("finance"),     ptr_offset: 0x48,  size: 0x20  },
     SubRecord { id: "stadium",      parent: SubRecordParent::Direct,            ptr_offset: 0xB0,  size: 0x98  },
     // Home stadium: club+0x18 team vector -> [0] senior team (team UID == club
@@ -41,8 +41,12 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "c_owner_status",       label: "Owner Status",       entity: Club, category: General,    offset: sub_raw("info", 0xDE) },
     Field { key: "c_season_tickets",     label: "Season Tickets",     entity: Club, category: General,    offset: sub_raw("info", 0xC0) },
     Field { key: "c_social_media",       label: "Social Media",       entity: Club, category: General,    offset: sub_raw("info", 0xF8) },
-    Field { key: "c_training",           label: "Training",           entity: Club, category: Facilities, offset: sub_direct("info", 0x12B)},
-    Field { key: "c_youth_fac",          label: "Youth Fac",          entity: Club, category: Facilities, offset: sub_direct("info", 0x120)},
+    // Arsenal (FM24 Club Info > Facilities, 2026-10-30): info+0x120 = 19
+    // "Superb training facilities", +0x12B = 16 "Excellent youth facilities";
+    // junior coaching 17 "Excellent" and youth recruitment 15 "Good" fit the
+    // same word scale. Was swapped before; FM27 uses the same two offsets.
+    Field { key: "c_training",           label: "Training",           entity: Club, category: Facilities, offset: sub_direct("info", 0x120)},
+    Field { key: "c_youth_fac",          label: "Youth Fac",          entity: Club, category: Facilities, offset: sub_direct("info", 0x12B)},
     Field { key: "c_youth_improve",      label: "Youth Improvement",  entity: Club, category: Facilities, offset: sub_direct("info", 0x126)},
     Field { key: "c_youth_coach",        label: "Youth Coaching",     entity: Club, category: Facilities, offset: sub_direct("info", 0x12C)},
     Field { key: "c_youth_recruit",      label: "Youth Recruitment",  entity: Club, category: Facilities, offset: sub_direct("info", 0x12D)},
@@ -64,7 +68,12 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "c_avg_season_ticket",  label: "Avg Season Ticket",  entity: Club, category: Finance,    offset: sub_f32("finance", 0x1C) },
     Field { key: "c_transfer_budget",    label: "Transfer Budget",    entity: Club, category: Finance,    offset: sub_raw("budget",  0x04) },
     Field { key: "c_transfer_remaining", label: "Transfer Remaining", entity: Club, category: Finance,    offset: sub_raw("budget",  0x08) },
-    Field { key: "c_wage_budget",        label: "Wage Budget",        entity: Club, category: Finance,    offset: sub_raw("budget",  0x0C) },
+    // Wage budget i32 £/week in the finance object. Spurs' finance screen
+    // (2026-10-30): Wage Budget £3,421,987 p/w = finance+0x810, Currently
+    // spending £3,271,987 = +0x81C, Next season's minimum guaranteed transfer
+    // budget £25.92M = +0x7D4. budget+0x0C (used before) read 3,464,579 for
+    // Spurs; it equals +0x810 for Arsenal, Barcelona and Derby only.
+    Field { key: "c_wage_budget",        label: "Wage Budget",        entity: Club, category: Finance,    offset: sub_raw("finance", 0x810) },
     Field { key: "c_avg_attendance",     label: "Avg Attendance",     entity: Club, category: General,    offset: sub_raw("stadium", 0x68) },
     Field { key: "c_min_attendance",     label: "Min Attendance",     entity: Club, category: General,    offset: sub_raw("stadium", 0x6C) },
     Field { key: "c_max_attendance",     label: "Max Attendance",     entity: Club, category: General,    offset: sub_raw("stadium", 0x70) },

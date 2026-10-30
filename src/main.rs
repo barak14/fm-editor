@@ -17,20 +17,36 @@ fn main() -> eframe::Result {
 
     // --branch <name>  or  --branch=<name>  — injected by build-and-launch.sh
     // for non-main worktrees so the window title shows which branch is running.
-    let branch: Option<String> = args.windows(2)
-        .find_map(|w| if w[0] == "--branch" { Some(w[1].clone()) } else { None })
-        .or_else(|| args.iter().find_map(|a| {
-            a.strip_prefix("--branch=").map(|s| s.to_string())
-        }));
+    let branch: Option<String> = args
+        .windows(2)
+        .find_map(|w| {
+            if w[0] == "--branch" {
+                Some(w[1].clone())
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            args.iter()
+                .find_map(|a| a.strip_prefix("--branch=").map(|s| s.to_string()))
+        });
 
     #[cfg(debug_assertions)]
     let mcp_state = {
         // --mcp-port=7799  or  --mcp-port 7799  (default: 7799)
-        let port: u16 = args.windows(2)
-            .find_map(|w| if w[0] == "--mcp-port" { w[1].parse().ok() } else { None })
-            .or_else(|| args.iter().find_map(|a| {
-                a.strip_prefix("--mcp-port=").and_then(|s| s.parse().ok())
-            }))
+        let port: u16 = args
+            .windows(2)
+            .find_map(|w| {
+                if w[0] == "--mcp-port" {
+                    w[1].parse().ok()
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                args.iter()
+                    .find_map(|a| a.strip_prefix("--mcp-port=").and_then(|s| s.parse().ok()))
+            })
             .unwrap_or(7799);
         let log = fm_editor::debug::new_log();
         let state = fm_editor::debug::start(log, port);
@@ -49,7 +65,7 @@ fn main() -> eframe::Result {
 
     let title = match branch.as_deref() {
         Some(b) => format!("FM Editor [{b}]"),
-        None    => "FM Editor".to_string(),
+        None => "FM Editor".to_string(),
     };
 
     let settings = AppSettings::load();
@@ -64,7 +80,7 @@ fn main() -> eframe::Result {
         "FM Editor",
         options,
         Box::new(move |cc| {
-            let app = FmEditorApp::new(cc);
+            let app = FmEditorApp::new(cc).with_branch(branch);
             #[cfg(debug_assertions)]
             let app = app.with_mcp_state(mcp_state);
             Ok(Box::new(app))

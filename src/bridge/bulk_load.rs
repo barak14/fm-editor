@@ -111,6 +111,13 @@ pub(super) fn load_entity_cache(
         let pa       = raw.get(s_pa_off as usize).copied().unwrap_or(0);
         let dob_year = read_u16_le(&raw, s_dob_year_off as usize);
 
+        // The platform-account entry is not part of the game world; leave
+        // it out of the staff list (see `is_account_placeholder`).
+        if crate::staff::is_account_placeholder(identity_shift, dob_year) {
+            done += 1;
+            continue;
+        }
+
         // Try s_name FmString → sub-records at +0x150/+0x158.
         // ~72% of staff have null FmString; sub-records supply their names.
         let name = crate::staff::read_staff_name(fm, &raw).unwrap_or_default();

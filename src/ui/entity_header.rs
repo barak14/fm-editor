@@ -12,24 +12,35 @@ pub fn show(
     club_addr: Option<u64>,
     nation: Option<&str>,
 ) {
-    ui.heading(name);
-    ui.horizontal_wrapped(|ui| {
-        ui.label(format!("{kind} · UID: {uid}"));
-        if let Some(age) = age {
-            ui.label(format!("Age: {age}"));
-        }
-    });
-    ui.horizontal_wrapped(|ui| {
-        if kind != "Club" {
-            crate::ui::navigation::club_link(ui, club, club_addr);
-            ui.separator();
-        }
-        ui.label(format!(
-            "Nation: {}",
-            nation.filter(|s| !s.trim().is_empty()).unwrap_or("Unknown")
-        ))
-        .on_hover_text("Nation pages are not yet supported.");
-    });
+    egui::Frame::group(ui.style())
+        .inner_margin(12.0)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(
+                egui::RichText::new(kind.to_uppercase())
+                    .small()
+                    .strong()
+                    .color(ui.visuals().selection.stroke.color),
+            );
+            ui.heading(name);
+            ui.horizontal_wrapped(|ui| {
+                ui.label(egui::RichText::new(format!("UID: {uid}")).small().weak());
+                if let Some(age) = age {
+                    ui.label(format!("Age: {age}"));
+                }
+            });
+            ui.horizontal_wrapped(|ui| {
+                if kind != "Club" {
+                    crate::ui::navigation::club_link(ui, club, club_addr);
+                    ui.separator();
+                }
+                ui.label(format!(
+                    "Nation: {}",
+                    nation.filter(|s| !s.trim().is_empty()).unwrap_or("Unknown")
+                ))
+                .on_hover_text("Nation pages are not yet supported.");
+            });
+        });
     ui.add_space(8.0);
 }
 
@@ -70,7 +81,12 @@ pub fn columns(ui: &mut egui::Ui, mut render: impl FnMut(usize, &mut egui::Ui)) 
     for start in (0..4).step_by(count) {
         ui.columns(count, |cols| {
             for (index, col) in cols.iter_mut().enumerate() {
-                render(start + index, col);
+                egui::Frame::group(col.style())
+                    .inner_margin(10.0)
+                    .show(col, |ui| {
+                        ui.set_width(ui.available_width());
+                        render(start + index, ui);
+                    });
             }
         });
         ui.add_space(12.0);

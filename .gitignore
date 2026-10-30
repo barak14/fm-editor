@@ -1,4 +1,6 @@
 target/
+dist/
+__pycache__/
 .launch-verified
 .mcp-port
 .aider*

@@ -1,90 +1,62 @@
-# fm-editor
+# fm-editor — project guidance
 
-Real-time memory editor for Football Manager. Reads and writes `fm.exe` process memory (Win32
-APIs on Windows, `process_vm_readv`/`process_vm_writev` against Proton on Linux) using a schema
-selected at attach time. Supports FM24, FM26 and FM27 (Steam builds, plus an unverified FM27
-Game Pass schema). See [README.md](README.md) for users.
+Real-time `fm.exe` memory editor for FM24/FM26/FM27: Win32 on Windows,
+`process_vm_readv`/`process_vm_writev` against Proton on Linux. Schemas are selected
+per attached build (release + storefront), not globally. Game Pass support is
+unverified; never assume another build's layout is compatible.
 
-## First Principles
+## Safety invariants
 
-- **Two witnesses minimum.** One match is noise. Cross-reference at least two known-value entities.
-- **Atomic field+doc edits.** Every offset lives in `src/fields/<version>/<entity>.rs` AND
-  `docs/<version>/memory-layout.md`. Change both in one commit or neither.
-- **Never trust inherited offsets.** Run verification yourself before acting on anything inherited.
-- **All offsets through the schema.** No raw hex outside `src/fields/`. Everything goes through
-  `fm.schemas()` (or a record's / the attached game's `build.schemas()`). There is no global
-  active version: FM24, FM26 and FM27 can run side by side.
-- **Writes need undo.** Anything calling `WriteProcessMemory` must round-trip through the undo
-  stack. Never write speculatively.
-- **Validate every pointer.** `ptr > 0x10000 && ptr < 0x7FFFFFFFFFFF` on every dereference.
-  Handle failures — don't panic.
-- **Delete dead code.** No compat shims, commented-out experiments, or half-finished refactors.
+- **Schema-only offsets.** Resolve memory offsets through the attached process or
+  record's schema (`fm.schemas()` / `build.schemas()`). No hardcoded layout offsets
+  in readers, writers or UI. Keep different attachments/builds independent.
+- **Evidence before mapping.** Confirm new or changed mappings against at least two
+  entities with independently known in-game values. Inherited notes are leads, not
+  verification for a new build or a changed mapping.
+- **Schema + documentation together.** Update `src/fields/<version>/` and the matching
+  `docs/<version>/memory-layout.md` in the same change. Record build, encoding and
+  witnesses; label unverified coverage honestly.
+- **Validate pointers and buffers.** Every dereference needs
+  `ptr > 0x10000 && ptr < 0x7FFFFFFFFFFF` plus checked read/range handling. Missing,
+  invalid or unmapped data must not panic, fabricate a value or trigger a write.
+- **Writes require confirmed undo.** Use the bridge's acknowledged-write/undo path;
+  never write speculatively or as a side effect of rendering/clamping. Keep failed
+  writes visible and retryable; disable editing while disconnected or awaiting a
+  write acknowledgement. Never reuse undo addresses across saves/reconnections.
+- **Bind UI data to identity.** Async results and retained buffers must match the
+  active entity's type/address. Failed loads must not expose a previous entity's
+  editable data. Resolve related clubs by cached object identity, not fuzzy names.
 
-## Architecture
+## Code map
 
-```
-fields/               Shared types + per-build schemas (fm24/, fm26/, fm27/)
-game_version.rs       Version / storefront / build enums + per-build schema dispatch
-process/              Attach to fm.exe; win32.rs and linux.rs memory backends
-bridge/               Worker thread → UI via mpsc (bulk cache, entity loads, writes)
-player/staff/club.rs  Record-reading helpers — all offsets from fm.schemas()
-ui/                   egui rendering — pages/ search layouts, *_panel.rs entity detail views
-debug/                fm-debug MCP server (debug builds only) for live memory inspection
-bin/                  Diagnostic binaries: scan_arrays (array RVAs), dump_manager
-lib.rs / main.rs      Library crate root + thin app launcher
-```
+- `src/fields/`, `src/game_version.rs`: per-build layouts and dispatch.
+- `src/process/`: platform memory backends; `src/bridge/`: worker/UI messages.
+- `src/player.rs`, `src/staff.rs`, `src/club.rs`: schema-based record reads.
+- `src/app.rs`, `src/ui/`: egui application, search pages and detail panels.
+- `src/debug/`: read-only fm-debug MCP server in debug builds.
+- `src/bin/`: `scan_arrays` and `dump_manager` diagnostics.
 
-Memory layouts: [FM26](docs/fm26/memory-layout.md) · [FM24](docs/fm24/memory-layout.md) · [FM27](docs/fm27/memory-layout.md)
+## Verification
 
-## Workflow
-
-Four phases for mapping a new field. Skip one and you get drift.
-
-1. **Research** — pick witnesses with known in-game values, find candidate offset via
-   `Tools/dump-manager.sh` or `src/bin/scan_arrays.rs`. Reject if any witness doesn't match.
-2. **Map** — determine encoding, add to `src/fields/<version>/<entity>.rs`, document in
-   `docs/<version>/memory-layout.md`.
-3. **Wire** — surface in UI panel via `field_widget::category_column` or a custom widget.
-4. **Verify** — build, launch, navigate to a witness, confirm value matches in-game. Round-trip
-   an edit through undo.
-
-Non-mapping work (UI, refactors, fixes): skip the methodology, still use a branch.
-
-## Verification Tiers
-
-| When | Do |
+| Change | Required evidence |
 |---|---|
-| After editing `.rs` files | Tier 1: compile check per file |
-| After changing runtime behavior | Tier 2: `bash Tools/build-and-launch.sh` |
-| After mapping a field / changing a write path | Tier 3: live verification against fm.exe |
+| Rust code | `cargo check` and relevant tests; `cargo test` for integration |
+| Runtime/UI behaviour | `bash Tools/build-and-launch.sh`, then exercise the affected workflow; inspect UI changes at desktop and narrow sizes |
+| Field mapping or write path | Live FM verification for the affected build; compare in-game values and round-trip an edit through Undo |
+| Documentation only | Check paths, links and consistency; no game launch needed |
 
-## Build
+Report what actually ran and any missing live evidence. A successful launch or an
+old `.launch-verified` file does not prove the current behaviour or field layout.
+Format only owned Rust modules (`rustfmt --config skip_children=true ...`).
 
-```bash
-cargo build                      # compile only
-bash Tools/build-and-launch.sh   # kill orphan → build → launch → verify survived
-```
+## Working context
 
-Requires `fm.exe` running with a save loaded. Version auto-detected from each process's install
-path; with several games open, pick one in the toolbar (diagnostic scripts take `--pid <n>`).
+Use a feature branch/worktree for code changes to keep the main editor available.
+Keep existing worktrees and unrelated changes intact; do not merge or remove them
+without the user's direction. The harness owns planning, delegation and temporary
+task state; no additional repository-specific agent ceremony is required.
 
-## Tools
-
-| Script | Purpose |
-|---|---|
-| `build-and-launch.sh` | Kill orphan, build, launch, verify survived |
-| `create-worktree.sh <name>` | New branch + worktree under `.claude/worktrees/` |
-| `rebase-worktree.sh <name>` | Validate + build + rebase onto main, prints commit list |
-| `ff-merge-worktree.sh <name>` | Fast-forward merge into main + cleanup |
-| `kill-fm-editor.sh` | Kill running fm-editor.exe |
-| `dump-manager.sh` | Human-manager byte dump |
-| `scan-arrays.sh` | Array RVA scanner |
-
-## fm-debug MCP server
-
-Debug builds serve an MCP server (streamable HTTP, `POST /mcp`) on `localhost:7799` while the
-editor runs — `--mcp-port <n>` overrides it, and worktree launches use the port written to
-`.mcp-port`. `attach_status` follows the editor's game when several are open; pass `pid` to
-switch. It exposes read-only tools for the Research and Map phases: `attach_status`,
-`search_entities`, `dump_struct`, `probe_range`, `probe_pointer_chain`, `compare_entities`,
-`read_entity_fields` and more. [`.mcp.json`](.mcp.json) is an example client config.
+- [Development procedures](docs/development.md): field research, launch/debug and worktree helpers.
+- [README](README.md): setup and supported builds; [UI guide](docs/ui-guide.md): current behaviour.
+- [ROADMAP](ROADMAP.md): feature backlog, not a command to implement every entry.
+- [Memory layouts](docs/fm27/memory-layout.md): FM27; also [FM26](docs/fm26/memory-layout.md) and [FM24](docs/fm24/memory-layout.md).

@@ -26,6 +26,31 @@ Steam's Proton.
 
 What can be read and edited differs by game version; see the memory-layout notes below.
 
+## Screenshots
+
+Captured from the running editor with FM27 on Linux. Available fields vary by game
+build; these screenshots do not imply feature parity across all supported versions.
+
+### Player profile
+
+![Harry Kane's player profile showing identity, ability, reputation and grouped attributes](docs/screenshots/player-profile.png)
+
+<details>
+<summary>Player search</summary>
+
+Live name/UID filtering, ability and age filters, and sortable results.
+
+![Player search with CA, PA and age columns and the advanced-filter button](docs/screenshots/player-search.png)
+
+</details>
+
+<details>
+<summary>Club facilities and supporters</summary>
+
+![Bayern Munich's club profile showing facility ratings and supporter information](docs/screenshots/club-facilities.png)
+
+</details>
+
 ## Supported versions
 
 | Game | Status | Notes |
@@ -38,13 +63,25 @@ What can be read and edited differs by game version; see the memory-layout notes
 The version is detected from the game's install path when the editor attaches, and so is the
 storefront: a PC Game Pass (Xbox app) install is a different build from Steam's and gets its own
 schema. Only the Steam builds are mapped; FM27 on Game Pass is an untested starting point.
-A game patch can move fields; the editor checks a fingerprint of the game module and refuses to attach to
-a build its schema was not verified against (FM27 is not yet pinned to a build).
+A game patch can move fields. For builds with a recorded module fingerprint, the
+editor rejects a mismatch. Uncalibrated builds (currently FM27) can attach with a
+warning, without that fingerprint guard; a successful attachment does not prove
+that their layouts are verified.
 
 Several versions can be open at once (they all run as `fm.exe`). The editor then attaches to
 none of them on its own: the toolbar shows one button per running game, labelled with its
 version and PID, and the status bar names the game you attached to. Each game is read with
 its own schema.
+
+## Test-build downloads
+
+The **Build and package** workflow in [GitHub Actions](https://github.com/barak14/fm-editor/actions)
+builds Windows x86-64 ZIP and Linux x86-64 tar.gz test packages, with matching source
+archives and SHA-256 checksums. Select a successful run for the intended commit and
+download its platform artifact (GitHub sign-in required; artifacts expire after 14 days).
+
+These are unsigned test builds, not published releases. See [the packaging guide](docs/releases.md)
+for extraction, Linux requirements, verification limits and the public-release checklist.
 
 ## Building
 
@@ -93,8 +130,11 @@ new fields are mapped. [`.mcp.json`](.mcp.json) is an example client configurati
 
 ## Contributing
 
-[AGENTS.md](AGENTS.md) describes the architecture, the rules every offset must follow (two
-independent witnesses, schema-only offsets, undo for every write) and the mapping workflow.
+[AGENTS.md](AGENTS.md) is the shared, harness-neutral project guide: schema-only offsets,
+two independent witnesses for mappings, and acknowledged undo for every write.
+[Development procedures](docs/development.md) cover field research, verification,
+debug tools and worktree helpers. [ROADMAP.md](ROADMAP.md) is a feature backlog;
+superseded implementation plans and session logs remain in Git history, not as active tasks.
 
 ## Credits
 

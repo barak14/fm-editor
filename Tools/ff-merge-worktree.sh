@@ -11,6 +11,7 @@
 #   4 = fast-forward failed (main moved since the rebase — re-run
 #       rebase-worktree.sh to rebase again, then re-run this script)
 #   5 = post-merge build failed (merge landed but binary is broken)
+#   6 = merge and build succeeded, but worktree or branch cleanup is incomplete
 #
 # NOTE: `set -e` is deliberately omitted — every error path is handled
 # explicitly so the worktree is never silently destroyed on failure.
@@ -130,8 +131,7 @@ echo ""
 # whatever was holding files open in it (rust-analyzer indexing, the
 # previous shell session's cwd, antivirus scanning the new files). The
 # first `git worktree remove` can fail with "Permission denied" while the
-# second one (a second later) succeeds. Retry once before falling back to
-# a direct rm -rf.
+# second one (a second later) succeeds. Retry once, without forcing removal.
 echo "Cleaning up..."
 remove_ok=false
 if git -C "$PROJECT_PATH" worktree remove "$WORKTREE_PATH" 2>/dev/null; then
@@ -141,20 +141,17 @@ else
   sleep 1
   if git -C "$PROJECT_PATH" worktree remove "$WORKTREE_PATH" 2>/dev/null; then
     remove_ok=true
-  elif [ -d "$WORKTREE_PATH" ]; then
-    # Git's metadata may have been partially cleaned up — its view of the
-    # worktree could be gone even though the directory is still there.
-    # Try a direct rm -rf as a final fallback.
-    if rm -rf "$WORKTREE_PATH" 2>/dev/null; then
-      remove_ok=true
-    fi
   fi
 fi
 if ! $remove_ok; then
-  echo "  WARN: failed to remove worktree at $WORKTREE_PATH (remove manually with: rm -rf $WORKTREE_PATH)" >&2
+  echo "  WARN: main merge and build already succeeded, but safe worktree removal failed at $WORKTREE_PATH." >&2
+  echo "  Worktree contents and branch '$BRANCH' are preserved. Inspect the worktree before retrying cleanup." >&2
+  exit 6
 fi
 if ! git -C "$PROJECT_PATH" branch -d "$BRANCH"; then
-  echo "  WARN: failed to delete branch $BRANCH (delete manually with: git branch -D $BRANCH)" >&2
+  echo "  WARN: main merge and build already succeeded and the worktree was removed, but branch '$BRANCH' could not be deleted." >&2
+  echo "  Branch cleanup is incomplete; inspect the branch before retrying git branch -d." >&2
+  exit 6
 fi
 git -C "$PROJECT_PATH" worktree prune 2>/dev/null || true
 

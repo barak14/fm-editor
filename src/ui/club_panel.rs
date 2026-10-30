@@ -222,15 +222,19 @@ fn show_finance(
     // Each row edits the sub-record its schema location names (FM26 keeps the
     // budgets in a finance → budget sub-record, FM27 in the finance object).
     let mut shown = false;
-    for (label, key) in [
-        ("Balance", "c_balance"),
-        ("Transfer Budget", "c_transfer_budget"),
-        ("Transfer Remaining", "c_transfer_remaining"),
-        ("Spending Wage Budget (p/w)", "c_wage_budget"),
-    ] {
+    // Labels come from the schema: FM24's screen says "Wage Budget", FM27's
+    // "Spending Wage Budget".
+    for key in ["c_balance", "c_transfer_budget", "c_transfer_remaining", "c_wage_budget"] {
         let Some((container, offset)) = sub_location(schemas, key) else {
             continue;
         };
+        let Some(field) = schemas.field(key) else { continue };
+        let label = if key == "c_wage_budget" {
+            format!("{} (p/w)", field.label)
+        } else {
+            field.label.to_string()
+        };
+        let label = label.as_str();
         if let Some((buf, base)) = club.sub_record_mut(container) {
             u32_drag(ui, label, buf, offset, base, edits);
             shown = true;

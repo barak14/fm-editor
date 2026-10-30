@@ -337,6 +337,19 @@ pub fn read_field_u8<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Optio
     }
 }
 
+/// Read an unsigned integer field at the width its encoding declares:
+/// one byte for `Direct`, two for `Raw`/`RawCapped`, four for `RawU32`.
+/// `None` for non-integer encodings, so the same key can be a u8 in one
+/// build and a u16 in another (FM24 vs FM27 international caps).
+pub fn read_field_int<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Option<u32> {
+    match f.offset.as_ref()?.encoding() {
+        Encoding::Direct => read_field_u8(view, raw, f).map(u32::from),
+        Encoding::Raw | Encoding::RawCapped(_) => read_field_u16(view, raw, f).map(u32::from),
+        Encoding::RawU32 => read_field_u32(view, raw, f),
+        _ => None,
+    }
+}
+
 /// Read a u16 field.
 pub fn read_field_u16<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Option<u16> {
     match f.offset.as_ref()? {
@@ -589,6 +602,24 @@ mod schema_lookup_tests {
             );
         }
         assert!(GameBuild::Fm26Steam.schemas().field("no_such_key").is_none());
+    }
+
+    #[test]
+    fn int_fields_read_at_their_encoding_width() {
+        // FM24 stores international caps as a u8 followed by U21 caps; FM27
+        // widens caps to u16. Reading by encoding must not run into the next byte.
+        let fm24 = GameBuild::Fm24Steam.schemas();
+        let off = fm24.offset_of("p_intl_caps").unwrap();
+        let mut raw = vec![0u8; off + 4];
+        raw[off] = 84;
+        raw[off + 1] = 14;
+        assert_eq!(read_field_int(&(), &raw, fm24.field("p_intl_caps").unwrap()), Some(84));
+
+        let fm27 = GameBuild::Fm27Steam.schemas();
+        let off = fm27.offset_of("p_intl_caps").unwrap();
+        let mut raw = vec![0u8; off + 2];
+        raw[off..off + 2].copy_from_slice(&300u16.to_le_bytes());
+        assert_eq!(read_field_int(&(), &raw, fm27.field("p_intl_caps").unwrap()), Some(300));
     }
 
     #[test]
