@@ -314,6 +314,16 @@ Microsoft GDK instead of Steamworks. It has its own schema,
 recognised as Game Pass: a `MicrosoftGame.config` next to `fm.exe`, or a path
 under `XboxGames` or `WindowsApps`. Everything else is treated as Steam.
 
+Observed install (2026-10-30, Windows):
+
+```
+C:\Program Files\WindowsApps\SportsInteractive.FootballManager27_0.9.2355.0_x64__5w3tn6tb6stnm\fm_Data\Plugins\x86_64\game_plugin.dll
+```
+
+The package name has no space before the release number, and the package
+version (0.9.2355.0) is unrelated to the release, so version detection matches
+`manager27` with separators ignored.
+
 **Nothing in `FM27_GAMEPASS` is verified.** It is a copy of the Steam schema
 with `known_dll_hash` 0. The module hash and the module-relative values (entity
 array RVAs, stadium root, finance / player-coach / human-manager vtable RVAs)

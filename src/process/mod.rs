@@ -278,17 +278,24 @@ impl FmProcess {
 
 /// Determine the game version from the full path of `game_plugin.dll`.
 ///
-/// The Football Manager install directory always contains the release year
-/// (e.g. `…\Football Manager 2026\game_plugin.dll`), which is the only
-/// reliable distinguisher when every version shares the `fm.exe` exe name.
+/// The Football Manager install path always names the release, which is the
+/// only reliable distinguisher when every version shares the `fm.exe` exe name:
+/// Steam uses `…\Football Manager 2026\` or `…\Football Manager 27\`, and the
+/// Game Pass package folder `SportsInteractive.FootballManager27_0.9.2355.0_x64__…`
+/// has no space and a package version unrelated to the release.
 fn sniff_version(dll_path: &str) -> Result<GameVersion, String> {
     let lower = dll_path.to_lowercase();
-    // Match both "Football Manager 2026" and "Football Manager 26" naming conventions.
-    if lower.contains("2027") || lower.contains("manager 27") {
+    // Drop separators so "Football Manager 27" and "FootballManager27" both
+    // read "footballmanager27".
+    let compact: String = lower.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    let names = |year: &str, short: &str| {
+        lower.contains(year) || compact.contains(&format!("manager{short}"))
+    };
+    if names("2027", "27") {
         Ok(GameVersion::Fm27)
-    } else if lower.contains("2026") || lower.contains("manager 26") {
+    } else if names("2026", "26") {
         Ok(GameVersion::Fm26)
-    } else if lower.contains("2024") || lower.contains("manager 24") {
+    } else if names("2024", "24") {
         Ok(GameVersion::Fm24)
     } else {
         Err(format!(
@@ -333,9 +340,14 @@ mod tests {
     fn version_sniffed_per_install_path() {
         let fm24 = r"S:\SteamLibrary\steamapps\common\Football Manager 2024\fm.exe";
         let fm27 = r"S:\SteamLibrary\steamapps\common\Football Manager 27\data\game_plugin.dll";
+        // Real FM27 Game Pass install (2026-10-30): no space, package version 0.9.
+        let fm27_store = r"C:\Program Files\WindowsApps\SportsInteractive.FootballManager27_0.9.2355.0_x64__5w3tn6tb6stnm\fm_Data\Plugins\x86_64\game_plugin.dll";
         assert_eq!(sniff_version(fm24), Ok(GameVersion::Fm24));
         assert_eq!(sniff_version(fm27), Ok(GameVersion::Fm27));
+        assert_eq!(sniff_version(fm27_store), Ok(GameVersion::Fm27));
+        assert_eq!(sniff_version(r"D:\Games\FootballManager2026\fm.exe"), Ok(GameVersion::Fm26));
         assert!(sniff_version(r"C:\Games\fm.exe").is_err());
+        assert!(sniff_version(r"C:\Games\Football Manager\fm.exe").is_err());
     }
 
     #[test]
@@ -348,6 +360,8 @@ mod tests {
         assert_eq!(storefront_of(proton, false), Storefront::Steam);
         assert_eq!(storefront_of(xbox, false), Storefront::GamePass);
         assert_eq!(storefront_of(store, false), Storefront::GamePass);
+        let real_store = r"C:\Program Files\WindowsApps\SportsInteractive.FootballManager27_0.9.2355.0_x64__5w3tn6tb6stnm\fm_Data\Plugins\x86_64\game_plugin.dll";
+        assert_eq!(storefront_of(real_store, false), Storefront::GamePass);
         // A moved Game Pass install is still recognised by its GDK manifest.
         assert_eq!(storefront_of(r"E:\Games\FM27\fm.exe", true), Storefront::GamePass);
     }
