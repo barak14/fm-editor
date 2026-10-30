@@ -15,6 +15,13 @@ change game/system permissions. Its token has read-only repository permissions.
    tar.gz, a matching source tar.gz, and `SHA256SUMS`. Verify the checksums, then
    extract the platform archive and run `fm-editor.exe` or `./fm-editor` inside it.
 
+The separate **Native packages** workflow wraps an existing versioned release's
+verified portable assets. Its artifacts are `fm-editor-windows-installer`,
+`fm-editor-arch-package` and `native-packaging-source`. See
+[native installation/build instructions](native-packages.md). It neither moves
+the application tag nor publishes a release; install/remove tests run only in
+hosted runners or ephemeral containers, not on a user's machine.
+
 For Linux, run `sha256sum -c SHA256SUMS` from the artifact's extracted directory.
 On Windows, compare `Get-FileHash <archive> -Algorithm SHA256` with the corresponding
 line in `SHA256SUMS`. Checksums detect corruption, not a malicious build; trust the
@@ -60,8 +67,8 @@ artifact. The test still runs the real release GUI; it does not bypass the start
 gate or change the application's renderer.
 
 The Windows job requests a statically linked C runtime. The executable remains
-unsigned, so Windows may warn about an unknown publisher. Signing/installers are
-separate future work, not part of this test-build workflow.
+unsigned, so Windows may warn about an unknown publisher. Signing remains future
+work. The optional installer is built by the separate Native packages workflow.
 
 The Linux artifact uses an Ubuntu 22.04 baseline (glibc 2.35); it is not a fully
 static or universal Linux package. It needs a desktop session and the system's
@@ -115,6 +122,10 @@ on the repository's default branch first. No push or dispatch publishes a releas
 - State compatibility limits and untested builds honestly, particularly Game Pass.
 - Create a **draft/prerelease** with the reviewed archives, checksums and source;
   publish only after review. This publishing workflow has not been implemented.
+- When adding native packaging to an already tagged application, keep the original
+  portable assets, source and tag unchanged. Attach the installer, Arch package and
+  matching packaging-source bundle; record the independent packaging revision and
+  regenerate the combined checksums. Do not silently replace the tagged binary.
 
 No installer, automatic updater, signing identity, release secret or write-enabled
 GitHub token is needed to try these initial artifacts.

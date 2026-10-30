@@ -147,9 +147,10 @@ Initial CI/test-artifact implementation is described in [the packaging guide](do
 
 - **Windows/Linux CI** — Native x86-64 workflow runs locked compile/tests and release builds, plus disconnected startup checks. Hosted job results are the evidence for each platform, not a Linux build alone.
 - **Portable test archives** — Windows ZIP and Linux tar.gz packaging includes the editor, tracked documentation, matching application source and SHA-256 checksums. The Linux baseline is Ubuntu 22.04; no system permissions are changed automatically. Extracted-package/live-game verification remains required before release.
+- **Native Windows/Arch packages** — A per-user, unsigned Windows installer and pinned Arch `fm-editor-bin` recipe wrap existing portable release binaries. The separate workflow checks installation, removal, desktop resources and disconnected startup; manual live-game testing and publishing remain separate. See [native packaging](docs/native-packages.md).
 - **Draft GitHub release workflow** — Manual test builds as downloadable Actions artifacts, then a version-tagged draft/prerelease for review. Check the tag against Cargo's version and attach archives/checksums. Publish only after the chosen source changes are committed, pushed and verified.
 - **Distribution and source compliance** — Review bundled dependencies' notices and provide corresponding source for the exact released version. Keep local settings, MCP configuration, debug binaries and private research out of release archives; verify the release build does not expose the debug server.
-- **Packaged-app smoke tests** — Extract and launch the actual archives on Windows/Linux, then check attachment, one edit and Undo against supported builds. State untested coverage, especially Game Pass, in release notes. Installers, automatic updates and code signing can follow; they are not required for an initial portable prerelease.
+- **Packaged-app smoke tests** — Extract/install and launch the actual packages on Windows/Linux, then check attachment, one edit and Undo against supported builds. CI covers disconnected startup and native installation/removal, not FM field correctness. State untested coverage, especially Game Pass, in release notes. Automatic updates and code signing remain future work.
 
 ## Export
 

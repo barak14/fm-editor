@@ -1,0 +1,243 @@
+name: Native packages
+
+on:
+  push:
+    paths:
+      - 'packaging/**'
+      - 'Tools/*native*'
+      - 'Tools/package-windows.py'
+      - 'Tools/stage-arch-package.py'
+      - 'Tools/tests/test_native*'
+      - 'Tools/tests/test_fetch_native*'
+      - 'Tools/tests/test_windows_installer.py'
+      - 'Tools/tests/test_arch_package.py'
+      - '.github/workflows/native-packages.yml'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag whose portable assets should be packaged
+        required: true
+        default: v0.1.0
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: native-${{ github.ref }}-${{ inputs.release_tag || 'v0.1.0' }}
+  cancel-in-progress: true
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || 'v0.1.0' }}
+
+jobs:
+  inputs:
+    name: Verify existing application release
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      commit: ${{ steps.identity.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download and verify portable release inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 Tools/fetch-native-inputs.py --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY" --output-dir dist/native-inputs
+      - name: Record application identity and package recipe source
+        id: identity
+        run: |
+          python3 - <<'PY'
+          import gzip, io, json, os, shutil, subprocess, tarfile, tempfile
+          from pathlib import Path
+          info = json.loads(Path('dist/native-inputs/INPUTS.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"version={info['version']}\ncommit={info['commit']}\n")
+          commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          prefix = f"fm-editor-{info['version']}-packaging-source"
+          paths = ['LICENSE', 'packaging', 'Tools/native_package_common.py',
+                   'Tools/fetch-native-inputs.py', 'Tools/package-windows.py',
+                   'Tools/stage-arch-package.py', 'Tools/smoke-release.py',
+                   'Tools/tests/test_native_package_common.py',
+                   'Tools/tests/test_fetch_native_inputs.py',
+                   'Tools/tests/test_windows_installer.py', 'Tools/tests/test_arch_package.py',
+                   '.github/workflows/native-packages.yml', 'docs/native-packages.md']
+          out = Path('dist/native-source'); out.mkdir(parents=True)
+          with tempfile.TemporaryDirectory() as temporary:
+              raw = Path(temporary) / 'source.tar'
+              subprocess.run(['git', '-c', 'core.autocrlf=false', '-c', 'core.eol=lf',
+                              'archive', '--format=tar', f'--prefix={prefix}/',
+                              f'--output={raw}', commit, *paths], check=True)
+              data = json.dumps({'application': info, 'packaging_commit': commit}, indent=2).encode()
+              with tarfile.open(raw, 'a') as archive:
+                  member = tarfile.TarInfo(f'{prefix}/PACKAGING-INFO.json')
+                  member.size = len(data); member.mode = 0o644
+                  archive.addfile(member, io.BytesIO(data))
+              with raw.open('rb') as source, gzip.open(out / f'{prefix}.tar.gz', 'wb') as dest:
+                  shutil.copyfileobj(source, dest)
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-package-inputs
+          path: dist/native-inputs/*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-packaging-source
+          path: dist/native-source/*
+          if-no-files-found: error
+          retention-days: 14
+
+  windows:
+    name: Windows installer
+    needs: inputs
+    runs-on: windows-2022
+    env:
+      APP_VERSION: ${{ needs.inputs.outputs.version }}
+      APP_COMMIT: ${{ needs.inputs.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download verified inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh run download "$env:GITHUB_RUN_ID" --name native-package-inputs --dir dist/native-inputs
+      - name: Test native packaging helpers
+        run: python -m unittest discover -s Tools/tests -p 'test_*.py' -v
+      - name: Install pinned Inno Setup compiler in the runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.4.exe'
+          $compiler = Join-Path $env:RUNNER_TEMP 'fm-editor-inno'
+          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe' -OutFile $setup
+          if ((Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c') {
+            throw 'Inno Setup compiler SHA-256 mismatch'
+          }
+          $process = Start-Process $setup -Wait -PassThru -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/NOICONS', "/DIR=`"$compiler`"")
+          if ($process.ExitCode -ne 0 -or !(Test-Path "$compiler/ISCC.exe")) { throw 'Compiler installation failed' }
+      - name: Compile per-user installer from the existing application ZIP
+        shell: pwsh
+        run: |
+          python Tools/package-windows.py --archive "dist/native-inputs/fm-editor-${env:APP_VERSION}-windows-x64.zip" --checksums dist/native-inputs/SHA256SUMS --commit "$env:APP_COMMIT" --version "$env:APP_VERSION" --output-dir dist/native-windows --iscc "$env:RUNNER_TEMP/fm-editor-inno/ISCC.exe"
+      - name: Install, verify and uninstall the native package
+        shell: pwsh
+        env:
+          GALLIUM_DRIVER: llvmpipe
+          LIBGL_ALWAYS_SOFTWARE: 'true'
+          WGL_DISABLE_ERROR_DIALOGS: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $install = Join-Path $env:RUNNER_TEMP 'fm-editor-installed'
+          $settings = Join-Path $env:APPDATA 'fm-editor/settings.json'
+          New-Item -ItemType Directory -Force (Split-Path $settings) | Out-Null
+          $sentinel = '{"installer-preserve-test":true}'
+          [System.IO.File]::WriteAllText($settings, $sentinel)
+          $setup = (Resolve-Path "dist/native-windows/fm-editor-${env:APP_VERSION}-windows-x64-setup.exe").Path
+          $process = Start-Process $setup -Wait -PassThru -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=`"$install`"")
+          if ($process.ExitCode -ne 0 -or !(Test-Path "$install/fm-editor.exe")) { throw 'Application installation failed' }
+          $info = Get-Content "$install/BUILD-INFO.json" | ConvertFrom-Json
+          if ($info.commit -ne $env:APP_COMMIT -or $info.version -ne $env:APP_VERSION) { throw 'Installed application identity mismatch' }
+          $key = 'Software/Microsoft/Windows/CurrentVersion/Uninstall/{A8BB287F-FCC2-48EA-9FD9-8E65B616AA65}_is1'
+          if (!(Test-Path "HKCU:/$key") -or (Test-Path "HKLM:/$key")) { throw 'Installer did not use per-user registration' }
+          if ((Get-Content $settings -Raw) -ne $sentinel) { throw 'Installer changed user settings' }
+          $mesa = Join-Path $env:RUNNER_TEMP 'fm-editor-mesa.7z'
+          $smoke = Join-Path $env:RUNNER_TEMP 'fm-editor-installed-gl-smoke'
+          Invoke-WebRequest -Uri 'https://github.com/pal1000/mesa-dist-win/releases/download/26.2.4/mesa3d-26.2.4-release-msvc.7z' -OutFile $mesa
+          if ((Get-FileHash $mesa -Algorithm SHA256).Hash.ToLowerInvariant() -ne '351fc8c8b695878ffb3eaa044b3ead08672a48b1a045e3c3e3975811df0f6695') { throw 'Mesa SHA-256 mismatch' }
+          New-Item -ItemType Directory $smoke | Out-Null
+          & 7z e $mesa 'x64/opengl32.dll' 'x64/libgallium_wgl.dll' "-o$smoke" -y
+          if ($LASTEXITCODE -ne 0) { throw 'Mesa extraction failed' }
+          Copy-Item "$install/fm-editor.exe" "$smoke/fm-editor.exe"
+          if ((Get-FileHash "$install/fm-editor.exe").Hash -ne (Get-FileHash "$smoke/fm-editor.exe").Hash) { throw 'Smoke executable changed' }
+          python Tools/smoke-release.py --binary "$smoke/fm-editor.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Installed release startup failed' }
+          $uninstall = Get-ChildItem $install -Filter 'unins*.exe' | Select-Object -First 1
+          if (!$uninstall) { throw 'Uninstaller missing' }
+          $process = Start-Process $uninstall.FullName -Wait -PassThru -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
+          if ($process.ExitCode -ne 0 -or (Test-Path "$install/fm-editor.exe") -or (Test-Path "HKCU:/$key")) { throw 'Uninstall failed' }
+          if ((Get-Content $settings -Raw) -ne $sentinel) { throw 'Uninstall removed user settings' }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fm-editor-windows-installer
+          path: dist/native-windows/*
+          if-no-files-found: error
+          retention-days: 14
+
+  arch:
+    name: Arch Linux package
+    needs: inputs
+    runs-on: ubuntu-22.04
+    container:
+      image: archlinux:base-devel@sha256:624bdc7fc6615155d67bc34cf7146c0c9fd0e3c92943977da63a630e4ca49c30
+    env:
+      APP_VERSION: ${{ needs.inputs.outputs.version }}
+      APP_COMMIT: ${{ needs.inputs.outputs.commit }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Prepare isolated Arch build tools
+        run: |
+          # The base image strips docs; validate a complete package installation.
+          sed -i '/^NoExtract[[:space:]]*=/d' /etc/pacman.conf
+          pacman -Syu --noconfirm --needed git python github-cli sudo desktop-file-utils xorg-server-xvfb xorg-xauth mesa
+          useradd --create-home builder
+          printf 'builder ALL=(root) NOPASSWD: /usr/bin/pacman\n' > /etc/sudoers.d/fm-editor-builder
+          chmod 440 /etc/sudoers.d/fm-editor-builder
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download verified inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh run download "$GITHUB_RUN_ID" --name native-package-inputs --dir dist/native-inputs
+      - name: Test native packaging helpers
+        run: python -m unittest discover -s Tools/tests -p 'test_*.py' -v
+      - name: Stage pinned makepkg inputs
+        run: |
+          python Tools/stage-arch-package.py --archive "dist/native-inputs/fm-editor-$APP_VERSION-linux-x64.tar.gz" --checksums dist/native-inputs/SHA256SUMS --commit "$APP_COMMIT" --version "$APP_VERSION" --output-dir dist/arch-stage
+          chown -R builder:builder dist/arch-stage
+      - name: Build Arch package without root
+        run: |
+          runuser -u builder -- bash -c 'set -e; cd "$1"; makepkg --syncdeps --noconfirm --cleanbuild; makepkg --printsrcinfo > .SRCINFO' _ "$PWD/dist/arch-stage"
+          mkdir -p dist/native-arch
+          cp dist/arch-stage/*.pkg.tar.zst dist/native-arch/
+          cp dist/arch-stage/PKGBUILD dist/arch-stage/.SRCINFO dist/arch-stage/fm-editor.desktop dist/arch-stage/fm-editor.svg dist/native-arch/
+      - name: Install, verify and uninstall inside the ephemeral container
+        run: |
+          sentinel=/home/builder/.config/fm-editor/settings.json
+          install -d -o builder -g builder /home/builder/.config/fm-editor
+          printf '{"package-preserve-test":true}' > "$sentinel"
+          chown builder:builder "$sentinel"
+          cp "$sentinel" /tmp/fm-editor-settings-original
+          pacman -U --noconfirm dist/native-arch/*.pkg.tar.zst
+          pacman -Qkk fm-editor-bin
+          desktop-file-validate /usr/share/applications/fm-editor.desktop
+          test -f /usr/share/icons/hicolor/scalable/apps/fm-editor.svg
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          info=json.loads(Path('/usr/share/doc/fm-editor-bin/BUILD-INFO.json').read_text())
+          assert info['commit']==os.environ['APP_COMMIT']
+          assert info['version']==os.environ['APP_VERSION']
+          PY
+          install -d -m 700 -o builder -g builder /tmp/fm-editor-runtime
+          runuser -u builder -- env -u WAYLAND_DISPLAY XDG_RUNTIME_DIR=/tmp/fm-editor-runtime LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a python Tools/smoke-release.py --binary /usr/bin/fm-editor
+          pacman -R --noconfirm fm-editor-bin
+          test ! -e /usr/bin/fm-editor
+          test ! -e /usr/share/applications/fm-editor.desktop
+          test ! -e /usr/share/icons/hicolor/scalable/apps/fm-editor.svg
+          cmp "$sentinel" /tmp/fm-editor-settings-original
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fm-editor-arch-package
+          path: dist/native-arch/*
+          if-no-files-found: error
+          retention-days: 14

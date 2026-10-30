@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=FM Editor
+Comment=Real-time memory editor for Football Manager
+Exec=fm-editor
+Icon=fm-editor
+Terminal=false
+Categories=Game;
+StartupNotify=true

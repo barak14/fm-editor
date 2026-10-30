@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Distribution
+
+- Add a per-user Windows installer with Start Menu/optional desktop shortcuts and uninstall support, plus an Arch/CachyOS `fm-editor-bin` package with declared dependencies and desktop/icon integration.
+- Add native-package CI that verifies and wraps existing tagged portable binaries, tests installation/removal and settings preservation, and exports separate packaging source without moving the application tag or publishing a release.
+
 ## 0.1.0 (prerelease)
 
 First portable Windows/Linux preview. Game/build coverage and verification limits

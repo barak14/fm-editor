@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="FM Editor">
+  <rect width="256" height="256" rx="40" fill="#162430"/>
+  <path d="M44 60H114V84H68V114H106V138H68V196H44Z" fill="#dce9e7"/>
+  <path d="M130 196V60H150L172 112L194 60H214V196H190V120L172 160L154 120V196Z" fill="#dce9e7"/>
+  <path d="M44 216H214" stroke="#28b9b2" stroke-width="8" stroke-linecap="round"/>
+</svg>

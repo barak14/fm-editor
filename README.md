@@ -83,6 +83,14 @@ download its platform artifact (GitHub sign-in required; artifacts expire after 
 These are unsigned test builds, not published releases. See [the packaging guide](docs/releases.md)
 for extraction, Linux requirements, verification limits and the public-release checklist.
 
+### Native installation
+
+The [native package guide](docs/native-packages.md) covers the per-user Windows
+installer and the Arch/CachyOS `fm-editor-bin` package, with Start Menu/desktop
+integration and uninstall instructions. They wrap the same tested application
+binaries as the portable downloads; no automatic memory-access privilege changes
+are made. Native packages remain unsigned and the release remains a preview.
+
 ## Building
 
 Requires a recent stable Rust toolchain (edition 2024).

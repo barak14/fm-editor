@@ -1,0 +1,32 @@
+# Prebuilt release package; no compilation or privilege changes.
+pkgname=fm-editor-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Real-time memory editor for Football Manager'
+arch=('x86_64')
+url='https://github.com/barak14/fm-editor'
+license=('GPL-3.0-or-later')
+depends=('glibc' 'gcc-libs' 'libglvnd' 'libx11' 'libxcursor' 'libxrandr' 'libxi' 'libxkbcommon' 'libxkbcommon-x11' 'wayland' 'hicolor-icon-theme')
+optdepends=('xdg-desktop-portal: file dialogs (also install an appropriate portal backend)' 'libcap: optional manual memory-access permission setup')
+provides=('fm-editor')
+conflicts=('fm-editor')
+options=('!strip' '!debug')
+source=("https://github.com/barak14/fm-editor/releases/download/v${pkgver}/fm-editor-${pkgver}-linux-x64.tar.gz"
+        'fm-editor.desktop'
+        'fm-editor.svg')
+sha256sums=('9af2544043dfb119ea28231025f5ca3c7266b4eb95841f2dfbd4951db7c93475'
+            'd54a0fd346af7814c55176bcb0754d38ac1fbf957ac7243ab211a9f5cf5864a5'
+            '205ab5d2560312caeb1cda6b33b2e92baa4b4ab54e00a79a54b8b538cae348a8')
+
+package() {
+    local payload="${srcdir}/fm-editor-${pkgver}-linux-x64"
+    local docdir="${pkgdir}/usr/share/doc/${pkgname}"
+    install -Dm755 "${payload}/fm-editor" "${pkgdir}/usr/bin/fm-editor"
+    install -Dm644 "${srcdir}/fm-editor.desktop" "${pkgdir}/usr/share/applications/fm-editor.desktop"
+    install -Dm644 "${srcdir}/fm-editor.svg" "${pkgdir}/usr/share/icons/hicolor/scalable/apps/fm-editor.svg"
+    install -d "${docdir}"
+    # Preserve the portable documentation tree and all README-relative doc links.
+    cp -a "${payload}/docs" "${docdir}/docs"
+    install -m644 "${payload}/"{README.md,CHANGELOG.md,AGENTS.md,ROADMAP.md,BUILD-INFO.json,SOURCE.txt,LICENSE} "${docdir}/"
+    install -Dm644 "${payload}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
