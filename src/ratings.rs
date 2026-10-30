@@ -161,6 +161,23 @@ pub fn all_position_ratings(player: &PlayerRecord) -> Vec<(&'static str, &'stati
         .collect()
 }
 
+/// Strict, unrounded rating for lineup selection. Missing or invalid attributes
+/// exclude a position instead of silently substituting weak/default values.
+pub fn checked_position_rating(
+    pos_key: &str,
+    mut attribute: impl FnMut(&str) -> Option<u8>,
+) -> Option<f64> {
+    let weights = POSITIONS.iter().find(|p| p.pos_key == pos_key)?;
+    let mut total = 0u32;
+    let mut weight_sum = 0u32;
+    for &(key, weight) in weights.weights {
+        let value = attribute(key).filter(|v| (1..=20).contains(v))?;
+        total += u32::from(value) * u32::from(weight);
+        weight_sum += u32::from(weight);
+    }
+    Some(f64::from(total) * 5.0 / f64::from(weight_sum))
+}
+
 fn calc_rating(player: &PlayerRecord, pw: &PosWeights) -> u8 {
     let mut total: u32 = 0;
     let mut max_total: u32 = 0;
