@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.0 (prerelease)
+
+First portable Windows/Linux preview. Game/build coverage and verification limits
+are described in the README and per-version memory-layout documentation.
+
 ### Usability
 
 - Add real FM27 screenshots to the README for player profiles, player search and club facilities.
