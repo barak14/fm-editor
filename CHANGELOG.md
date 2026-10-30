@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (prerelease)
+
+### Features
+
+- Add a read-only **Best XI** planner: choose a lineup from your managed clubs or any selected club across five formations, with a minimum position familiarity, three ranked alternatives per slot, a **Room to grow** mode ranked by PA minus CA, and links to player profiles. Injuries, fitness, suspensions and registration are not checked. Contributed by Laurentiu-Andronache (#2).
+- Add **Club ID** (exact current club) to player Advanced search and a **My clubs** filter covering the managed club, its reserve/B and youth squads, incoming loans and owned players loaned elsewhere. My clubs is FM27 Steam only. Contributed by Laurentiu-Andronache (#1).
+
+### Safety
+
+- Map FM27 Steam contract ownership (player -> contract -> team -> club) and club reserve-team vectors, verified against independently known loan and reserve-team witnesses; membership resolves by cached club identity, fails closed on incomplete data, and is rebuilt on Reload Save.
+- FM27 Steam human-manager discovery requires the verified human-manager class and skips the platform-account placeholder, fixing a false match; Game Pass keeps the previous heuristic because its inherited class address is unverified.
 
 ### Distribution
 
