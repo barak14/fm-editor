@@ -94,6 +94,15 @@ the single pointer to it (manager+0x480 = 0x140 + 0x340):
 | personality | 0x170 | 0x4B0 | 14,10,10,10,10,10,10 |
 | DOB | 0x188 | 0x4C8 | matches the in-game profile |
 
+The human manager is an object of its own staff class (vtable +0x4CC086C;
+AI staff use +0x4D8BE08, player-coach staff +0x4F759F0). The staff array holds
+two of them: the manager, and the entry FM creates for the player's Steam
+profile (named "(<account name>)", staff id 2002106548, no club). Both keep
+their identity block at +0x340, including the name sub-records at
++0x150..+0x167 (the Steam entry has only a last-name record), and listed as
+nameless ID-0 staff until the staff reader patched the shift back for this
+class (`human_manager_vtable_rva`).
+
 At +0x350 the same slots read zeros and unrelated data. The role sub-record
 pointer (0x1D0 + shift) is unverified: it reads an unaligned value
 (0x263009D03), as does a normal staff member's 0x1D0.

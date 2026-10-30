@@ -10,7 +10,6 @@ use crate::process::FmProcess;
 use crate::staff::{self, StaffRecord};
 
 use super::cmd::{ClubView, StaffView};
-use super::worker::read_staff_name;
 
 // ---------------------------------------------------------------------------
 // Staff / club detail loaders
@@ -22,7 +21,7 @@ pub(super) fn load_staff_view(
     index: usize,
 ) -> Result<StaffView, String> {
     let record = staff::read_staff_at(fm, addr, index)?;
-    let name = read_staff_name(fm, addr);
+    let name = staff::read_staff_name(fm, &record.raw);
 
     let role_ptr = record.field_u64("s_role_ptr").unwrap_or(0);
     let roles = if role_ptr > 0x10000 && role_ptr < 0x7FFFFFFFFFFF {
@@ -33,7 +32,7 @@ pub(super) fn load_staff_view(
         None
     };
 
-    let extras = load_staff_extras(fm, addr);
+    let extras = load_staff_extras(fm, addr + record.identity_shift as u64);
     Ok(StaffView {
         record,
         name,
@@ -392,27 +391,16 @@ pub fn find_human_manager(fm: &FmProcess) -> Result<u64, String> {
 pub(super) fn load_human_manager(fm: &FmProcess) -> Result<StaffView, String> {
     let ptr = find_human_manager(fm)?;
 
-    // Read enough bytes to cover both the standard staff layout AND the
-    // shifted identity block, then patch the shifted values back into the
-    // standard offsets. After patching, the buffer can be treated as a
-    // normal staff struct by the existing UI/reader code.
-    let schema = fm.schemas();
-    let staff_size = schema.staff_struct_size;
-    let shift = schema.human_manager_shift;
-    let read_size = staff_size + shift;
-    let mut raw = fm.read_bytes(ptr, read_size)?;
-    for &(off, len) in schema.manager_shifted_fields {
-        let src = off + shift;
-        let tmp: Vec<u8> = raw[src..src + len].to_vec();
-        raw[off..off + len].copy_from_slice(&tmp);
-    }
-    raw.truncate(staff_size);
-
+    // Read the struct with the shifted identity block patched back into the
+    // standard offsets, so the existing reader/UI code sees a normal staff
+    // layout. The manager is always shifted, whatever his class.
+    let shift = fm.schemas().human_manager_shift;
     let record = StaffRecord {
         version: fm.version,
         addr: ptr,
         index: 0,
-        raw,
+        raw: staff::read_staff_raw_shifted(fm, ptr, shift)?,
+        identity_shift: shift,
     };
 
     // Resolve name and role sub-record from the patched buffer via the

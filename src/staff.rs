@@ -9,8 +9,11 @@ pub struct StaffRecord {
     pub version: crate::game_version::GameVersion,
     pub addr: u64,
     pub index: usize,
-    /// Raw bytes for the full struct
+    /// Raw bytes for the full struct, in schema layout (see `read_staff_raw`).
     pub raw: Vec<u8>,
+    /// Bytes a human manager's identity fields are moved by in memory (0 for
+    /// AI staff); edits to `manager_shifted_fields` must add it.
+    pub identity_shift: usize,
 }
 
 impl HasSubRecords for StaffRecord {
@@ -137,8 +140,41 @@ pub fn staff_array(fm: &FmProcess) -> Result<(u64, u64, usize), String> {
 
 /// Read a staff struct at a known address.
 pub fn read_staff_at(fm: &FmProcess, addr: u64, index: usize) -> Result<StaffRecord, String> {
-    let raw = fm.read_bytes(addr, fm.schemas().staff_struct_size)?;
-    Ok(StaffRecord { version: fm.version, addr, index, raw })
+    let (raw, identity_shift) = read_staff_raw(fm, addr)?;
+    Ok(StaffRecord { version: fm.version, addr, index, raw, identity_shift })
+}
+
+/// Identity shift of the staff object at `addr`: the schema's
+/// `human_manager_shift` for an object of the human-manager class, else 0.
+pub fn identity_shift(fm: &FmProcess, addr: u64) -> usize {
+    let schema = fm.schemas();
+    let rva = schema.human_manager_vtable_rva;
+    if rva != 0 && fm.read_u64(addr).is_ok_and(|vt| vt == fm.gp_base + rva) {
+        schema.human_manager_shift
+    } else {
+        0
+    }
+}
+
+/// Read a staff struct in schema layout, plus its identity shift.
+pub fn read_staff_raw(fm: &FmProcess, addr: u64) -> Result<(Vec<u8>, usize), String> {
+    let shift = identity_shift(fm, addr);
+    Ok((read_staff_raw_shifted(fm, addr, shift)?, shift))
+}
+
+/// Read a staff struct whose identity fields sit `shift` bytes later, copying
+/// them back to their schema offsets so readers see one layout.
+pub fn read_staff_raw_shifted(fm: &FmProcess, addr: u64, shift: usize) -> Result<Vec<u8>, String> {
+    let schema = fm.schemas();
+    let size = schema.staff_struct_size;
+    let mut raw = fm.read_bytes(addr, size + shift)?;
+    if shift != 0 {
+        for &(off, len) in schema.manager_shifted_fields {
+            raw.copy_within(off + shift..off + shift + len, off);
+        }
+        raw.truncate(size);
+    }
+    Ok(raw)
 }
 
 /// Find a staff record by database ID.
@@ -219,7 +255,7 @@ mod tests {
         for (offset, value) in ca_offsets.into_iter().zip([123, 187]) {
             raw[offset] = value;
         }
-        let fm24 = StaffRecord { version: GameVersion::Fm24, addr: 0, index: 0, raw };
+        let fm24 = StaffRecord { version: GameVersion::Fm24, addr: 0, index: 0, raw, identity_shift: 0 };
         let fm27 = StaffRecord { version: GameVersion::Fm27, ..fm24.clone() };
         assert_eq!(fm24.ca(), 123);
         assert_eq!(fm27.ca(), 187);

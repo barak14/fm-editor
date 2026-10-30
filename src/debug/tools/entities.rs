@@ -146,7 +146,6 @@ fn build_mini_cache(fm: &crate::process::FmProcess) -> Result<MiniCache, String>
 
     // Players go through `read_player_raw` so player-coaches (person block
     // moved) decode in the same schema layout as plain players.
-    let staff_size  = fm.schemas().staff_struct_size;
     let c_name_off  = fm.schemas().field("c_name")
         .ok_or("c_name missing")?.offset.ok_or("c_name no offset")?.offset();
 
@@ -168,7 +167,9 @@ fn build_mini_cache(fm: &crate::process::FmProcess) -> Result<MiniCache, String>
     for i in 0..sc {
         let ptr = fm.read_u64(sd + i as u64 * 8).unwrap_or(0);
         if ptr < 0x10000 || ptr > 0x7FFFFFFFFFFF { continue; }
-        let raw = match fm.read_bytes(ptr, staff_size) { Ok(b) => b, Err(_) => continue };
+        // Human managers keep their identity fields shifted; read_staff_raw
+        // patches them back so they list by name and ID.
+        let Ok((raw, _)) = staff::read_staff_raw(fm, ptr) else { continue };
         let uid  = read_u32_le(&raw, s_uid_off as usize);
         let name = staff::read_staff_name(fm, &raw).unwrap_or_default();
         staff_entries.push(EntityEntry { uid, addr: ptr, index: i, name });

@@ -69,11 +69,6 @@ fn counts_tuple(ac: &ArrayCache) -> (usize, usize, usize) {
     (ac.humans_count, ac.staff_count, ac.clubs_count)
 }
 
-pub(super) fn read_staff_name(fm: &FmProcess, addr: u64) -> Option<String> {
-    let name_offset = fm.schemas().field("s_name")?.offset?.offset();
-    let name_ptr = fm.read_u64(addr + name_offset).ok()?;
-    fm.read_fm_name(name_ptr).ok()
-}
 
 // ---------------------------------------------------------------------------
 // Worker loop

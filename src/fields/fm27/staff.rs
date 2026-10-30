@@ -180,6 +180,8 @@ pub const MANAGER_SHIFTED_FIELDS: &[(usize, usize)] = &[
     (0x10C, 4), // staff id
     (0x110, 4), // staff id duplicate
     (0x140, 8), // name pointer
+    (0x150, 24), // first / last / common name sub-records (FM27: the Steam
+                 // profile's entry has only a last-name record)
     (0x170, 8), // personality (8 x u8)
     (0x188, 4), // DOB day (u16) + year (u16)
     (0x1D0, 8), // role sub-record pointer

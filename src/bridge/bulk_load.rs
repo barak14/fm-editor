@@ -53,7 +53,6 @@ pub(super) fn load_entity_cache(
     // Optional: FM24 has no mapped gender flag.
     let c_gender_off    = schemas.offset_of("c_gender").map(|o| o as u64);
 
-    let staff_size  = fm.schemas().staff_struct_size;
 
     // ------------------------------------------------------------------
     // Phase 1 — players
@@ -102,8 +101,8 @@ pub(super) fn load_entity_cache(
             continue;
         }
 
-        let raw = match fm.read_bytes(ptr, staff_size) {
-            Ok(b)  => b,
+        let (raw, identity_shift) = match crate::staff::read_staff_raw(fm, ptr) {
+            Ok(r)  => r,
             Err(_) => { done += 1; continue; }
         };
 
@@ -128,7 +127,7 @@ pub(super) fn load_entity_cache(
 
         staff.push(CachedStaff {
             addr: ptr, index: i, name, uid, ca, pa, dob_year,
-            roles, role_ptr, raw,
+            roles, role_ptr, raw, identity_shift,
             nation_id: None, club_id: None,
         });
 

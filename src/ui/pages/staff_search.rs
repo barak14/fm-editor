@@ -599,6 +599,7 @@ mod tests {
             roles: [10; 15],
             role_ptr: 0,
             raw: Vec::new(),
+            identity_shift: 0,
             nation_id: None,
             club_id: None,
         }

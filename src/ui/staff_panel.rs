@@ -39,7 +39,26 @@ pub fn show(
         StaffTab::Contract => show_contract(schemas, ui, staff, &mut edits),
     });
 
+    redirect_shifted_edits(staff, &mut edits);
     edits
+}
+
+/// Move edits to a human manager's identity fields (DOB, personality, ...)
+/// to where the game stores them: `identity_shift` bytes past the schema
+/// offset. A no-op for AI staff.
+fn redirect_shifted_edits(staff: &StaffView, edits: &mut [FieldEdit]) {
+    let shift = staff.record.identity_shift as u64;
+    if shift == 0 {
+        return;
+    }
+    let addr = staff.record.addr;
+    let schema = staff.record.version.schemas();
+    for edit in edits {
+        let rel = edit.addr.wrapping_sub(addr);
+        if schema.is_manager_shifted_offset(rel) {
+            edit.addr = edit.addr.wrapping_add(shift);
+        }
+    }
 }
 
 fn header(
@@ -187,7 +206,6 @@ pub fn show_manager(
     staff: &mut StaffView,
 ) -> Vec<FieldEdit> {
     let mut edits = Vec::new();
-    let addr = staff.record.addr;
     header(schemas, ui, staff, "Human Manager");
     ui.separator();
 
@@ -232,14 +250,7 @@ pub fn show_manager(
     });
 
     // Redirect only identity fields stored at the human manager's shifted offsets.
-    let schema = schemas;
-    for edit in &mut edits {
-        let rel = edit.addr.wrapping_sub(addr);
-        if schema.is_manager_shifted_offset(rel) {
-            edit.addr = edit.addr.wrapping_add(schema.human_manager_shift as u64);
-        }
-    }
-
+    redirect_shifted_edits(staff, &mut edits);
     edits
 }
 

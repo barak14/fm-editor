@@ -493,6 +493,13 @@ pub struct VersionedSchemas {
     pub player_person_offset: usize,
     pub player_coach_shift: usize,
 
+    /// RVA (module-relative) of the vtable of the human-manager staff class.
+    /// Staff objects of this class keep their identity fields at
+    /// `offset + human_manager_shift` (see `manager_shifted_fields`), so every
+    /// staff reader patches them back. 0 = only the manager found by
+    /// `find_human_manager` is treated as shifted.
+    pub human_manager_vtable_rva: u64,
+
     /// Year ages are computed against (game start season). FM26 keeps the
     /// editor's historical 2026; FM24 saves start in July 2023.
     pub age_reference_year: u16,

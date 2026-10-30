@@ -45,8 +45,10 @@ pub struct CachedStaff {
     pub dob_year:  u16,
     pub roles:     [u8; 15],
     pub role_ptr:  u64,
-    /// Full 576-byte staff struct — used by the detail panel.
+    /// Full staff struct in schema layout — used by the detail panel.
     pub raw:       Vec<u8>,
+    /// Identity-field shift in memory (human managers); see `staff::read_staff_raw`.
+    pub identity_shift: usize,
     // Unmapped list-column fields:
     pub nation_id: Option<u32>,
     pub club_id:   Option<u32>,

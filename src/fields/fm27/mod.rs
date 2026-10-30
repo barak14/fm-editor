@@ -74,5 +74,10 @@ pub static FM27: VersionedSchemas = VersionedSchemas {
     player_coach_vtable_rva: 0x4F75A08,
     player_person_offset: 0x288,
     player_coach_shift: 0xF8,
+    // Human-manager staff class: the user's manager (last staff entry) and the
+    // entry FM creates for the player's Steam profile (named "(<account
+    // name>)", staff id 2002106548, no club, CA/PA 100/200). Both showed as
+    // nameless ID-0 rows in the staff list.
+    human_manager_vtable_rva: 0x4CC086C,
     age_reference_year: 2027,
 };

@@ -468,12 +468,26 @@ impl FmEditorApp {
                 patch_buffer(raw, base, entry.addr, bytes);
             }
         }
+        // A human manager's identity edits land `identity_shift` bytes past
+        // the schema offset; map them back before patching the buffer.
+        let normalized = |s: &StaffView| {
+            let schema = s.record.version.schemas();
+            let shift = s.record.identity_shift as u64;
+            entry
+                .addr
+                .checked_sub(s.record.addr)
+                .and_then(|rel| rel.checked_sub(shift))
+                .filter(|rel| shift != 0 && schema.is_manager_shifted_offset(*rel))
+                .map(|rel| s.record.addr + rel)
+                .unwrap_or(entry.addr)
+        };
         for s in self
             .staff_snapshots
             .values_mut()
             .chain(self.selected_staff.iter_mut())
         {
-            patch_buffer(&mut s.record.raw, s.record.addr, entry.addr, bytes);
+            let at = normalized(s);
+            patch_buffer(&mut s.record.raw, s.record.addr, at, bytes);
             if let (Some(raw), Some(base)) = (&mut s.contract_raw, s.contract_addr) {
                 patch_buffer(raw, base, entry.addr, bytes);
             }
@@ -482,15 +496,8 @@ impl FmEditorApp {
             if let (Some(raw), Some(base)) = (&mut s.contract_raw, s.contract_addr) {
                 patch_buffer(raw, base, entry.addr, bytes);
             }
-            let schema = s.record.version.schemas();
-            let normalized = entry
-                .addr
-                .checked_sub(s.record.addr)
-                .and_then(|rel| rel.checked_sub(schema.human_manager_shift as u64))
-                .filter(|rel| schema.is_manager_shifted_offset(*rel))
-                .map(|rel| s.record.addr + rel)
-                .unwrap_or(entry.addr);
-            patch_buffer(&mut s.record.raw, s.record.addr, normalized, bytes);
+            let at = normalized(s);
+            patch_buffer(&mut s.record.raw, s.record.addr, at, bytes);
         }
         for c in self
             .club_snapshots
@@ -1696,6 +1703,7 @@ fn cached_staff_view(cached: &CachedStaff, version: GameVersion) -> StaffView {
             addr: cached.addr,
             index: cached.index,
             raw: cached.raw.clone(),
+            identity_shift: cached.identity_shift,
         },
         name: Some(cached.name.clone()),
         roles: Some(cached.roles),
