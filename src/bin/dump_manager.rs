@@ -157,8 +157,8 @@ fn main() {
         }
     };
     println!(
-        "Attached: version {:?}, pid {}, game_plugin.dll @ 0x{:X}",
-        fm.version, fm.pid, fm.gp_base
+        "Attached: {}, pid {}, {} @ 0x{:X}",
+        fm.build.display_name(), fm.pid, fm.module_path, fm.gp_base
     );
 
     let schema = fm.schemas();

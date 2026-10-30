@@ -23,7 +23,7 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
         .map(|games| {
             games
                 .iter()
-                .map(|g| json!({ "pid": g.pid, "version": g.version.display_name() }))
+                .map(|g| json!({ "pid": g.pid, "version": g.build.version().display_name(), "storefront": g.build.storefront().display_name() }))
                 .collect()
         })
         .unwrap_or_default();
@@ -68,7 +68,9 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
 
     Ok(serde_json::to_string_pretty(&json!({
         "attached":      true,
-        "version":       fm.version.display_name(),
+        "version":       fm.build.version().display_name(),
+        "storefront":    fm.build.storefront().display_name(),
+        "module_path":   fm.module_path,
         "pid":           fm.pid,
         "editor_pid":    state.editor_pid.load(Ordering::Relaxed),
         "running_games": running,

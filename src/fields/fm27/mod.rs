@@ -19,10 +19,11 @@ pub(crate) use stadium::FIELDS as STADIUM_FIELDS;
 
 use crate::fields::VersionedSchemas;
 
-/// FM27 schema. FM27 is a Unity build like FM26: game logic lives in
+/// FM27 Steam build. FM27 is a Unity build like FM26: game logic lives in
 /// `game_plugin.dll`, and the entity RVAs below are relative to its base.
-/// All values are inherited from FM26 and unverified.
-pub static FM27: VersionedSchemas = VersionedSchemas {
+/// Values not listed as verified in docs/fm27/memory-layout.md are inherited
+/// from FM26.
+const STEAM: VersionedSchemas = VersionedSchemas {
     player_fields: PLAYER_FIELDS,
     staff_fields: STAFF_FIELDS,
     club_fields: CLUB_FIELDS,
@@ -80,4 +81,20 @@ pub static FM27: VersionedSchemas = VersionedSchemas {
     // nameless ID-0 rows in the staff list.
     human_manager_vtable_rva: 0x4CC086C,
     age_reference_year: 2027,
+};
+
+/// FM27 schema, Steam build (Windows and Proton).
+pub static FM27: VersionedSchemas = STEAM;
+
+/// FM27 schema, PC Game Pass build (Microsoft GDK, Xbox app install).
+///
+/// UNVERIFIED: a copy of the Steam build. The Game Pass binary is a separate
+/// build, so its `game_plugin.dll` hash and module-relative RVAs (entity
+/// arrays, stadium root, vtables) are expected to differ; struct field
+/// offsets are likely, not known, to match. Bring-up checklist in
+/// docs/fm27/memory-layout.md ("Game Pass build").
+pub static FM27_GAMEPASS: VersionedSchemas = VersionedSchemas {
+    // Not calibrated: attach reports the running game_plugin.dll hash.
+    known_dll_hash: 0,
+    ..STEAM
 };

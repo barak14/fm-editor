@@ -6,7 +6,7 @@ use crate::process::FmProcess;
 /// A decoded player record.
 #[derive(Debug, Clone)]
 pub struct PlayerRecord {
-    pub version: crate::game_version::GameVersion,
+    pub build: crate::game_version::GameBuild,
     pub addr: u64,
     pub index: usize,
     pub name: Option<String>,
@@ -40,31 +40,31 @@ impl HasSubRecords for PlayerRecord {
 impl PlayerRecord {
     /// Read a field by key, decoded to displayed value (u8).
     pub fn field_u8(&self, key: &str) -> Option<u8> {
-        let f = self.version.schemas().field(key)?;
+        let f = self.build.schemas().field(key)?;
         fields::read_field_u8(self, &self.raw, f)
     }
 
     /// Read a field by key as u16.
     pub fn field_u16(&self, key: &str) -> Option<u16> {
-        let f = self.version.schemas().field(key)?;
+        let f = self.build.schemas().field(key)?;
         fields::read_field_u16(self, &self.raw, f)
     }
 
     /// Read a field by key as u32.
     pub fn field_u32(&self, key: &str) -> Option<u32> {
-        let f = self.version.schemas().field(key)?;
+        let f = self.build.schemas().field(key)?;
         fields::read_field_u32(self, &self.raw, f)
     }
 
     /// Read a field by key as u64.
     pub fn field_u64(&self, key: &str) -> Option<u64> {
-        let f = self.version.schemas().field(key)?;
+        let f = self.build.schemas().field(key)?;
         fields::read_field_u64(self, &self.raw, f)
     }
 
     /// Read all mapped fields for a category, returning (label, decoded_value).
     pub fn category(&self, category: Category) -> Vec<(&'static str, u8)> {
-        self.version.schemas().fields_for_category(Entity::Player, category)
+        self.build.schemas().fields_for_category(Entity::Player, category)
             .iter()
             .filter_map(|f| {
                 let val = fields::read_field_u8(self, &self.raw, f)?;
@@ -75,7 +75,7 @@ impl PlayerRecord {
 
     /// Read all 15 positions as (label, value) pairs, skipping value=1.
     pub fn positions(&self) -> Vec<(&'static str, u8)> {
-        self.version.schemas().fields_for_category(Entity::Player, Category::Positions)
+        self.build.schemas().fields_for_category(Entity::Player, Category::Positions)
             .iter()
             .filter_map(|f| {
                 let val = fields::read_field_u8(self, &self.raw, f)?;
@@ -358,7 +358,7 @@ pub fn read_player_at(fm: &FmProcess, addr: u64, index: usize) -> Result<PlayerR
     let birthplace = fields::read_sub_fm_string(fm, addr, "p_birthplace", subs, &phys);
 
     Ok(PlayerRecord {
-        version: fm.version,
+        build: fm.build,
         addr, index, name, raw, person_shift,
         contract_raw, contract_addr, club_name, club_addr, nationality, birthplace,
     })
@@ -367,7 +367,7 @@ pub fn read_player_at(fm: &FmProcess, addr: u64, index: usize) -> Result<PlayerR
 /// Compute a player's age in whole years from the DOB year (u16 half of
 /// the `p_dob` DateDayYear field). Returns `None` if the year is unset (0).
 pub fn player_age(rec: &PlayerRecord) -> Option<u16> {
-    let dob_year_offset = rec.version.schemas().field("p_dob")?.offset?.offset() as usize + 2;
+    let dob_year_offset = rec.build.schemas().field("p_dob")?.offset?.offset() as usize + 2;
     if rec.raw.len() < dob_year_offset + 2 {
         return None;
     }
@@ -379,17 +379,17 @@ pub fn player_age(rec: &PlayerRecord) -> Option<u16> {
     if year == 0 {
         return None;
     }
-    Some(rec.version.schemas().age_reference_year.saturating_sub(year))
+    Some(rec.build.schemas().age_reference_year.saturating_sub(year))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_version::GameVersion;
+    use crate::game_version::GameBuild;
 
     #[test]
-    fn records_decode_with_their_own_version() {
-        let versions = [GameVersion::Fm24, GameVersion::Fm27];
+    fn records_decode_with_their_own_build() {
+        let versions = [GameBuild::Fm24Steam, GameBuild::Fm27Steam];
         let mut raw = vec![0; versions.iter().map(|v| v.schemas().player_struct_size).max().unwrap()];
         let ca_offsets = versions.map(|v| v.schemas().offset_of("p_ca").unwrap());
         assert_ne!(ca_offsets[0], ca_offsets[1]);
@@ -402,7 +402,7 @@ mod tests {
             raw[offset..offset + 2].copy_from_slice(&year.to_le_bytes());
         }
         let fm24 = PlayerRecord {
-            version: GameVersion::Fm24,
+            build: GameBuild::Fm24Steam,
             addr: 0,
             index: 0,
             name: None,
@@ -415,7 +415,7 @@ mod tests {
             nationality: None,
             birthplace: None,
         };
-        let fm27 = PlayerRecord { version: GameVersion::Fm27, ..fm24.clone() };
+        let fm27 = PlayerRecord { build: GameBuild::Fm27Steam, ..fm24.clone() };
         assert_eq!(fm24.field_u16("p_ca"), Some(123));
         assert_eq!(fm27.field_u16("p_ca"), Some(187));
         assert_eq!(player_age(&fm24), Some(25));

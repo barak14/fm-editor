@@ -13,6 +13,10 @@
 
 ### Safety
 
+- Select schemas per build (release + storefront) instead of per release. PC Game Pass installs are recognised by their GDK manifest or `XboxGames` / `WindowsApps` location and get their own schema; FM27 Game Pass starts as an unverified copy of the Steam schema with an uncalibrated hash, so it can attach for bring-up on Windows. The toolbar names the build ("FM27 Game Pass"), and fm-debug `attach_status` reports the storefront and the module path.
+- An unreadable game module (e.g. under `WindowsApps`) now fails the version gate with the file error instead of a misleading hash mismatch; the gate reads only the first 64 KB of the module.
+- `Tools/scan-arrays.sh` scans every writable, non-executable section from the module's PE section table instead of a fixed FM26 window, so it reaches the FM27 arrays and any build's relocated ones.
+
 - Support several Football Manager versions open at once: the toolbar offers one attach button per running `fm.exe` with its version and PID, and the status bar names the attached game. The editor, the fm-debug MCP server and the diagnostic binaries each read through the schema of the process they attached to; the process-global "active version" is gone, so one attachment can no longer switch another's offsets.
 - fm-debug `attach_status` reports every running game, follows the game the editor is attached to, and takes an optional `pid` to switch; `get_known_schema` now reports the attached game's schema. `Tools/dump-manager.sh` and `Tools/scan-arrays.sh` accept `--pid <n>`.
 

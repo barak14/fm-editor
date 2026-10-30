@@ -396,7 +396,7 @@ pub(super) fn load_human_manager(fm: &FmProcess) -> Result<StaffView, String> {
     // layout. The manager is always shifted, whatever his class.
     let shift = fm.schemas().human_manager_shift;
     let record = StaffRecord {
-        version: fm.version,
+        build: fm.build,
         addr: ptr,
         index: 0,
         raw: staff::read_staff_raw_shifted(fm, ptr, shift)?,

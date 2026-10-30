@@ -2,7 +2,8 @@
 
 Real-time memory editor for Football Manager. Reads and writes `fm.exe` process memory (Win32
 APIs on Windows, `process_vm_readv`/`process_vm_writev` against Proton on Linux) using a schema
-selected at attach time. Supports FM24, FM26 and FM27. See [README.md](README.md) for users.
+selected at attach time. Supports FM24, FM26 and FM27 (Steam builds, plus an unverified FM27
+Game Pass schema). See [README.md](README.md) for users.
 
 ## First Principles
 
@@ -11,7 +12,7 @@ selected at attach time. Supports FM24, FM26 and FM27. See [README.md](README.md
   `docs/<version>/memory-layout.md`. Change both in one commit or neither.
 - **Never trust inherited offsets.** Run verification yourself before acting on anything inherited.
 - **All offsets through the schema.** No raw hex outside `src/fields/`. Everything goes through
-  `fm.schemas()` (or a record's / the attached game's `version.schemas()`). There is no global
+  `fm.schemas()` (or a record's / the attached game's `build.schemas()`). There is no global
   active version: FM24, FM26 and FM27 can run side by side.
 - **Writes need undo.** Anything calling `WriteProcessMemory` must round-trip through the undo
   stack. Never write speculatively.
@@ -22,8 +23,8 @@ selected at attach time. Supports FM24, FM26 and FM27. See [README.md](README.md
 ## Architecture
 
 ```
-fields/               Shared types + per-version schemas (fm24/, fm26/, fm27/)
-game_version.rs       Version enum + runtime dispatch via fm.schemas()
+fields/               Shared types + per-build schemas (fm24/, fm26/, fm27/)
+game_version.rs       Version / storefront / build enums + per-build schema dispatch
 process/              Attach to fm.exe; win32.rs and linux.rs memory backends
 bridge/               Worker thread → UI via mpsc (bulk cache, entity loads, writes)
 player/staff/club.rs  Record-reading helpers — all offsets from fm.schemas()

@@ -103,7 +103,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                 match attached {
                     Ok(process) => {
                         let pid = process.pid;
-                        let version = process.version;
+                        let build = process.build;
                         let notice = process.dll_hash_notice.clone();
                         let ac = build_cache(&process);
                         // Never promote on the first observation — even if
@@ -117,7 +117,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                         };
                         cache = None;
                         fm = Some(process);
-                        let _ = tx.send(BridgeResult::Attached(pid, version));
+                        let _ = tx.send(BridgeResult::Attached(pid, build));
                         if let Some(msg) = notice {
                             let _ = tx.send(BridgeResult::Error(msg));
                         }

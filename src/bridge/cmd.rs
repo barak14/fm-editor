@@ -126,7 +126,7 @@ pub enum BridgeResult {
     /// fm.exe attached but no save is loaded yet, or save creation is
     /// still in progress. The worker keeps pinging; once counts are
     /// stable + plausible, we promote to Connected.
-    Attached(u32, crate::game_version::GameVersion),
+    Attached(u32, crate::game_version::GameBuild),
     /// Several games are running (they all run as `fm.exe`) and no PID was
     /// given. Nothing was attached; the UI asks which one to use.
     ChooseGame(Vec<crate::process::RunningGame>),

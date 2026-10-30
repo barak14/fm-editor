@@ -20,26 +20,27 @@ mod linux;
 use self::linux as backend;
 
 use crate::fields::VersionedSchemas;
-use crate::game_version::GameVersion;
+use crate::game_version::{GameBuild, GameVersion, Storefront};
 
-/// A running `fm.exe` whose game version could be identified.
+/// A running `fm.exe` whose game build could be identified.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RunningGame {
     pub pid: u32,
-    pub version: GameVersion,
+    pub build: GameBuild,
 }
 
 impl std::fmt::Display for RunningGame {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} (PID {})", self.version.display_name(), self.pid)
+        write!(f, "{} (PID {})", self.build.display_name(), self.pid)
     }
 }
 
-/// Every running `fm.exe` whose version can be determined, ordered by PID.
+/// Every running `fm.exe` whose build can be determined, ordered by PID.
 ///
 /// FM24, FM26 and FM27 all run as `fm.exe`, so several can be open at once.
-/// A process whose version cannot be sniffed (e.g. a launcher sharing the
-/// name) is left out; when nothing is identifiable the error says why.
+/// A process whose build cannot be sniffed (e.g. a launcher sharing the
+/// name, or a storefront without a schema) is left out; when nothing is
+/// identifiable the error says why.
 pub fn running_games() -> Result<Vec<RunningGame>, String> {
     let pids = backend::find_pids("fm.exe")?;
     if pids.is_empty() {
@@ -48,8 +49,8 @@ pub fn running_games() -> Result<Vec<RunningGame>, String> {
     let mut games = Vec::with_capacity(pids.len());
     let mut first_err = None;
     for pid in pids {
-        match detect_version(pid) {
-            Ok(version) => games.push(RunningGame { pid, version }),
+        match detect_build(pid) {
+            Ok(build) => games.push(RunningGame { pid, build }),
             Err(e) => {
                 first_err.get_or_insert(format!("pid {pid}: {e}"));
             }
@@ -61,19 +62,51 @@ pub fn running_games() -> Result<Vec<RunningGame>, String> {
     }
 }
 
-/// Sniff the game version of one `fm.exe` from its install path (it always
-/// contains the release year): FM26/FM27 keep their game logic in
-/// `game_plugin.dll`, FM24 in `fm.exe` itself, so the plugin path is tried
-/// first and the exe path is the fallback.
-fn detect_version(pid: u32) -> Result<GameVersion, String> {
-    let sniff_path = backend::find_module_info(pid, "game_plugin.dll")
-        .or_else(|_| backend::find_module_info(pid, "fm.exe"))?
-        .2;
-    sniff_version(&sniff_path)
+/// Identify the build of one `fm.exe`.
+///
+/// The version comes from the install path (it always contains the release
+/// year): FM26/FM27 keep their game logic in `game_plugin.dll`, FM24 in
+/// `fm.exe` itself, so the plugin path is tried first and the exe path is
+/// the fallback. The storefront comes from the exe's install location.
+fn detect_build(pid: u32) -> Result<GameBuild, String> {
+    let exe_path = backend::find_module_info(pid, "fm.exe").map(|m| m.2);
+    let sniff_path = match backend::find_module_info(pid, "game_plugin.dll") {
+        Ok(m) => m.2,
+        Err(e) => exe_path.clone().map_err(|_| e)?,
+    };
+    let version = sniff_version(&sniff_path)?;
+    let storefront = match &exe_path {
+        Ok(exe) => storefront_of(exe, has_gdk_config(exe)),
+        Err(_) => storefront_of(&sniff_path, false),
+    };
+    GameBuild::resolve(version, storefront).map_err(|e| format!("{e} ({sniff_path})"))
+}
+
+/// True when a `MicrosoftGame.config` (the Microsoft GDK package manifest
+/// every Game Pass PC title ships) sits next to the exe.
+fn has_gdk_config(exe_path: &str) -> bool {
+    let dir = match exe_path.rfind(['/', '\\']) {
+        Some(i) => &exe_path[..i],
+        None => return false,
+    };
+    std::path::Path::new(dir).join("MicrosoftGame.config").is_file()
+}
+
+/// Storefront of an install, from its exe (or module) path and whether the
+/// GDK manifest sits next to the exe. Game Pass installs live under an
+/// `XboxGames` folder (any drive, the Xbox app default) or, for older Store
+/// packages, `Program Files\WindowsApps`; anything else is the Steam build.
+fn storefront_of(path: &str, has_gdk_config: bool) -> Storefront {
+    let lower = path.to_lowercase().replace('\\', "/");
+    if has_gdk_config || lower.contains("/xboxgames/") || lower.contains("/windowsapps/") {
+        Storefront::GamePass
+    } else {
+        Storefront::Steam
+    }
 }
 
 /// Handle to an open game process with its resolved game module and
-/// selected game version.
+/// selected game build.
 pub struct FmProcess {
     handle: backend::ProcHandle,
     pub pid: u32,
@@ -82,7 +115,9 @@ pub struct FmProcess {
     /// (see `GameVersion::module_name`).
     pub gp_base: u64,
     pub gp_end: u64,
-    pub version: GameVersion,
+    /// On-disk path of that module, as the OS reports it.
+    pub module_path: String,
+    pub build: GameBuild,
     /// Set when `known_dll_hash` is 0 in the schema (not yet calibrated).
     /// The worker forwards this to the UI as a status notice so the developer
     /// knows the current hash to paste into `fields/<version>/mod.rs`.
@@ -111,49 +146,64 @@ impl FmProcess {
     /// process's own install path, never from any other attachment.
     pub fn attach_pid(pid: u32) -> Result<Self, String> {
         let handle = backend::open(pid)?;
-        let version = detect_version(pid)?;
-        let (gp_base, gp_size, gp_path) = backend::find_module_info(pid, version.module_name())?;
+        let build = detect_build(pid)?;
+        let module = build.version().module_name();
+        let (gp_base, gp_size, gp_path) = backend::find_module_info(pid, module)?;
         // Probe one read up front so a blocked cross-process access path
         // (e.g. Linux yama ptrace_scope) fails the attach with the OS hint
         // instead of erroring on the first field read later.
         backend::read_bytes(&handle, gp_base, 2)
             .map_err(|e| format!("attached to pid {pid} but cannot read its memory: {e}"))?;
-        let dll_hash = hash_dll_header(&gp_path);
-        let known = version.schemas().known_dll_hash;
-        let dll_hash_notice = if known == 0 {
+        let known = build.schemas().known_dll_hash;
+        let dll_hash_notice = match (known, hash_module_header(&gp_path)) {
             // Schema not yet calibrated — allow attach but surface the hash.
-            Some(format!(
-                "DLL hash not calibrated (current: 0x{dll_hash:016X}). \
-                 Set known_dll_hash: 0x{dll_hash:016X} in src/fields/{}/mod.rs \
+            (0, Ok(hash)) => Some(format!(
+                "{} {module} hash not calibrated (current: 0x{hash:016X}). \
+                 Set known_dll_hash: 0x{hash:016X} in {} in src/fields/{}/mod.rs \
                  to enable the version gate.",
-                version.short_name(),
-            ))
-        } else if known != dll_hash {
-            return Err(format!(
-                "FM version mismatch — schema built for 0x{known:016X}, \
-                 running 0x{dll_hash:016X}. Re-verify offsets against the \
-                 new patch before use."
-            ));
-        } else {
-            None
+                build.display_name(),
+                build.schema_name(),
+                build.version().short_name(),
+            )),
+            (0, Err(e)) => Some(format!(
+                "{} {module} hash not calibrated and unavailable: {e}",
+                build.display_name(),
+            )),
+            (_, Err(e)) => {
+                return Err(format!(
+                    "cannot check the {} build: {e}",
+                    build.display_name()
+                ));
+            }
+            (known, Ok(hash)) if known != hash => {
+                return Err(format!(
+                    "{} version mismatch — schema {} built for 0x{known:016X}, \
+                     running 0x{hash:016X} ({gp_path}). Re-verify offsets \
+                     against the new patch before use.",
+                    build.display_name(),
+                    build.schema_name(),
+                ));
+            }
+            _ => None,
         };
         Ok(Self {
             handle,
             pid,
             gp_base,
             gp_end: gp_base + gp_size,
-            version,
+            module_path: gp_path,
+            build,
             dll_hash_notice,
         })
     }
 
-    /// The version-specific schema bundle for this process.
+    /// The build-specific schema bundle for this process.
     ///
     /// Every reader that holds an `FmProcess` pulls field data, RVAs and
     /// struct sizes through here, so two games open at once never share a
     /// schema.
     pub fn schemas(&self) -> &'static VersionedSchemas {
-        self.version.schemas()
+        self.build.schemas()
     }
 
     /// Read `n` bytes from the target process at `addr`.
@@ -247,23 +297,24 @@ fn sniff_version(dll_path: &str) -> Result<GameVersion, String> {
     }
 }
 
-/// FNV-1a hash of the first 64 KB of a DLL file.
+/// FNV-1a hash of the first 64 KB of a module file.
 ///
-/// Used as a lightweight version fingerprint to detect when FM has been
-/// patched and the schema should be re-verified. Returns 0 if the file
-/// cannot be read (attach continues; the gate is skipped rather than
-/// hard-failing on a transient I/O error).
-fn hash_dll_header(dll_path: &str) -> u64 {
-    let Ok(bytes) = std::fs::read(dll_path) else {
-        return 0;
-    };
-    let slice = &bytes[..bytes.len().min(65536)];
+/// Used as a lightweight build fingerprint to detect when FM has been
+/// patched and the schema should be re-verified. A file that cannot be read
+/// (e.g. a Store install under the access-restricted `WindowsApps` folder)
+/// is an error naming the path, not a hash that merely fails to match.
+fn hash_module_header(path: &str) -> Result<u64, String> {
+    use std::io::Read;
+    let mut bytes = Vec::with_capacity(65536);
+    std::fs::File::open(path)
+        .and_then(|f| f.take(65536).read_to_end(&mut bytes))
+        .map_err(|e| format!("cannot read {path}: {e}"))?;
     let mut h: u64 = 0xcbf29ce484222325;
-    for &b in slice {
+    for &b in &bytes {
         h ^= b as u64;
         h = h.wrapping_mul(0x100000000001b3);
     }
-    h
+    Ok(h)
 }
 
 #[cfg(test)]
@@ -271,9 +322,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn running_game_label_names_version_and_pid() {
-        let game = RunningGame { pid: 4242, version: GameVersion::Fm27 };
+    fn running_game_label_names_build_and_pid() {
+        let game = RunningGame { pid: 4242, build: GameBuild::Fm27Steam };
         assert_eq!(game.to_string(), "FM27 (PID 4242)");
+        let game = RunningGame { pid: 4242, build: GameBuild::Fm27GamePass };
+        assert_eq!(game.to_string(), "FM27 Game Pass (PID 4242)");
     }
 
     #[test]
@@ -283,5 +336,34 @@ mod tests {
         assert_eq!(sniff_version(fm24), Ok(GameVersion::Fm24));
         assert_eq!(sniff_version(fm27), Ok(GameVersion::Fm27));
         assert!(sniff_version(r"C:\Games\fm.exe").is_err());
+    }
+
+    #[test]
+    fn storefront_from_install_location() {
+        let steam = r"S:\SteamLibrary\steamapps\common\Football Manager 27\fm.exe";
+        let proton = "/home/u/.steam/steam/steamapps/common/Football Manager 27/fm.exe";
+        let xbox = r"D:\XboxGames\Football Manager 27\Content\fm.exe";
+        let store = r"C:\Program Files\WindowsApps\SportsInteractive.FM27_1.0.0.0_x64__abc\fm.exe";
+        assert_eq!(storefront_of(steam, false), Storefront::Steam);
+        assert_eq!(storefront_of(proton, false), Storefront::Steam);
+        assert_eq!(storefront_of(xbox, false), Storefront::GamePass);
+        assert_eq!(storefront_of(store, false), Storefront::GamePass);
+        // A moved Game Pass install is still recognised by its GDK manifest.
+        assert_eq!(storefront_of(r"E:\Games\FM27\fm.exe", true), Storefront::GamePass);
+    }
+
+    #[test]
+    fn module_hash_reads_only_the_header() {
+        let dir = std::env::temp_dir().join(format!("fm-editor-hash-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let short = dir.join("short.bin");
+        let long = dir.join("long.bin");
+        std::fs::write(&short, vec![7u8; 65536]).unwrap();
+        std::fs::write(&long, [vec![7u8; 65536], vec![9u8; 100]].concat()).unwrap();
+        let h = |p: &std::path::Path| hash_module_header(p.to_str().unwrap());
+        assert_eq!(h(&short), h(&long));
+        let missing = h(&dir.join("missing.bin")).unwrap_err();
+        assert!(missing.contains("missing.bin"), "{missing}");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

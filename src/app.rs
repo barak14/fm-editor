@@ -8,7 +8,7 @@ use eframe::egui;
 
 use crate::bridge::{BridgeCmd, BridgeResult, ClubView, EntityCounts, ProcessBridge, StaffView};
 use crate::cache::{CachedClub, CachedPlayer, CachedStaff, EntityCache};
-use crate::game_version::GameVersion;
+use crate::game_version::GameBuild;
 use crate::process::RunningGame;
 use crate::player::PlayerRecord;
 use crate::settings::{AppSettings, Scale, Theme, WagePeriod, theme_data_id};
@@ -122,7 +122,7 @@ pub struct FmEditorApp {
     // Connection
     bridge: ProcessBridge,
     conn: ConnState,
-    attached_version: Option<GameVersion>,
+    attached_build: Option<GameBuild>,
     /// Games offered by the last `ChooseGame` (several `fm.exe` running and
     /// none chosen yet). Cleared once a game is attached.
     game_choices: Vec<RunningGame>,
@@ -203,7 +203,7 @@ impl FmEditorApp {
             active_page: Page::HumanManager,
             bridge: ProcessBridge::new(),
             conn: ConnState::Disconnected,
-            attached_version: None,
+            attached_build: None,
             game_choices: Vec::new(),
             auto_connect: true,
             last_ping: Instant::now(),
@@ -299,11 +299,11 @@ impl FmEditorApp {
                     let game = self.game_label(pid);
                     self.set_status(format!("Connected to {game}"));
                 }
-                BridgeResult::Attached(pid, version) => {
+                BridgeResult::Attached(pid, build) => {
                     self.conn = ConnState::WaitingForSave(pid);
                     self.clear_entity_state();
                     self.clear_cache();
-                    self.attached_version = Some(version);
+                    self.attached_build = Some(build);
                     self.game_choices.clear();
                     let game = self.game_label(pid);
                     self.set_status(format!("Attached to {game} \u{2014} waiting for save"));
@@ -353,7 +353,7 @@ impl FmEditorApp {
                     self.conn = ConnState::Disconnected;
                     self.clear_entity_state();
                     self.clear_cache();
-                    self.attached_version = None;
+                    self.attached_build = None;
                     self.set_status("Disconnected".into());
                 }
                 BridgeResult::PlayerLoaded(rec) => {
@@ -412,8 +412,8 @@ impl FmEditorApp {
     /// "FM27 (PID 1234)" for the attached game; just the PID before the
     /// version is known.
     fn game_label(&self, pid: u32) -> String {
-        match self.attached_version {
-            Some(version) => RunningGame { pid, version }.to_string(),
+        match self.attached_build {
+            Some(build) => RunningGame { pid, build }.to_string(),
             None => format!("PID {pid}"),
         }
     }
@@ -463,7 +463,7 @@ impl FmEditorApp {
             .chain(self.selected_player.iter_mut())
         {
             patch_player_buffer(&mut p.raw, p.addr, entry.addr, bytes,
-                p.version.schemas().player_person_offset, p.person_shift);
+                p.build.schemas().player_person_offset, p.person_shift);
             if let (Some(raw), Some(base)) = (&mut p.contract_raw, p.contract_addr) {
                 patch_buffer(raw, base, entry.addr, bytes);
             }
@@ -471,7 +471,7 @@ impl FmEditorApp {
         // A human manager's identity edits land `identity_shift` bytes past
         // the schema offset; map them back before patching the buffer.
         let normalized = |s: &StaffView| {
-            let schema = s.record.version.schemas();
+            let schema = s.record.build.schemas();
             let shift = s.record.identity_shift as u64;
             entry
                 .addr
@@ -573,7 +573,7 @@ impl FmEditorApp {
     }
 
     fn restore_tab_snapshot(&mut self, tab_idx: usize) -> bool {
-        let Some(version) = self.attached_version else {
+        let Some(build) = self.attached_build else {
             return false;
         };
         let Some(tab) = self.open_tabs.get(tab_idx) else {
@@ -588,7 +588,7 @@ impl FmEditorApp {
                             .players
                             .iter()
                             .find(|p| p.addr == tab.addr)
-                            .map(|cached| cached_player_record(cached, version))
+                            .map(|cached| cached_player_record(cached, build))
                     });
                 self.selected_player.is_some()
             }
@@ -599,7 +599,7 @@ impl FmEditorApp {
                         .staff
                         .iter()
                         .find(|s| s.addr == tab.addr)
-                        .map(|cached| cached_staff_view(cached, version))
+                        .map(|cached| cached_staff_view(cached, build))
                 });
                 self.selected_staff.is_some()
             }
@@ -820,7 +820,7 @@ impl eframe::App for FmEditorApp {
         navigation::set_editing_enabled(ctx, self.conn.is_writable() && !self.writes.is_pending());
         let wage_period = self.settings.wage_period;
         let face_pack_path = self.settings.face_pack_path.clone();
-        let schemas = self.attached_version.map(GameVersion::schemas);
+        let schemas = self.attached_build.map(GameBuild::schemas);
         // Only filter the active page — running all three every frame on a
         // large save (50k+ players) causes visible lag and hangs.
         let player_filtered: Vec<&CachedPlayer> = if self.active_page == Page::PlayerSearch {
@@ -1464,7 +1464,7 @@ impl eframe::App for FmEditorApp {
         // (Cache-driven search needs no auto-submit — results appear immediately.)
 
         // Open player from search results — build PlayerRecord from cache (no bridge call)
-        if let (Some(i), Some(version)) = (clicked_player, self.attached_version) {
+        if let (Some(i), Some(build)) = (clicked_player, self.attached_build) {
             let cached = player_filtered[i];
             let name = if cached.name.is_empty() {
                 "Unknown".to_string()
@@ -1473,7 +1473,7 @@ impl eframe::App for FmEditorApp {
             };
             let addr = cached.addr;
             let index = cached.index;
-            let rec = cached_player_record(cached, version);
+            let rec = cached_player_record(cached, build);
             let existing = self
                 .open_tabs
                 .iter()
@@ -1510,7 +1510,7 @@ impl eframe::App for FmEditorApp {
         }
 
         // Open staff from search results — build StaffView from cache (no bridge call)
-        if let (Some(i), Some(version)) = (clicked_staff, self.attached_version) {
+        if let (Some(i), Some(build)) = (clicked_staff, self.attached_build) {
             let cached = staff_filtered[i];
             let name = if cached.name.is_empty() {
                 "Unknown".to_string()
@@ -1519,7 +1519,7 @@ impl eframe::App for FmEditorApp {
             };
             let addr = cached.addr;
             let index = cached.index;
-            let view = cached_staff_view(cached, version);
+            let view = cached_staff_view(cached, build);
             let existing = self
                 .open_tabs
                 .iter()
@@ -1679,9 +1679,9 @@ mod tests {
     }
 }
 
-fn cached_player_record(cached: &CachedPlayer, version: GameVersion) -> PlayerRecord {
+fn cached_player_record(cached: &CachedPlayer, build: GameBuild) -> PlayerRecord {
     PlayerRecord {
-        version,
+        build,
         addr: cached.addr,
         index: cached.index,
         name: Some(cached.name.clone()),
@@ -1696,10 +1696,10 @@ fn cached_player_record(cached: &CachedPlayer, version: GameVersion) -> PlayerRe
     }
 }
 
-fn cached_staff_view(cached: &CachedStaff, version: GameVersion) -> StaffView {
+fn cached_staff_view(cached: &CachedStaff, build: GameBuild) -> StaffView {
     StaffView {
         record: StaffRecord {
-            version,
+            build,
             addr: cached.addr,
             index: cached.index,
             raw: cached.raw.clone(),

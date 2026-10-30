@@ -6,7 +6,7 @@ use crate::process::FmProcess;
 /// A decoded staff record.
 #[derive(Debug, Clone)]
 pub struct StaffRecord {
-    pub version: crate::game_version::GameVersion,
+    pub build: crate::game_version::GameBuild,
     pub addr: u64,
     pub index: usize,
     /// Raw bytes for the full struct, in schema layout (see `read_staff_raw`).
@@ -25,19 +25,19 @@ impl HasSubRecords for StaffRecord {
 impl StaffRecord {
     /// Read a field by key, decoded to displayed value (u8).
     pub fn field_u8(&self, key: &str) -> Option<u8> {
-        let f = self.version.schemas().field(key)?;
+        let f = self.build.schemas().field(key)?;
         fields::read_field_u8(self, &self.raw, f)
     }
 
     /// Read a field by key as u32.
     pub fn field_u32(&self, key: &str) -> Option<u32> {
-        let f = self.version.schemas().field(key)?;
+        let f = self.build.schemas().field(key)?;
         fields::read_field_u32(self, &self.raw, f)
     }
 
     /// Read a field by key as u64.
     pub fn field_u64(&self, key: &str) -> Option<u64> {
-        let f = self.version.schemas().field(key)?;
+        let f = self.build.schemas().field(key)?;
         fields::read_field_u64(self, &self.raw, f)
     }
 
@@ -58,7 +58,7 @@ impl StaffRecord {
 
     /// Read all mapped fields for a category, returning (label, decoded_value).
     pub fn category(&self, category: Category) -> Vec<(&'static str, u8)> {
-        self.version.schemas().fields_for_category(Entity::Staff, category)
+        self.build.schemas().fields_for_category(Entity::Staff, category)
             .iter()
             .filter_map(|f| {
                 let val = fields::read_field_u8(self, &self.raw, f)?;
@@ -75,7 +75,7 @@ impl StaffRecord {
         ];
         let mut result = Vec::new();
         for cat in attr_categories {
-            for f in self.version.schemas().fields_for_category(Entity::Staff, cat) {
+            for f in self.build.schemas().fields_for_category(Entity::Staff, cat) {
                 if let Some(loc) = &f.offset {
                     let raw = self.raw[loc.offset() as usize];
                     let displayed = loc.decode_u8(raw);
@@ -141,7 +141,7 @@ pub fn staff_array(fm: &FmProcess) -> Result<(u64, u64, usize), String> {
 /// Read a staff struct at a known address.
 pub fn read_staff_at(fm: &FmProcess, addr: u64, index: usize) -> Result<StaffRecord, String> {
     let (raw, identity_shift) = read_staff_raw(fm, addr)?;
-    Ok(StaffRecord { version: fm.version, addr, index, raw, identity_shift })
+    Ok(StaffRecord { build: fm.build, addr, index, raw, identity_shift })
 }
 
 /// Identity shift of the staff object at `addr`: the schema's
@@ -244,19 +244,19 @@ pub fn job_name(code: u8) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_version::GameVersion;
+    use crate::game_version::GameBuild;
 
     #[test]
-    fn records_decode_with_their_own_version() {
-        let versions = [GameVersion::Fm24, GameVersion::Fm27];
+    fn records_decode_with_their_own_build() {
+        let versions = [GameBuild::Fm24Steam, GameBuild::Fm27Steam];
         let mut raw = vec![0; versions.iter().map(|v| v.schemas().staff_struct_size).max().unwrap()];
         let ca_offsets = versions.map(|v| v.schemas().offset_of("s_ca").unwrap());
         assert_ne!(ca_offsets[0], ca_offsets[1]);
         for (offset, value) in ca_offsets.into_iter().zip([123, 187]) {
             raw[offset] = value;
         }
-        let fm24 = StaffRecord { version: GameVersion::Fm24, addr: 0, index: 0, raw, identity_shift: 0 };
-        let fm27 = StaffRecord { version: GameVersion::Fm27, ..fm24.clone() };
+        let fm24 = StaffRecord { build: GameBuild::Fm24Steam, addr: 0, index: 0, raw, identity_shift: 0 };
+        let fm27 = StaffRecord { build: GameBuild::Fm27Steam, ..fm24.clone() };
         assert_eq!(fm24.ca(), 123);
         assert_eq!(fm27.ca(), 187);
         assert_eq!(fm24.ca(), 123);

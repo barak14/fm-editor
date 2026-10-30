@@ -259,6 +259,8 @@ static FM24_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
     LazyLock::new(|| key_map(&fm24::FM24));
 static FM27_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
     LazyLock::new(|| key_map(&fm27::FM27));
+static FM27_GAMEPASS_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
+    LazyLock::new(|| key_map(&fm27::FM27_GAMEPASS));
 
 fn decode_u8_enc(byte: u8, encoding: Encoding) -> u8 {
     match encoding {
@@ -407,11 +409,12 @@ pub fn read_field_f32<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Opti
 // VersionedSchemas — one static per supported game version
 // =========================================================================
 
-/// Complete field / layout / RVA schema for one game version.
+/// Complete field / layout / RVA schema for one game build.
 ///
-/// There is exactly one `static` of this type per supported version
-/// (`fm24::FM24`, `fm26::FM26`, `fm27::FM27`); `VersionedSchemas::field`
-/// relies on that address identity. `FmProcess::schemas()` returns the
+/// There is exactly one `static` of this type per supported build
+/// (`fm24::FM24`, `fm26::FM26`, `fm27::FM27`, `fm27::FM27_GAMEPASS`; see
+/// `GameBuild::schemas`); `VersionedSchemas::field` relies on that address
+/// identity. `FmProcess::schemas()` returns the
 /// schema that matches the attached process. There is no global "active"
 /// schema: every lookup goes through the schema of the process (or the
 /// attached game the UI is showing) it reads.
@@ -506,9 +509,9 @@ pub struct VersionedSchemas {
 }
 
 impl VersionedSchemas {
-    /// Look up a single field by key across all entities of this version.
+    /// Look up a single field by key across all entities of this build.
     ///
-    /// The per-version schemas are backed by a lazily-built `HashMap` so
+    /// The per-build schemas are backed by a lazily-built `HashMap` so
     /// repeated lookups (e.g. inside hot loops) are O(1); any other
     /// `VersionedSchemas` value falls back to a linear scan.
     pub fn field(&'static self, key: &str) -> Option<&'static Field> {
@@ -518,6 +521,8 @@ impl VersionedSchemas {
             &*FM24_KEYS
         } else if std::ptr::eq(self, &fm27::FM27) {
             &*FM27_KEYS
+        } else if std::ptr::eq(self, &fm27::FM27_GAMEPASS) {
+            &*FM27_GAMEPASS_KEYS
         } else {
             return self
                 .player_fields
@@ -567,33 +572,31 @@ impl VersionedSchemas {
 
 #[cfg(test)]
 mod schema_lookup_tests {
-    use crate::game_version::GameVersion;
+    use crate::game_version::GameBuild;
 
     use super::*;
 
-    const VERSIONS: [GameVersion; 3] = [GameVersion::Fm24, GameVersion::Fm26, GameVersion::Fm27];
-
     #[test]
-    fn field_lookup_returns_that_versions_entry() {
-        for version in VERSIONS {
-            let schemas = version.schemas();
+    fn field_lookup_returns_that_builds_entry() {
+        for build in GameBuild::ALL {
+            let schemas = build.schemas();
             let hashed = schemas.field("p_ca").unwrap();
             let scanned = schemas.player_fields.iter().find(|f| f.key == "p_ca").unwrap();
-            assert!(std::ptr::eq(hashed, scanned), "{version:?}");
+            assert!(std::ptr::eq(hashed, scanned), "{build:?}");
             assert_eq!(
                 schemas.offset_of("p_ca"),
                 Some(scanned.offset.unwrap().offset() as usize)
             );
         }
-        assert!(GameVersion::Fm26.schemas().field("no_such_key").is_none());
+        assert!(GameBuild::Fm26Steam.schemas().field("no_such_key").is_none());
     }
 
     #[test]
     fn category_lookup_keeps_only_mapped_fields_of_that_category() {
-        for version in VERSIONS {
+        for build in GameBuild::ALL {
             let fields =
-                version.schemas().fields_for_category(Entity::Player, Category::Technical);
-            assert!(!fields.is_empty(), "{version:?}");
+                build.schemas().fields_for_category(Entity::Player, Category::Technical);
+            assert!(!fields.is_empty(), "{build:?}");
             assert!(fields.iter().all(|f| f.entity == Entity::Player
                 && f.category == Category::Technical
                 && f.offset.is_some()));

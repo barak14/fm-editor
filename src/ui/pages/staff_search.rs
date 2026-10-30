@@ -590,7 +590,7 @@ mod tests {
             pa: 150,
             dob_year: age
                 .map(|age| {
-                    crate::game_version::GameVersion::Fm26
+                    crate::game_version::GameBuild::Fm26Steam
                         .schemas()
                         .age_reference_year
                         - age
@@ -617,7 +617,7 @@ mod tests {
         };
         assert_eq!(
             filter(
-                crate::game_version::GameVersion::Fm26.schemas(),
+                crate::game_version::GameBuild::Fm26Steam.schemas(),
                 &cache,
                 &state
             )
@@ -629,7 +629,7 @@ mod tests {
         state.query = "12".into();
         assert_eq!(
             filter(
-                crate::game_version::GameVersion::Fm26.schemas(),
+                crate::game_version::GameBuild::Fm26Steam.schemas(),
                 &cache,
                 &state
             )
@@ -641,7 +641,7 @@ mod tests {
         state.query = "missing".into();
         assert!(
             filter(
-                crate::game_version::GameVersion::Fm26.schemas(),
+                crate::game_version::GameBuild::Fm26Steam.schemas(),
                 &cache,
                 &state
             )
@@ -659,7 +659,7 @@ mod tests {
         };
         assert_eq!(
             filter(
-                crate::game_version::GameVersion::Fm26.schemas(),
+                crate::game_version::GameBuild::Fm26Steam.schemas(),
                 &cache,
                 &state
             )
@@ -670,7 +670,7 @@ mod tests {
         state.age_max = "40".into();
         assert_eq!(
             filter(
-                crate::game_version::GameVersion::Fm26.schemas(),
+                crate::game_version::GameBuild::Fm26Steam.schemas(),
                 &cache,
                 &state
             )
@@ -682,7 +682,7 @@ mod tests {
         state.ca_min = "101".into();
         assert!(
             filter(
-                crate::game_version::GameVersion::Fm26.schemas(),
+                crate::game_version::GameBuild::Fm26Steam.schemas(),
                 &cache,
                 &state
             )
@@ -701,7 +701,7 @@ mod tests {
             assert!(numeric_filters(&state).is_err());
             assert!(
                 filter(
-                    crate::game_version::GameVersion::Fm26.schemas(),
+                    crate::game_version::GameBuild::Fm26Steam.schemas(),
                     &cache,
                     &state
                 )
@@ -730,7 +730,7 @@ mod tests {
             assert!(numeric_filters(&state).is_err());
             assert!(
                 filter(
-                    crate::game_version::GameVersion::Fm26.schemas(),
+                    crate::game_version::GameBuild::Fm26Steam.schemas(),
                     &cache,
                     &state
                 )

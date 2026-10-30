@@ -53,8 +53,11 @@ teams). The club list skips entries with no name. One real club, "C.D.
 35600" (UID 2000567841), has a full name but no short name and is listed
 under its full name.
 
-`Tools/scan-arrays.sh` scans gp+0x4000000..0x5400000 (the FM26 window) and
-does not reach the FM27 cluster.
+`Tools/scan-arrays.sh` scans every writable, non-executable section from the
+module's PE section table (`.sdata`, `.tls$`, `.debug` on this build), so it
+reaches the FM27 cluster. Re-run 2026-10-30 against a later save in the same
+Steam build: players 0x57037D0 (103,517), staff 0x5703818 (49,197) and clubs
+0x5703988 (33,471) all listed.
 
 ## Verified
 
@@ -295,6 +298,47 @@ to schema offsets, so readers see one layout; the player panel maps edits
 at or past +0x288 to +0xF8, and person-relative sub-record pointers
 (contract, nation, birth city) are resolved with the same shift. Every plain
 player and every player-coach now has a name.
+
+## Game Pass build
+
+The PC Game Pass (Xbox app) release of FM27 is a separate binary built on the
+Microsoft GDK instead of Steamworks. It has its own schema,
+`FM27_GAMEPASS` in `src/fields/fm27/mod.rs`, selected when the install is
+recognised as Game Pass: a `MicrosoftGame.config` next to `fm.exe`, or a path
+under `XboxGames` or `WindowsApps`. Everything else is treated as Steam.
+
+**Nothing in `FM27_GAMEPASS` is verified.** It is a copy of the Steam schema
+with `known_dll_hash` 0. The module hash and the module-relative values (entity
+array RVAs, stadium root, finance / player-coach / human-manager vtable RVAs)
+are expected to differ. Struct field offsets probably match, since the source
+and compiler are the same, but that is unconfirmed.
+
+Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
+`cargo build`). Compare against a Steam build at the same patch where possible.
+
+1. **Attach.** The toolbar should show `FM27 Game Pass (PID n)`, and the
+   status bar the notice `FM27 Game Pass game_plugin.dll hash not calibrated
+   (current: 0x…)`. Record the hash. If attach fails, record the error:
+   - `fm.exe is not running` — the Game Pass exe has another name; note the
+     process name and path from Task Manager.
+   - `cannot determine game version` — the install path has no release year.
+   - `cannot read …` — the module file is access-restricted (`WindowsApps`).
+   - Shown as plain `FM27` — storefront detection missed; note the exe path.
+2. **Arrays.** fm-debug `attach_status` reports the player, staff and club
+   counts and the module path. Zero counts or a `bad pointer array` error mean
+   the RVAs moved: run `bash Tools/scan-arrays.sh` (Git Bash), find the
+   players / staff / clubs pairs, and confirm each by decoding names
+   (`dump_struct` on an element) as in "Entity arrays" above.
+3. **Fields.** Pick witnesses (a well-known player, a staff member, a club)
+   and check that name, CA/PA, DOB, attributes, contract and club finances
+   match the game. `compare_entities` against the same entity in a Steam save
+   shows any shifted offsets.
+4. **Vtables.** Check the player-coach (James Milner), full-finance club
+   (Spurs) and human-manager classes. On Steam, FM creates a staff entry for
+   the Steam profile; note what Game Pass creates instead.
+5. **Write.** Edit one witness field, confirm it in game, then undo.
+6. **Record.** Put the hash and every changed value in `FM27_GAMEPASS`, and
+   the evidence in this section, in one commit.
 
 ## Unverified / known broken
 

@@ -1,15 +1,55 @@
-//! Scan game_plugin.dll's static data for (data_ptr, end_ptr) pointer pairs
+//! Scan the game module's static data for (data_ptr, end_ptr) pointer pairs
 //! whose (end-data)/8 count matches the attached game's FMRTE reference
 //! counts.
 //!
 //! Historically this tool was used to find the correct full-array RVAs for
 //! clubs/players/staff/humans after discovering the existing RVAs pointed
-//! at filtered subsets. Re-run whenever a game version bump shifts the
-//! arrays — auto-detects the game via `FmProcess::attach()` (pass
-//! `--pid <n>` when several fm.exe are running) and pulls reference counts
-//! from that process's `VersionedSchemas`.
+//! at filtered subsets. Re-run whenever a game patch or a different build
+//! (e.g. Game Pass) shifts the arrays — auto-detects the game via
+//! `FmProcess::attach()` (pass `--pid <n>` when several fm.exe are running)
+//! and pulls reference counts from that process's `VersionedSchemas`.
+//!
+//! The scan covers every writable, non-executable section of the module,
+//! read from the PE section table in the process's memory, so it finds the
+//! arrays wherever a build put them.
 
 use fm_editor::process::FmProcess;
+
+const IMAGE_SCN_MEM_EXECUTE: u32 = 0x2000_0000;
+const IMAGE_SCN_MEM_WRITE: u32 = 0x8000_0000;
+
+/// One PE section: name, RVA range, characteristics.
+struct Section {
+    name: String,
+    start: u64,
+    end: u64,
+    flags: u32,
+}
+
+/// The module's section table, parsed from its PE header in memory.
+fn sections(fm: &FmProcess) -> Result<Vec<Section>, String> {
+    let head = fm.read_bytes(fm.gp_base, 0x1000)?;
+    let u16_at = |o: usize| head.get(o..o + 2).map(|b| u16::from_le_bytes(b.try_into().unwrap()));
+    let u32_at = |o: usize| head.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let pe = u32_at(0x3C).ok_or("short header")? as usize;
+    if head.get(pe..pe + 4) != Some(b"PE\0\0") {
+        return Err("no PE signature at the module base".into());
+    }
+    let count = u16_at(pe + 6).ok_or("short header")? as usize;
+    let opt_size = u16_at(pe + 20).ok_or("short header")? as usize;
+    let table = pe + 24 + opt_size;
+    (0..count)
+        .map(|i| {
+            let s = table + i * 40;
+            let raw = head.get(s..s + 8).ok_or("section table past header page")?;
+            let name = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
+            let vsize = u32_at(s + 8).ok_or("short header")? as u64;
+            let rva = u32_at(s + 12).ok_or("short header")? as u64;
+            let flags = u32_at(s + 36).ok_or("short header")?;
+            Ok(Section { name, start: rva, end: rva + vsize, flags })
+        })
+        .collect()
+}
 
 fn is_heap_ptr(p: u64) -> bool {
     (0x10000..0x7FFF_FFFF_FFFF).contains(&p)
@@ -35,23 +75,49 @@ fn main() {
         }
     };
     println!(
-        "Attached: version {:?}, pid {}, game_plugin.dll @ 0x{:X}",
-        fm.version, fm.pid, fm.gp_base
+        "Attached: {}, pid {}, {} @ 0x{:X}",
+        fm.build.display_name(), fm.pid, fm.module_path, fm.gp_base
     );
 
     let schema = fm.schemas();
     let gp_size = fm.gp_end - fm.gp_base;
 
-    // Scan window — we know the existing cluster is around +0x4DF9D00..+0x4DFA050
-    // on FM26. Widen generously on both sides to catch parallel pointer clusters.
-    // The whole game_plugin.dll is ~472MB; scanning 64MB around the cluster is
-    // a reasonable compromise (takes a few seconds).
-    let scan_start: u64 = 0x4000000;
-    let scan_end: u64 = 0x5400000u64.min(gp_size);
+    let all_sections = match sections(&fm) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to read the module's section table: {e}");
+            return;
+        }
+    };
+    println!("\nSections:");
+    let mut ranges = Vec::new();
+    for s in &all_sections {
+        let writable = s.flags & IMAGE_SCN_MEM_WRITE != 0;
+        let exec = s.flags & IMAGE_SCN_MEM_EXECUTE != 0;
+        let scanned = writable && !exec;
+        println!(
+            "  {:<8} gp+0x{:08X}..0x{:08X} ({:>4} MB) flags=0x{:08X} {}",
+            s.name,
+            s.start,
+            s.end,
+            (s.end - s.start) / (1024 * 1024),
+            s.flags,
+            if scanned { "scan" } else { "skip" },
+        );
+        if scanned {
+            ranges.push((s.start, s.end.min(gp_size)));
+        }
+    }
     println!(
-        "\nScanning gp+0x{scan_start:X}..0x{scan_end:X} ({} MB) for pointer pairs...",
-        (scan_end - scan_start) / (1024 * 1024)
+        "Schema {} RVAs: humans 0x{:X}, staff 0x{:X}, clubs 0x{:X}, stadium root 0x{:X}",
+        fm.build.schema_name(),
+        schema.rva_humans_data,
+        schema.rva_staff_data,
+        schema.rva_clubs_data,
+        schema.rva_stadium_base,
     );
+    let total: u64 = ranges.iter().map(|(s, e)| e.saturating_sub(*s)).sum();
+    println!("\nScanning {} MB for pointer pairs...", total / (1024 * 1024));
 
     let fmrte_clubs = schema.fmrte_clubs;
     let fmrte_players = schema.fmrte_players;
@@ -80,36 +146,38 @@ fn main() {
     let mut matches_any: Vec<(u64, u64, u64, u64, String)> = Vec::new();
     let mut all_pairs: Vec<(u64, u64, u64, u64)> = Vec::new();
 
-    let mut rva = scan_start;
-    while rva < scan_end {
-        let want = CHUNK.min((scan_end - rva) as usize);
-        let Ok(buf) = fm.read_bytes(fm.gp_base + rva, want) else {
-            rva += CHUNK as u64;
-            continue;
-        };
+    for &(scan_start, scan_end) in &ranges {
+        let mut rva = scan_start;
+        while rva < scan_end {
+            let want = CHUNK.min((scan_end - rva) as usize);
+            let Ok(buf) = fm.read_bytes(fm.gp_base + rva, want) else {
+                rva += CHUNK as u64;
+                continue;
+            };
 
-        // Walk at 8-byte alignment, reading consecutive u64 pairs
-        let mut off = 0usize;
-        while off + 16 <= buf.len() {
-            let a = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
-            let b = u64::from_le_bytes(buf[off + 8..off + 16].try_into().unwrap());
-            if is_heap_ptr(a) && is_heap_ptr(b) && b > a {
-                let diff = b - a;
-                if diff % 8 == 0 && diff >= 8 && diff <= (10_000_000 * 8) {
-                    let count = diff / 8;
-                    if count >= 1 && count < 10_000_000 {
-                        let pair_rva = rva + off as u64;
-                        all_pairs.push((pair_rva, a, b, count));
-                        if let Some(label) = label_count(count) {
-                            matches_any.push((pair_rva, a, b, count, label));
+            // Walk at 8-byte alignment, reading consecutive u64 pairs
+            let mut off = 0usize;
+            while off + 16 <= buf.len() {
+                let a = u64::from_le_bytes(buf[off..off + 8].try_into().unwrap());
+                let b = u64::from_le_bytes(buf[off + 8..off + 16].try_into().unwrap());
+                if is_heap_ptr(a) && is_heap_ptr(b) && b > a {
+                    let diff = b - a;
+                    if diff % 8 == 0 && diff >= 8 && diff <= (10_000_000 * 8) {
+                        let count = diff / 8;
+                        if count >= 1 && count < 10_000_000 {
+                            let pair_rva = rva + off as u64;
+                            all_pairs.push((pair_rva, a, b, count));
+                            if let Some(label) = label_count(count) {
+                                matches_any.push((pair_rva, a, b, count, label));
+                            }
                         }
                     }
                 }
+                off += 8;
             }
-            off += 8;
-        }
 
-        rva += CHUNK as u64;
+            rva += CHUNK as u64;
+        }
     }
 
     println!(

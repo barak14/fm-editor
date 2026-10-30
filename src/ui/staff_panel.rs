@@ -52,7 +52,7 @@ fn redirect_shifted_edits(staff: &StaffView, edits: &mut [FieldEdit]) {
         return;
     }
     let addr = staff.record.addr;
-    let schema = staff.record.version.schemas();
+    let schema = staff.record.build.schemas();
     for edit in edits {
         let rel = edit.addr.wrapping_sub(addr);
         if schema.is_manager_shifted_offset(rel) {

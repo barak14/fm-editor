@@ -33,9 +33,12 @@ What can be read and edited differs by game version; see the memory-layout notes
 | FM24 | Players, staff, clubs, stadiums | [docs/fm24/memory-layout.md](docs/fm24/memory-layout.md) |
 | FM26 | Main target (2026-10 patch) | [docs/fm26/memory-layout.md](docs/fm26/memory-layout.md) |
 | FM27 | In progress — most fields verified against a live save | [docs/fm27/memory-layout.md](docs/fm27/memory-layout.md) |
+| FM27 (Game Pass) | Unverified — attaches with the Steam layout; may not read correctly | [Game Pass build](docs/fm27/memory-layout.md#game-pass-build) |
 
-The version is detected from the game's install path when the editor attaches. A game patch
-can move fields; the editor checks a fingerprint of the game module and refuses to attach to
+The version is detected from the game's install path when the editor attaches, and so is the
+storefront: a PC Game Pass (Xbox app) install is a different build from Steam's and gets its own
+schema. Only the Steam builds are mapped; FM27 on Game Pass is an untested starting point.
+A game patch can move fields; the editor checks a fingerprint of the game module and refuses to attach to
 a build its schema was not verified against (FM27 is not yet pinned to a build).
 
 Several versions can be open at once (they all run as `fm.exe`). The editor then attaches to

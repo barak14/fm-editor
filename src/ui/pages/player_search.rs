@@ -564,7 +564,7 @@ mod tests {
             assert!(state.validation_error().is_some());
             assert!(
                 filter(
-                    crate::game_version::GameVersion::Fm26.schemas(),
+                    crate::game_version::GameBuild::Fm26Steam.schemas(),
                     &[player(1, 2000)],
                     &state
                 )
@@ -578,7 +578,7 @@ mod tests {
         state.ca_max = "100".into();
         assert_eq!(
             filter(
-                crate::game_version::GameVersion::Fm26.schemas(),
+                crate::game_version::GameBuild::Fm26Steam.schemas(),
                 &[player(1, 2000)],
                 &state
             )
@@ -623,7 +623,7 @@ mod tests {
         for dir in [SortDir::Asc, SortDir::Desc] {
             assert_eq!(
                 compare_players(
-                    crate::game_version::GameVersion::Fm26.schemas(),
+                    crate::game_version::GameBuild::Fm26Steam.schemas(),
                     &player(1, 0),
                     &player(2, 2000),
                     SortColumn::Age,
@@ -668,7 +668,7 @@ mod search_tests {
             state.query = query.into();
             assert_eq!(
                 filter(
-                    crate::game_version::GameVersion::Fm26.schemas(),
+                    crate::game_version::GameBuild::Fm26Steam.schemas(),
                     &cache,
                     &state
                 )
@@ -680,7 +680,7 @@ mod search_tests {
             state.query = query.into();
             assert!(
                 filter(
-                    crate::game_version::GameVersion::Fm26.schemas(),
+                    crate::game_version::GameBuild::Fm26Steam.schemas(),
                     &cache,
                     &state
                 )
@@ -691,7 +691,7 @@ mod search_tests {
         state.pa_min = "151".into();
         assert!(
             filter(
-                crate::game_version::GameVersion::Fm26.schemas(),
+                crate::game_version::GameBuild::Fm26Steam.schemas(),
                 &cache,
                 &state
             )
