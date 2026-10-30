@@ -243,99 +243,22 @@ pub(crate) const fn sub_fm_string(container: SubRecordId, offset: u64) -> Option
     Some(FieldLocation::SubRecord { container, offset, encoding: Encoding::FmString })
 }
 
-/// Game version whose schema backs the global lookups below. Set by
-/// `FmProcess::attach` before any record is read; defaults to FM26 so
-/// offline tools (no attached process) keep their previous behaviour.
-static ACTIVE_VERSION: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
-
-/// Select the schema used by `all_fields` / `field` / `fields_for*`.
-pub fn set_active_version(version: crate::game_version::GameVersion) {
-    let v = match version {
-        crate::game_version::GameVersion::Fm26 => 0,
-        crate::game_version::GameVersion::Fm24 => 1,
-        crate::game_version::GameVersion::Fm27 => 2,
-    };
-    ACTIVE_VERSION.store(v, std::sync::atomic::Ordering::Relaxed);
-}
-
-/// Year ages are computed against for the active game version.
-pub fn age_reference_year() -> u16 {
-    active_schema().age_reference_year
-}
-
-/// Schema for the game version the editor is currently attached to.
-pub fn active_schema() -> &'static VersionedSchemas {
-    match ACTIVE_VERSION.load(std::sync::atomic::Ordering::Relaxed) {
-        1 => &fm24::FM24,
-        2 => &fm27::FM27,
-        _ => &fm26::FM26,
-    }
-}
-
-/// All known fields across all entity types for the active game version.
-/// Concatenation of that version's per-entity const slices — add new fields
-/// to the correct `fm26`/`fm24`/`fm27` sub-module, never here.
-pub fn all_fields() -> Vec<Field> {
-    let s = active_schema();
-    let mut out = Vec::with_capacity(
-        s.player_fields.len() + s.staff_fields.len() + s.club_fields.len() + s.stadium_fields.len(),
-    );
-    out.extend_from_slice(s.player_fields);
-    out.extend_from_slice(s.staff_fields);
-    out.extend_from_slice(s.club_fields);
-    out.extend_from_slice(s.stadium_fields);
-    out
-}
-
-// =========================================================================
-// Lookup helpers — so reader code uses this module as the single source
-// =========================================================================
-
-/// Get all mapped fields for an entity type.
-pub fn fields_for(entity: Entity) -> Vec<Field> {
-    all_fields().into_iter().filter(|f| f.entity == entity).collect()
-}
-
-/// Get all mapped fields for an entity + category.
-pub fn fields_for_category(entity: Entity, category: Category) -> Vec<Field> {
-    all_fields()
-        .into_iter()
-        .filter(|f| f.entity == entity && f.category == category && f.offset.is_some())
-        .collect()
-}
-
-fn key_map(s: &'static VersionedSchemas) -> HashMap<&'static str, Field> {
+fn key_map(s: &'static VersionedSchemas) -> HashMap<&'static str, &'static Field> {
     s.player_fields
         .iter()
         .chain(s.staff_fields)
         .chain(s.club_fields)
         .chain(s.stadium_fields)
-        .map(|f| (f.key, f.clone()))
+        .map(|f| (f.key, f))
         .collect()
 }
 
-static FM26_KEYS: LazyLock<HashMap<&'static str, Field>> = LazyLock::new(|| key_map(&fm26::FM26));
-static FM24_KEYS: LazyLock<HashMap<&'static str, Field>> = LazyLock::new(|| key_map(&fm24::FM24));
-static FM27_KEYS: LazyLock<HashMap<&'static str, Field>> = LazyLock::new(|| key_map(&fm27::FM27));
-
-/// Look up a single field by key in the active version's schema.
-///
-/// Backed by a lazily-built `HashMap` per version so repeated lookups (e.g.
-/// inside hot loops) are O(1) instead of scanning the full field list.
-pub fn field(key: &str) -> Option<Field> {
-    let map = match ACTIVE_VERSION.load(std::sync::atomic::Ordering::Relaxed) {
-        1 => &*FM24_KEYS,
-        2 => &*FM27_KEYS,
-        _ => &*FM26_KEYS,
-    };
-    map.get(key).cloned()
-}
-
-/// Byte offset of a field in the active schema, or `None` when the key is
-/// unknown or unmapped for this version.
-pub fn offset_of(key: &str) -> Option<usize> {
-    Some(field(key)?.offset?.offset() as usize)
-}
+static FM26_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
+    LazyLock::new(|| key_map(&fm26::FM26));
+static FM24_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
+    LazyLock::new(|| key_map(&fm24::FM24));
+static FM27_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
+    LazyLock::new(|| key_map(&fm27::FM27));
 
 fn decode_u8_enc(byte: u8, encoding: Encoding) -> u8 {
     match encoding {
@@ -380,7 +303,7 @@ pub fn resolve_sub_ptr_mapped(
 }
 
 /// Read an FmString field that lives in a sub-record (e.g. a player's club
-/// name via team → club). `None` when the active schema leaves the key
+/// name via team → club). `None` when the process's schema leaves the key
 /// unmapped, it is not a sub-record FmString, or any hop is invalid.
 pub fn read_sub_fm_string(
     fm: &crate::process::FmProcess,
@@ -389,7 +312,9 @@ pub fn read_sub_fm_string(
     sub_records: &[SubRecord],
     phys: &dyn Fn(u64) -> u64,
 ) -> Option<String> {
-    let FieldLocation::SubRecord { container, offset, encoding: Encoding::FmString } = field(key)?.offset? else {
+    let FieldLocation::SubRecord { container, offset, encoding: Encoding::FmString } =
+        fm.schemas().field(key)?.offset?
+    else {
         return None;
     };
     let sub_ptr = resolve_sub_ptr_mapped(fm, base_ptr, container, sub_records, phys)?;
@@ -478,52 +403,18 @@ pub fn read_field_f32<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Opti
     }
 }
 
-/// Print a coverage report.
-pub fn print_coverage() {
-    let fields = all_fields();
-
-    for entity in [Entity::Player, Entity::Staff, Entity::Club, Entity::Stadium] {
-        let entity_fields: Vec<_> = fields.iter().filter(|f| f.entity == entity).collect();
-        let mapped = entity_fields.iter().filter(|f| f.offset.is_some()).count();
-        let total = entity_fields.len();
-
-        println!("\n{:?}: {mapped}/{total} fields mapped", entity);
-        println!("{:-<60}", "");
-
-        let mut categories: Vec<Category> = entity_fields.iter().map(|f| f.category).collect();
-        categories.sort();
-        categories.dedup();
-
-        for cat in categories {
-            let cat_fields: Vec<_> = entity_fields.iter().filter(|f| f.category == cat).collect();
-            let cat_mapped = cat_fields.iter().filter(|f| f.offset.is_some()).count();
-            print!("  {cat:<20} {cat_mapped}/{:<3}", cat_fields.len());
-
-            let missing: Vec<_> = cat_fields.iter().filter(|f| f.offset.is_none()).collect();
-            if !missing.is_empty() {
-                print!(
-                    "  missing: {}",
-                    missing
-                        .iter()
-                        .map(|f| f.label)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-            }
-            println!();
-        }
-    }
-}
-
 // =========================================================================
-// VersionedSchemas — one const per supported game version
+// VersionedSchemas — one static per supported game version
 // =========================================================================
 
 /// Complete field / layout / RVA schema for one game version.
 ///
-/// There is exactly one `const` of this type per supported version
-/// (`fm26::FM26`, `fm24::FM24`). `FmProcess::schemas()` returns the
-/// schema that matches the game currently attached to.
+/// There is exactly one `static` of this type per supported version
+/// (`fm24::FM24`, `fm26::FM26`, `fm27::FM27`); `VersionedSchemas::field`
+/// relies on that address identity. `FmProcess::schemas()` returns the
+/// schema that matches the attached process. There is no global "active"
+/// schema: every lookup goes through the schema of the process (or the
+/// attached game the UI is showing) it reads.
 pub struct VersionedSchemas {
     // Field lists per entity.
     pub player_fields: &'static [Field],
@@ -609,13 +500,42 @@ pub struct VersionedSchemas {
 
 impl VersionedSchemas {
     /// Look up a single field by key across all entities of this version.
-    pub fn field(&self, key: &str) -> Option<&Field> {
-        self.player_fields
+    ///
+    /// The per-version schemas are backed by a lazily-built `HashMap` so
+    /// repeated lookups (e.g. inside hot loops) are O(1); any other
+    /// `VersionedSchemas` value falls back to a linear scan.
+    pub fn field(&'static self, key: &str) -> Option<&'static Field> {
+        let map = if std::ptr::eq(self, &fm26::FM26) {
+            &*FM26_KEYS
+        } else if std::ptr::eq(self, &fm24::FM24) {
+            &*FM24_KEYS
+        } else if std::ptr::eq(self, &fm27::FM27) {
+            &*FM27_KEYS
+        } else {
+            return self
+                .player_fields
+                .iter()
+                .chain(self.staff_fields)
+                .chain(self.club_fields)
+                .chain(self.stadium_fields)
+                .find(|f| f.key == key);
+        };
+        map.get(key).copied()
+    }
+
+    /// Byte offset of a field, or `None` when the key is unknown or
+    /// unmapped for this version.
+    pub fn offset_of(&'static self, key: &str) -> Option<usize> {
+        Some(self.field(key)?.offset?.offset() as usize)
+    }
+
+    /// Mapped fields for an entity + category, in schema order.
+    pub fn fields_for_category(&self, entity: Entity, category: Category) -> Vec<Field> {
+        self.fields_for(entity)
             .iter()
-            .chain(self.staff_fields.iter())
-            .chain(self.club_fields.iter())
-            .chain(self.stadium_fields.iter())
-            .find(|f| f.key == key)
+            .filter(|f| f.category == category && f.offset.is_some())
+            .cloned()
+            .collect()
     }
 
     /// Return the field slice for a given entity type on this version.
@@ -635,5 +555,41 @@ impl VersionedSchemas {
         self.manager_shifted_fields
             .iter()
             .any(|&(off, len)| rel_offset >= off as u64 && rel_offset < (off + len) as u64)
+    }
+}
+
+#[cfg(test)]
+mod schema_lookup_tests {
+    use crate::game_version::GameVersion;
+
+    use super::*;
+
+    const VERSIONS: [GameVersion; 3] = [GameVersion::Fm24, GameVersion::Fm26, GameVersion::Fm27];
+
+    #[test]
+    fn field_lookup_returns_that_versions_entry() {
+        for version in VERSIONS {
+            let schemas = version.schemas();
+            let hashed = schemas.field("p_ca").unwrap();
+            let scanned = schemas.player_fields.iter().find(|f| f.key == "p_ca").unwrap();
+            assert!(std::ptr::eq(hashed, scanned), "{version:?}");
+            assert_eq!(
+                schemas.offset_of("p_ca"),
+                Some(scanned.offset.unwrap().offset() as usize)
+            );
+        }
+        assert!(GameVersion::Fm26.schemas().field("no_such_key").is_none());
+    }
+
+    #[test]
+    fn category_lookup_keeps_only_mapped_fields_of_that_category() {
+        for version in VERSIONS {
+            let fields =
+                version.schemas().fields_for_category(Entity::Player, Category::Technical);
+            assert!(!fields.is_empty(), "{version:?}");
+            assert!(fields.iter().all(|f| f.entity == Entity::Player
+                && f.category == Category::Technical
+                && f.offset.is_some()));
+        }
     }
 }

@@ -10,7 +10,7 @@
 
 use serde_json::{json, Value};
 
-use crate::{fields, player, staff};
+use crate::{player, staff};
 use crate::debug::DebugState;
 use super::arg_u64;
 
@@ -45,7 +45,7 @@ pub fn read_name_debug(args: Value, state: &DebugState) -> Result<String, String
     let mut field_info = serde_json::Map::new();
 
     for &key in name_keys {
-        let entry = match fields::field(key) {
+        let entry = match schemas.field(key) {
             None => json!({ "error": "field not in schema for this game version" }),
             Some(f) => match f.offset.as_ref() {
                 None => json!({ "error": "no offset mapped" }),

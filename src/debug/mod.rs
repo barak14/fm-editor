@@ -9,7 +9,7 @@
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU32, AtomicU64};
 
 pub mod mcp_server;
 pub mod tools;
@@ -75,7 +75,12 @@ pub struct DebugState {
     /// Own FmProcess — separate from the GUI bridge. Both attach to fm.exe
     /// independently; cross-process reads (Win32 ReadProcessMemory / Linux
     /// process_vm_readv) support concurrent access from multiple attachers.
+    /// Every tool reads through this process's own schema (`fm.schemas()`).
     pub fm:         Mutex<Option<crate::process::FmProcess>>,
+    /// PID the GUI is attached to (0 = none). `attach_status` follows it
+    /// when no `pid` is given, so with several games open the MCP tools
+    /// inspect the same game the editor shows.
+    pub editor_pid: AtomicU32,
     pub log:        DebugLog,
     /// Entity name/UID cache built lazily on first search_entities call.
     pub mini_cache: Mutex<Option<MiniCache>>,
@@ -95,6 +100,7 @@ impl DebugState {
     pub fn new(log: DebugLog, port: u16) -> Self {
         Self {
             fm:               Mutex::new(None),
+            editor_pid:       AtomicU32::new(0),
             log,
             mini_cache:       Mutex::new(None),
             port,

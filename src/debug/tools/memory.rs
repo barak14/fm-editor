@@ -28,24 +28,25 @@ pub fn dump_struct(args: Value, state: &DebugState) -> Result<String, String> {
         })
         .unwrap_or(address);
 
-    let raw = {
+    let (raw, schemas) = {
         let fm = state.fm.lock().unwrap();
         let fm = fm.as_ref().ok_or("Not attached.")?;
-        fm.read_bytes(address, size)
-            .map_err(|e| format!("ReadProcessMemory: {e}"))?
+        let raw = fm.read_bytes(address, size)
+            .map_err(|e| format!("ReadProcessMemory: {e}"))?;
+        (raw, fm.schemas())
     };
 
     let mut out = format_hex_dump(address, &raw);
 
     if let Some(ref et) = entity_type {
-        use crate::fields::{self, Entity};
+        use crate::fields::Entity;
         let entity = match et.as_str() {
             "staff" => Entity::Staff,
             "club"  => Entity::Club,
             _       => Entity::Player,
         };
-        let mut annotations: Vec<(u64, String)> = fields::fields_for(entity)
-            .into_iter()
+        let mut annotations: Vec<(u64, String)> = schemas.fields_for(entity)
+            .iter()
             .filter_map(|f| {
                 let loc = f.offset.as_ref()?;
                 let off = loc.offset();

@@ -12,7 +12,7 @@ use std::sync::mpsc;
 
 use crate::club;
 use crate::player;
-use crate::process::FmProcess;
+use crate::process::{self, FmProcess};
 use crate::staff;
 
 use super::bulk_load;
@@ -70,7 +70,7 @@ fn counts_tuple(ac: &ArrayCache) -> (usize, usize, usize) {
 }
 
 pub(super) fn read_staff_name(fm: &FmProcess, addr: u64) -> Option<String> {
-    let name_offset = crate::fields::field("s_name")?.offset?.offset();
+    let name_offset = fm.schemas().field("s_name")?.offset?.offset();
     let name_ptr = fm.read_u64(addr + name_offset).ok()?;
     fm.read_fm_name(name_ptr).ok()
 }
@@ -90,10 +90,25 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
 
     while let Ok(cmd) = rx.recv() {
         match cmd {
-            BridgeCmd::Attach => {
-                match FmProcess::attach() {
+            BridgeCmd::Attach(pid) => {
+                let attached = match pid {
+                    Some(pid) => FmProcess::attach_pid(pid),
+                    None => match process::running_games() {
+                        Ok(games) if games.len() > 1 => {
+                            let _ = tx.send(BridgeResult::ChooseGame(games));
+                            continue;
+                        }
+                        Ok(games) => match games.first() {
+                            Some(game) => FmProcess::attach_pid(game.pid),
+                            None => Err("fm.exe is not running".to_string()),
+                        },
+                        Err(e) => Err(e),
+                    },
+                };
+                match attached {
                     Ok(process) => {
                         let pid = process.pid;
+                        let version = process.version;
                         let notice = process.dll_hash_notice.clone();
                         let ac = build_cache(&process);
                         // Never promote on the first observation — even if
@@ -107,7 +122,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                         };
                         cache = None;
                         fm = Some(process);
-                        let _ = tx.send(BridgeResult::Attached(pid));
+                        let _ = tx.send(BridgeResult::Attached(pid, version));
                         if let Some(msg) = notice {
                             let _ = tx.send(BridgeResult::Error(msg));
                         }

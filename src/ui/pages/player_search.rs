@@ -10,7 +10,7 @@ use crate::ui::field_widget;
 
 /// Schema keys for the 15 position familiarity fields (direct, 1-byte each).
 /// Order matches the `positions` bitmask: bit 0 = GK, bit 1 = SW, ..., bit 14 = WBR.
-/// Offsets are resolved per game version through `fields::offset_of`.
+/// Offsets are resolved per game version through the supplied game schema.
 pub const POSITION_OFFSETS: [(&str, &str); 15] = [
     ("pos_gk", "GK"),
     ("pos_sw", "SW"),
@@ -149,7 +149,11 @@ pub fn advanced_filter_count(state: &PlayerSearchState) -> usize {
 
 /// Filter the full player slice down to matching entries.
 /// Runs every frame — all comparisons are on already-decoded cache fields.
-pub fn filter<'a>(cache: &'a [CachedPlayer], state: &PlayerSearchState) -> Vec<&'a CachedPlayer> {
+pub fn filter<'a>(
+    schemas: &'static crate::fields::VersionedSchemas,
+    cache: &'a [CachedPlayer],
+    state: &PlayerSearchState,
+) -> Vec<&'a CachedPlayer> {
     if state.validation_error().is_some() {
         return Vec::new();
     }
@@ -196,7 +200,7 @@ pub fn filter<'a>(cache: &'a [CachedPlayer], state: &PlayerSearchState) -> Vec<&
                     return false;
                 }
             }
-            if let Some(age) = player_age(p) {
+            if let Some(age) = player_age(schemas, p) {
                 if let Some(m) = age_min {
                     if age < m {
                         return false;
@@ -217,7 +221,8 @@ pub fn filter<'a>(cache: &'a [CachedPlayer], state: &PlayerSearchState) -> Vec<&
                     if state.positions & (1u16 << bit) == 0 {
                         return false;
                     }
-                    crate::fields::offset_of(key)
+                    schemas
+                        .offset_of(key)
                         .and_then(|o| p.raw.get(o).copied())
                         .unwrap_or(1)
                         > 1
@@ -287,6 +292,7 @@ pub fn filter_row(ui: &mut egui::Ui, state: &mut PlayerSearchState) -> bool {
 /// Render the results grid (headers + scrollable rows). Returns the original
 /// (pre-sort) index of a clicked row, if any.
 pub fn results_grid(
+    schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
     state: &mut PlayerSearchState,
     results: &[&CachedPlayer],
@@ -392,7 +398,15 @@ pub fn results_grid(
 
     // Build a sorted index map: order[visual_row] = original results index.
     let mut order: Vec<usize> = (0..results.len()).collect();
-    order.sort_by(|&a, &b| compare_players(results[a], results[b], state.sort_col, state.sort_dir));
+    order.sort_by(|&a, &b| {
+        compare_players(
+            schemas,
+            results[a],
+            results[b],
+            state.sort_col,
+            state.sort_dir,
+        )
+    });
 
     let selection_id = ui.make_persistent_id("player_selected");
     let mut selected: Option<u64> = ui.ctx().data_mut(|d| d.get_temp(selection_id));
@@ -435,7 +449,7 @@ pub fn results_grid(
         for visual_i in row_range {
             let orig_i = order[visual_i];
             let p = results[orig_i];
-            let age = player_age(p)
+            let age = player_age(schemas, p)
                 .map(|age| age.to_string())
                 .unwrap_or_else(|| "-".into());
             let ca_color = field_widget::ca_pa_color(p.ca);
@@ -490,13 +504,17 @@ pub fn results_grid(
 }
 
 fn compare_players(
+    schemas: &'static crate::fields::VersionedSchemas,
     a: &CachedPlayer,
     b: &CachedPlayer,
     col: SortColumn,
     dir: SortDir,
 ) -> std::cmp::Ordering {
     if col == SortColumn::Age {
-        match (player_age(a).is_none(), player_age(b).is_none()) {
+        match (
+            player_age(schemas, a).is_none(),
+            player_age(schemas, b).is_none(),
+        ) {
             (true, false) => return std::cmp::Ordering::Greater,
             (false, true) => return std::cmp::Ordering::Less,
             _ => {}
@@ -544,14 +562,29 @@ mod tests {
         for bad in ["abc", "-1", "201", "1.5"] {
             state.ca_min = bad.into();
             assert!(state.validation_error().is_some());
-            assert!(filter(&[player(1, 2000)], &state).is_empty());
+            assert!(
+                filter(
+                    crate::game_version::GameVersion::Fm26.schemas(),
+                    &[player(1, 2000)],
+                    &state
+                )
+                .is_empty()
+            );
         }
         state.ca_min = "150".into();
         state.ca_max = "100".into();
         assert!(state.validation_error().unwrap().contains("minimum"));
         state.ca_min = "100".into();
         state.ca_max = "100".into();
-        assert_eq!(filter(&[player(1, 2000)], &state).len(), 1);
+        assert_eq!(
+            filter(
+                crate::game_version::GameVersion::Fm26.schemas(),
+                &[player(1, 2000)],
+                &state
+            )
+            .len(),
+            1
+        );
     }
 
     #[test]
@@ -589,15 +622,24 @@ mod tests {
     fn unknown_ages_sort_last_both_directions() {
         for dir in [SortDir::Asc, SortDir::Desc] {
             assert_eq!(
-                compare_players(&player(1, 0), &player(2, 2000), SortColumn::Age, dir),
+                compare_players(
+                    crate::game_version::GameVersion::Fm26.schemas(),
+                    &player(1, 0),
+                    &player(2, 2000),
+                    SortColumn::Age,
+                    dir
+                ),
                 std::cmp::Ordering::Greater
             );
         }
     }
 }
 
-fn player_age(player: &CachedPlayer) -> Option<u16> {
-    let year = crate::fields::age_reference_year();
+fn player_age(
+    schemas: &'static crate::fields::VersionedSchemas,
+    player: &CachedPlayer,
+) -> Option<u16> {
+    let year = schemas.age_reference_year;
     (player.dob_year > 0 && player.dob_year <= year).then(|| year - player.dob_year)
 }
 
@@ -624,14 +666,36 @@ mod search_tests {
         let mut state = PlayerSearchState::default();
         for query in ["EXAMPLE ada", "42", "  ada  "] {
             state.query = query.into();
-            assert_eq!(filter(&cache, &state).len(), 1);
+            assert_eq!(
+                filter(
+                    crate::game_version::GameVersion::Fm26.schemas(),
+                    &cache,
+                    &state
+                )
+                .len(),
+                1
+            );
         }
         for query in ["ada missing", "4"] {
             state.query = query.into();
-            assert!(filter(&cache, &state).is_empty());
+            assert!(
+                filter(
+                    crate::game_version::GameVersion::Fm26.schemas(),
+                    &cache,
+                    &state
+                )
+                .is_empty()
+            );
         }
         state.query = "42".into();
         state.pa_min = "151".into();
-        assert!(filter(&cache, &state).is_empty());
+        assert!(
+            filter(
+                crate::game_version::GameVersion::Fm26.schemas(),
+                &cache,
+                &state
+            )
+            .is_empty()
+        );
     }
 }

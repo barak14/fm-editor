@@ -2,9 +2,12 @@
 
 use serde_json::{json, Value};
 
-use crate::fields::{self, Entity};
+use crate::debug::DebugState;
+use crate::fields::Entity;
 
-pub fn get_known_schema(args: Value) -> Result<String, String> {
+pub fn get_known_schema(args: Value, state: &DebugState) -> Result<String, String> {
+    let fm_guard = state.fm.lock().unwrap();
+    let fm = fm_guard.as_ref().ok_or("Not attached. Call attach_status first.")?;
     let entity_type = args["entity_type"].as_str().unwrap_or("player");
 
     let entity = match entity_type {
@@ -13,8 +16,8 @@ pub fn get_known_schema(args: Value) -> Result<String, String> {
         _       => Entity::Player,
     };
 
-    let mut results: Vec<Value> = fields::fields_for(entity)
-        .into_iter()
+    let mut results: Vec<Value> = fm.schemas().fields_for(entity)
+        .iter()
         .filter(|f| f.offset.is_some())
         .map(|f| {
             let (offset_hex, encoding) = match &f.offset {

@@ -5,10 +5,10 @@
 //! bridge/entity_load.rs::load_human_manager() for the canonical
 //! discovery path.
 //!
-//! Auto-detects which game is running via `FmProcess::attach()`: FM26
-//! first, FM24 as fallback. RVAs and struct sizes come from the active
-//! `VersionedSchemas` so the dump still works when a future version bump
-//! shifts them.
+//! Auto-detects which game is running via `FmProcess::attach()`; pass
+//! `--pid <n>` when several fm.exe are running. RVAs and struct sizes come
+//! from that process's `VersionedSchemas` so the dump still works when a
+//! future version bump shifts them.
 
 use fm_editor::process::FmProcess;
 
@@ -138,7 +138,18 @@ fn scan_personality_via_subrecord(fm: &FmProcess, data: &[u8], a: u8, b: u8) {
 }
 
 fn main() {
-    let fm = match FmProcess::attach() {
+    // `--pid <n>` picks one game when several fm.exe are running.
+    let args: Vec<String> = std::env::args().collect();
+    let pid = args
+        .windows(2)
+        .find(|w| w[0] == "--pid")
+        .map(|w| w[1].parse::<u32>().map_err(|e| format!("--pid {}: {e}", w[1])));
+    let attached = match pid {
+        Some(Ok(pid)) => FmProcess::attach_pid(pid),
+        Some(Err(e)) => Err(e),
+        None => FmProcess::attach(),
+    };
+    let fm = match attached {
         Ok(p) => p,
         Err(e) => {
             eprintln!("Failed: {e}");

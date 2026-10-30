@@ -45,7 +45,7 @@ use crate::fields::VersionedSchemas;
 /// (0x4DE7A08, 0x4DF9EB8/0x4DF9EC0) do NOT point to the human manager.
 /// The actual human manager is the LAST entry of the ptr_staff array —
 /// see `bridge::entity_load::load_human_manager`.
-pub const FM26: VersionedSchemas = VersionedSchemas {
+pub static FM26: VersionedSchemas = VersionedSchemas {
     player_fields: PLAYER_FIELDS,
     staff_fields: STAFF_FIELDS,
     club_fields: CLUB_FIELDS,

@@ -403,6 +403,7 @@ pub(super) fn load_human_manager(fm: &FmProcess) -> Result<StaffView, String> {
     raw.truncate(staff_size);
 
     let record = StaffRecord {
+        version: fm.version,
         addr: ptr,
         index: 0,
         raw,

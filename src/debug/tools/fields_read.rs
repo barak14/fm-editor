@@ -9,7 +9,7 @@
 use serde_json::{json, Value};
 
 use crate::debug::DebugState;
-use crate::fields::{self, Encoding, Entity};
+use crate::fields::{Encoding, Entity};
 use crate::process::FmProcess;
 use super::arg_u64;
 
@@ -28,7 +28,10 @@ pub fn read_entity_fields(args: Value, state: &DebugState) -> Result<String, Str
         _       => Entity::Player,
     };
 
-    let all_fields = fields::fields_for(entity);
+    // Resolve fields and read bytes under the same attached-process lock.
+    let fm_guard = state.fm.lock().unwrap();
+    let fm = fm_guard.as_ref().ok_or("Not attached.")?;
+    let all_fields = fm.schemas().fields_for(entity);
 
     // Keep only Direct-location fields that have a known offset and pass the filter.
     let fields_to_read: Vec<_> = all_fields.iter()
@@ -54,10 +57,6 @@ pub fn read_entity_fields(args: Value, state: &DebugState) -> Result<String, Str
         .max()
         .unwrap_or(512)
         .min(8192);
-
-    // Single lock acquisition: read bytes and decode (including FmString deref).
-    let fm_guard = state.fm.lock().unwrap();
-    let fm = fm_guard.as_ref().ok_or("Not attached.")?;
 
     let raw = fm.read_bytes(address, max_end as usize)
         .map_err(|e| format!("ReadProcessMemory: {e}"))?;

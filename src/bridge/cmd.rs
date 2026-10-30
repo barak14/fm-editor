@@ -104,7 +104,9 @@ impl HasSubRecords for ClubView {
 // ---------------------------------------------------------------------------
 
 pub enum BridgeCmd {
-    Attach,
+    /// Attach to the game with this PID, or with `None` to the only running
+    /// game. With several games running, `None` answers `ChooseGame`.
+    Attach(Option<u32>),
     LoadEntityCache,
     LoadPlayer(u64, usize),
     LoadStaff(u64, usize),
@@ -122,7 +124,10 @@ pub enum BridgeResult {
     /// fm.exe attached but no save is loaded yet, or save creation is
     /// still in progress. The worker keeps pinging; once counts are
     /// stable + plausible, we promote to Connected.
-    Attached(u32),
+    Attached(u32, crate::game_version::GameVersion),
+    /// Several games are running (they all run as `fm.exe`) and no PID was
+    /// given. Nothing was attached; the UI asks which one to use.
+    ChooseGame(Vec<crate::process::RunningGame>),
     /// fm.exe still alive but the save got unloaded (or returned to
     /// main menu). Caller should wipe entity state and wait.
     SaveUnloaded(u32),

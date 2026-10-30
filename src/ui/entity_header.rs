@@ -1,5 +1,5 @@
 //! Shared, non-scrolling identity and relationship header for detail panels.
-use crate::fields::{self, FieldLocation};
+use crate::fields::FieldLocation;
 use eframe::egui;
 
 pub fn show(
@@ -34,11 +34,11 @@ pub fn show(
 }
 
 /// Approximate age, using the schema's reference year, only for a valid mapped DOB.
-pub fn age(raw: &[u8], key: &str) -> Option<u8> {
-    let FieldLocation::Direct { offset, .. } = fields::field(key)?.offset? else {
+pub fn age(schemas: &'static crate::fields::VersionedSchemas, raw: &[u8], key: &str) -> Option<u8> {
+    let FieldLocation::Direct { offset, .. } = schemas.field(key)?.offset? else {
         return None;
     };
-    age_at(raw, offset as usize, fields::age_reference_year())
+    age_at(raw, offset as usize, schemas.age_reference_year)
 }
 
 fn age_at(raw: &[u8], offset: usize, reference_year: u16) -> Option<u8> {

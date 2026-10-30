@@ -6,6 +6,7 @@
 # off compared to a reference tool (FMLE/FMRTE). The binary scans the
 # .data region of game_plugin.dll for (data, end) std::vector pointer
 # pairs whose count matches a target.
+# Pass `--pid <n>` to pick one game when several fm.exe are running.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,4 +21,4 @@ fi
 
 # Drop the count=1 noise (vector slots holding a single element). Anything
 # in [10, 1_000_000] is potentially interesting.
-"$BIN" 2>&1 | grep -vE 'count=[[:space:]]*1[[:space:]]'
+"$BIN" "$@" 2>&1 | grep -vE 'count=[[:space:]]*1[[:space:]]'

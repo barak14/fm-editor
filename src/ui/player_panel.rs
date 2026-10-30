@@ -16,6 +16,7 @@ pub enum PlayerTab {
 }
 
 pub fn show(
+    schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     tab: &mut PlayerTab,
@@ -32,7 +33,7 @@ pub fn show(
             .field_u32("p_uid")
             .map(|v| v.to_string())
             .unwrap_or_else(|| "Unknown".into()),
-        crate::ui::entity_header::age(&player.raw, "p_dob"),
+        crate::ui::entity_header::age(schemas, &player.raw, "p_dob"),
         player.club_name.as_deref(),
         player.club_addr,
         player.nationality.as_deref(),
@@ -52,22 +53,28 @@ pub fn show(
     ui.separator();
 
     egui::ScrollArea::vertical().show(ui, |ui| match tab {
-        PlayerTab::Overview => {
-            show_overview(ui, player, addr, &mut edits, wage_period, face_pack_path)
-        }
-        PlayerTab::PositionsTraits => show_positions_traits(ui, player, addr, &mut edits),
-        PlayerTab::Contract => show_contract(ui, player, wage_period),
+        PlayerTab::Overview => show_overview(
+            schemas,
+            ui,
+            player,
+            addr,
+            &mut edits,
+            wage_period,
+            face_pack_path,
+        ),
+        PlayerTab::PositionsTraits => show_positions_traits(schemas, ui, player, addr, &mut edits),
+        PlayerTab::Contract => show_contract(schemas, ui, player, wage_period),
     });
 
     // Widgets address edits as `addr + schema offset`. A player-coach's person
     // block sits `person_shift` bytes later in memory, so move edits that land
     // in it (DOB, traits, ...) to where the game stores them.
     if player.person_shift != 0 {
-        let size = fields::active_schema().player_struct_size as u64;
+        let size = schemas.player_struct_size as u64;
         for edit in &mut edits {
             let rel = edit.addr.wrapping_sub(addr);
             if rel < size {
-                edit.addr = addr + player::player_phys_offset(rel, player.person_shift);
+                edit.addr = addr + player::player_phys_offset(schemas, rel, player.person_shift);
             }
         }
     }
@@ -80,6 +87,7 @@ pub fn show(
 // ---------------------------------------------------------------------------
 
 fn show_overview(
+    schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -89,12 +97,12 @@ fn show_overview(
 ) {
     // Look up fields once from the schema; passing them by reference into
     // the widget helpers avoids every panel line hardcoding an offset.
-    let p_dob = fields::field("p_dob").unwrap();
-    let p_ca = fields::field("p_ca").unwrap();
-    let p_pa = fields::field("p_pa").unwrap();
-    let p_current_rep = fields::field("p_current_rep").unwrap();
-    let p_home_rep = fields::field("p_home_rep").unwrap();
-    let p_world_rep = fields::field("p_world_rep").unwrap();
+    let p_dob = schemas.field("p_dob").unwrap();
+    let p_ca = schemas.field("p_ca").unwrap();
+    let p_pa = schemas.field("p_pa").unwrap();
+    let p_current_rep = schemas.field("p_current_rep").unwrap();
+    let p_home_rep = schemas.field("p_home_rep").unwrap();
+    let p_world_rep = schemas.field("p_world_rep").unwrap();
 
     // Face image — shown when a face pack path is configured and the UID is known.
     let face_uid = player.field_u32("p_uid").filter(|&uid| uid > 0);
@@ -159,7 +167,7 @@ fn show_overview(
         // Stats
         ui.vertical(|ui| {
             ui.strong("Stats");
-            // Each row shows only when the active schema maps the field.
+            // Each row shows only when the record's schema maps the field.
             if let Some(apps) = player.field_u16("p_senior_apps") {
                 field_widget::info_label(ui, "Snr Apps", apps);
             }
@@ -204,6 +212,7 @@ fn show_overview(
         crate::ui::entity_header::columns(ui, |index, col| {
             let (heading, category) = groups[index];
             field_widget::category_column(
+                schemas,
                 col,
                 heading,
                 Entity::Player,
@@ -221,6 +230,7 @@ fn show_overview(
 // ---------------------------------------------------------------------------
 
 fn show_positions_traits(
+    schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -228,10 +238,10 @@ fn show_positions_traits(
 ) {
     // Stack the formation above traits on narrow panels rather than forcing overflow.
     ui.strong("Positions");
-    show_positions_formation(ui, player, addr, edits);
+    show_positions_formation(schemas, ui, player, addr, edits);
     ui.add_space(12.0);
     ui.strong("Traits");
-    show_traits_checkboxes(ui, player, addr, edits);
+    show_traits_checkboxes(schemas, ui, player, addr, edits);
 
     ui.add_space(16.0);
     ui.separator();
@@ -277,7 +287,8 @@ fn show_positions_traits(
                 Category::Goalkeeping,
                 Category::Hidden,
             ] {
-                let cat_rows: Vec<_> = fields::fields_for_category(Entity::Player, cat)
+                let cat_rows: Vec<_> = schemas
+                    .fields_for_category(Entity::Player, cat)
                     .into_iter()
                     .filter_map(|f| {
                         projection
@@ -314,6 +325,7 @@ fn show_positions_traits(
 ///   row 5: .   GK  .
 /// SW is shown on its own below (not part of the pitch grid).
 fn show_positions_formation(
+    schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -335,9 +347,9 @@ fn show_positions_formation(
         .min_col_width(56.0)
         .show(ui, |ui| {
             for (left, center, right) in rows {
-                pos_cell(ui, *left, player, addr, edits);
-                pos_cell(ui, *center, player, addr, edits);
-                pos_cell(ui, *right, player, addr, edits);
+                pos_cell(schemas, ui, *left, player, addr, edits);
+                pos_cell(schemas, ui, *center, player, addr, edits);
+                pos_cell(schemas, ui, *right, player, addr, edits);
                 ui.end_row();
             }
         });
@@ -346,7 +358,7 @@ fn show_positions_formation(
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.label("Sweeper:");
-        if let Some(f) = fields::field("pos_sw") {
+        if let Some(f) = schemas.field("pos_sw") {
             if let Some(edit) = field_widget::attr_edit(ui, &f, &mut player.raw, addr) {
                 edits.push(edit);
             }
@@ -355,6 +367,7 @@ fn show_positions_formation(
 }
 
 fn pos_cell(
+    schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
     key: Option<&str>,
     player: &mut PlayerRecord,
@@ -363,7 +376,7 @@ fn pos_cell(
 ) {
     match key {
         Some(k) => {
-            if let Some(f) = fields::field(k) {
+            if let Some(f) = schemas.field(k) {
                 if let Some(edit) = field_widget::attr_cell_compact(ui, &f, &mut player.raw, addr) {
                     edits.push(edit);
                 }
@@ -378,12 +391,13 @@ fn pos_cell(
 
 /// Render traits as checkbox groups arranged in 4 columns to mirror the FM26 UI.
 fn show_traits_checkboxes(
+    schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
     edits: &mut Vec<FieldEdit>,
 ) {
-    let location = fields::field("p_traits").and_then(|field| field.offset);
+    let location = schemas.field("p_traits").and_then(|field| field.offset);
     let Some((_, old_mask)) = trait_value(&player.raw, location) else {
         ui.label("Traits unavailable for this record or game version.");
         return;
@@ -417,7 +431,7 @@ fn show_traits_checkboxes(
 
     if crate::ui::navigation::editing_enabled(ui) && new_mask != old_mask {
         // Re-resolve the mapping and validate the whole range before copying bytes.
-        let location = fields::field("p_traits").and_then(|field| field.offset);
+        let location = schemas.field("p_traits").and_then(|field| field.offset);
         let Some((traits_offset, current_mask)) = trait_value(&player.raw, location) else {
             return;
         };
@@ -488,7 +502,12 @@ fn render_trait_column(ui: &mut egui::Ui, groups: &[(&str, &[u8])], mask: &mut u
 // Contract / Relations (placeholder)
 // ---------------------------------------------------------------------------
 
-fn show_contract(ui: &mut egui::Ui, player: &PlayerRecord, wage_period: WagePeriod) {
+fn show_contract(
+    schemas: &'static crate::fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    player: &PlayerRecord,
+    wage_period: WagePeriod,
+) {
     ui.strong("Contract");
 
     if player.contract_raw.is_some() {
@@ -539,11 +558,15 @@ fn show_contract(ui: &mut egui::Ui, player: &PlayerRecord, wage_period: WagePeri
             field_widget::info_label(ui, "Contract Type", label);
         }
         if let Some(cr) = &player.contract_raw {
-            if let Some(s) = fields::offset_of("p_contract_signed").and_then(|o| fmt_date_at(cr, o))
+            if let Some(s) = schemas
+                .offset_of("p_contract_signed")
+                .and_then(|o| fmt_date_at(cr, o))
             {
                 field_widget::info_label(ui, "Signed", s);
             }
-            if let Some(s) = fields::offset_of("p_contract_expiry").and_then(|o| fmt_date_at(cr, o))
+            if let Some(s) = schemas
+                .offset_of("p_contract_expiry")
+                .and_then(|o| fmt_date_at(cr, o))
             {
                 field_widget::info_label(ui, "Expiry", s);
             }
@@ -563,7 +586,7 @@ fn show_contract(ui: &mut egui::Ui, player: &PlayerRecord, wage_period: WagePeri
         ("p_join_date", "Joined Club"),
         ("p_debut_date", "Senior Debut"),
     ] {
-        if let Some(s) = fmt_date_field(&player.raw, key) {
+        if let Some(s) = fmt_date_field(schemas, &player.raw, key) {
             field_widget::info_label(ui, label, s);
         }
     }
@@ -598,8 +621,12 @@ fn squad_status_name(code: u8) -> Option<&'static str> {
 }
 
 /// Read a DateDayYear field from `raw` by schema key and format as "DD Mon YYYY".
-fn fmt_date_field(raw: &[u8], key: &str) -> Option<String> {
-    let off = fields::field(key)?.offset?.offset() as usize;
+fn fmt_date_field(
+    schemas: &'static crate::fields::VersionedSchemas,
+    raw: &[u8],
+    key: &str,
+) -> Option<String> {
+    let off = schemas.field(key)?.offset?.offset() as usize;
     fmt_date_at(raw, off)
 }
 

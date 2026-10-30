@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 
 use crate::debug::{DebugState, EntityEntry, MiniCache};
-use crate::{club, fields, player, staff};
+use crate::{club, player, staff};
 use super::arg_u64;
 
 // ---------------------------------------------------------------------------
@@ -65,7 +65,7 @@ pub fn get_entity_address(args: Value, state: &DebugState) -> Result<String, Str
 
 fn find_by_uid(entity_type: &str, uid: u32, fm: &crate::process::FmProcess) -> Result<String, String> {
     let (array_data, _, count) = array_bounds(entity_type, fm)?;
-    let uid_off = uid_offset(entity_type)?;
+    let uid_off = uid_offset(entity_type, fm)?;
     let uid_bytes = uid.to_le_bytes();
 
     for i in 0..count {
@@ -140,14 +140,14 @@ pub fn search_entities(args: Value, state: &DebugState) -> Result<String, String
 // ---------------------------------------------------------------------------
 
 fn build_mini_cache(fm: &crate::process::FmProcess) -> Result<MiniCache, String> {
-    let p_uid_off = uid_offset("player")?;
-    let s_uid_off = uid_offset("staff")?;
-    let c_uid_off = uid_offset("club")?;
+    let p_uid_off = uid_offset("player", fm)?;
+    let s_uid_off = uid_offset("staff", fm)?;
+    let c_uid_off = uid_offset("club", fm)?;
 
     // Players go through `read_player_raw` so player-coaches (person block
     // moved) decode in the same schema layout as plain players.
     let staff_size  = fm.schemas().staff_struct_size;
-    let c_name_off  = fields::field("c_name")
+    let c_name_off  = fm.schemas().field("c_name")
         .ok_or("c_name missing")?.offset.ok_or("c_name no offset")?.offset();
 
     // -- Players --
@@ -204,13 +204,13 @@ pub(super) fn array_bounds(
     }
 }
 
-fn uid_offset(entity_type: &str) -> Result<u64, String> {
+fn uid_offset(entity_type: &str, fm: &crate::process::FmProcess) -> Result<u64, String> {
     let key = match entity_type {
         "staff" => "s_id",
         "club"  => "c_uid",
         _       => "p_uid",
     };
-    Ok(fields::field(key)
+    Ok(fm.schemas().field(key)
         .ok_or_else(|| format!("{key} field missing"))?
         .offset
         .ok_or_else(|| format!("{key} has no offset"))?

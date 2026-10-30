@@ -1,15 +1,14 @@
 //! Game version selector + runtime dispatch.
 //!
-//! Every schema lookup that used to go through `crate::offsets::*` or
-//! `crate::fields::all_fields()` now routes through
-//! `FmProcess::schemas() -> &'static VersionedSchemas`, which picks the
-//! right per-version const table based on which game the process is
-//! currently attached to.
+//! Every schema lookup routes through a `&'static VersionedSchemas` that
+//! belongs to the game being read: `FmProcess::schemas()` on the worker side,
+//! the attached game's version on the UI side. There is no process-global
+//! "active version", so several games open at once cannot cross schemas.
 //!
-//! Version detection is automatic: both FM24 and FM26 run as `fm.exe`, so
-//! `FmProcess::attach()` finds the process and then reads the full on-disk
-//! path of `game_plugin.dll` — the install directory always contains the
-//! release year — to determine which schema to load.
+//! Version detection is automatic: FM24, FM26 and FM27 all run as `fm.exe`,
+//! so `process::running_games()` lists them and reads each one's on-disk
+//! module path — the install directory always contains the release year —
+//! to determine which schema it uses.
 //!
 //! Adding a future version (e.g. FM25) is a 3-line change: new enum
 //! variant, new match arm in `schemas()`, new `exe_name()` arm. The
@@ -43,6 +42,15 @@ impl GameVersion {
         match self {
             GameVersion::Fm24 => "fm.exe",
             GameVersion::Fm26 | GameVersion::Fm27 => "game_plugin.dll",
+        }
+    }
+
+    /// Human-readable name for status text and pickers (e.g. "FM26").
+    pub fn display_name(self) -> &'static str {
+        match self {
+            GameVersion::Fm24 => "FM24",
+            GameVersion::Fm26 => "FM26",
+            GameVersion::Fm27 => "FM27",
         }
     }
 

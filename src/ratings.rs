@@ -295,7 +295,7 @@ pub fn extrapolate_player(player: &PlayerRecord) -> Vec<(&'static str, u8, u8)> 
     tiers
         .iter()
         .filter_map(|(key, tier)| {
-            let field = crate::fields::field(key)?;
+            let field = player.version.schemas().field(key)?;
             let loc = field.offset.as_ref()?;
             let off = loc.offset() as usize;
             if off >= player.raw.len() {

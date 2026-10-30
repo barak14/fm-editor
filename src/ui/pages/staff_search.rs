@@ -133,8 +133,11 @@ fn numeric_filters(state: &StaffSearchState) -> Result<NumericFilters, String> {
     Ok(filters)
 }
 
-fn staff_age(staff: &CachedStaff) -> Option<u16> {
-    let year = crate::fields::age_reference_year();
+fn staff_age(
+    schemas: &'static crate::fields::VersionedSchemas,
+    staff: &CachedStaff,
+) -> Option<u16> {
+    let year = schemas.age_reference_year;
     (staff.dob_year > 0 && staff.dob_year <= year).then(|| year - staff.dob_year)
 }
 
@@ -151,7 +154,11 @@ fn compare_ages(a: Option<u16>, b: Option<u16>, direction: SortDir) -> std::cmp:
 }
 
 /// Filter the full staff slice down to matching entries.
-pub fn filter<'a>(cache: &'a [CachedStaff], state: &StaffSearchState) -> Vec<&'a CachedStaff> {
+pub fn filter<'a>(
+    schemas: &'static crate::fields::VersionedSchemas,
+    cache: &'a [CachedStaff],
+    state: &StaffSearchState,
+) -> Vec<&'a CachedStaff> {
     let trimmed = state.query.trim();
     let uid_query: Option<u32> = trimmed.parse().ok();
     let words: Vec<String> = if uid_query.is_some() {
@@ -188,7 +195,7 @@ pub fn filter<'a>(cache: &'a [CachedStaff], state: &StaffSearchState) -> Vec<&'a
                     return false;
                 }
             }
-            if let Some(age) = staff_age(s) {
+            if let Some(age) = staff_age(schemas, s) {
                 if let Some(m) = age_min {
                     if age < m {
                         return false;
@@ -281,6 +288,7 @@ pub fn filter_row(ui: &mut egui::Ui, state: &mut StaffSearchState) {
 /// Render the results grid. Returns the original (pre-sort) index of a clicked
 /// row, if any.
 pub fn results_grid(
+    schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
     state: &mut StaffSearchState,
     results: &[&CachedStaff],
@@ -430,7 +438,11 @@ pub fn results_grid(
             order.sort_by(|&a, &b| results[b].pa.cmp(&results[a].pa))
         }
         (SortColumn::Age, direction) => order.sort_by(|&a, &b| {
-            compare_ages(staff_age(results[a]), staff_age(results[b]), direction)
+            compare_ages(
+                staff_age(schemas, results[a]),
+                staff_age(schemas, results[b]),
+                direction,
+            )
         }),
         (SortColumn::Role, SortDir::Asc) => order.sort_by(|&a, &b| {
             primary_role(&results[a].roles, filter_role)
@@ -480,7 +492,7 @@ pub fn results_grid(
             let orig_i = order[visual_i];
             let s = results[orig_i];
             let role_text = primary_role(&s.roles, filter_role);
-            let age = staff_age(s)
+            let age = staff_age(schemas, s)
                 .map(|age| age.to_string())
                 .unwrap_or_else(|| "-".to_string());
             let ca_color = field_widget::ca_pa_color(s.ca);
@@ -577,7 +589,12 @@ mod tests {
             ca: 100,
             pa: 150,
             dob_year: age
-                .map(|age| crate::fields::age_reference_year() - age)
+                .map(|age| {
+                    crate::game_version::GameVersion::Fm26
+                        .schemas()
+                        .age_reference_year
+                        - age
+                })
                 .unwrap_or(0),
             roles: [10; 15],
             role_ptr: 0,
@@ -598,22 +615,37 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            filter(&cache, &state)
-                .iter()
-                .map(|s| s.uid)
-                .collect::<Vec<_>>(),
+            filter(
+                crate::game_version::GameVersion::Fm26.schemas(),
+                &cache,
+                &state
+            )
+            .iter()
+            .map(|s| s.uid)
+            .collect::<Vec<_>>(),
             vec![12]
         );
         state.query = "12".into();
         assert_eq!(
-            filter(&cache, &state)
-                .iter()
-                .map(|s| s.uid)
-                .collect::<Vec<_>>(),
+            filter(
+                crate::game_version::GameVersion::Fm26.schemas(),
+                &cache,
+                &state
+            )
+            .iter()
+            .map(|s| s.uid)
+            .collect::<Vec<_>>(),
             vec![12]
         );
         state.query = "missing".into();
-        assert!(filter(&cache, &state).is_empty());
+        assert!(
+            filter(
+                crate::game_version::GameVersion::Fm26.schemas(),
+                &cache,
+                &state
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -624,18 +656,37 @@ mod tests {
             pa_min: "150".into(),
             ..Default::default()
         };
-        assert_eq!(filter(&cache, &state).len(), 2);
+        assert_eq!(
+            filter(
+                crate::game_version::GameVersion::Fm26.schemas(),
+                &cache,
+                &state
+            )
+            .len(),
+            2
+        );
         state.age_min = "40".into();
         state.age_max = "40".into();
         assert_eq!(
-            filter(&cache, &state)
-                .iter()
-                .map(|s| s.uid)
-                .collect::<Vec<_>>(),
+            filter(
+                crate::game_version::GameVersion::Fm26.schemas(),
+                &cache,
+                &state
+            )
+            .iter()
+            .map(|s| s.uid)
+            .collect::<Vec<_>>(),
             vec![1]
         );
         state.ca_min = "101".into();
-        assert!(filter(&cache, &state).is_empty());
+        assert!(
+            filter(
+                crate::game_version::GameVersion::Fm26.schemas(),
+                &cache,
+                &state
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -647,7 +698,14 @@ mod tests {
                 ..Default::default()
             };
             assert!(numeric_filters(&state).is_err());
-            assert!(filter(&cache, &state).is_empty());
+            assert!(
+                filter(
+                    crate::game_version::GameVersion::Fm26.schemas(),
+                    &cache,
+                    &state
+                )
+                .is_empty()
+            );
         }
         for state in [
             StaffSearchState {
@@ -669,7 +727,14 @@ mod tests {
             },
         ] {
             assert!(numeric_filters(&state).is_err());
-            assert!(filter(&cache, &state).is_empty());
+            assert!(
+                filter(
+                    crate::game_version::GameVersion::Fm26.schemas(),
+                    &cache,
+                    &state
+                )
+                .is_empty()
+            );
         }
         let state = StaffSearchState {
             ca_min: " 0 ".into(),

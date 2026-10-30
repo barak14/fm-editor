@@ -138,7 +138,7 @@ async fn call_tool(name: &str, args: Value, state: &DebugState) -> Result<Value,
     state.last_activity_ms.store(now_ms, Ordering::Relaxed);
 
     let text = match name {
-        "attach_status"       => attach::run(state)?,
+        "attach_status"       => attach::run(args, state)?,
         "get_entity_address"  => entities::get_entity_address(args, state)?,
         "search_entities"     => entities::search_entities(args, state)?,
         "dump_struct"         => memory::dump_struct(args, state)?,
@@ -147,7 +147,7 @@ async fn call_tool(name: &str, args: Value, state: &DebugState) -> Result<Value,
         "follow_pointers"     => pointers::follow_pointers(args, state)?,
         "probe_pointer_chain" => pointers::probe_pointer_chain(args, state)?,
         "compare_entities"    => witness::compare_entities(args, state)?,
-        "get_known_schema"    => schema::get_known_schema(args)?,
+        "get_known_schema"    => schema::get_known_schema(args, state)?,
         "read_name_debug"     => name_debug::read_name_debug(args, state)?,
         "read_logs"           => logs::read_logs(state)?,
         "read_entity_fields"  => fields_read::read_entity_fields(args, state)?,
@@ -165,8 +165,14 @@ fn tool_list() -> Value {
     json!([
         {
             "name": "attach_status",
-            "description": "Returns whether the MCP server is attached to fm.exe and basic entity counts. Call this first.",
-            "inputSchema": { "type": "object", "properties": {}, "required": [] }
+            "description": "Returns whether the MCP server is attached to fm.exe, the attached game version and PID, every running game, and basic entity counts. Call this first. With several games open it follows the game the editor is attached to; pass `pid` to switch to another one.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pid": { "type": "integer", "description": "Attach to this fm.exe PID (see `running_games`). Omit to keep the current attachment." }
+                },
+                "required": []
+            }
         },
         {
             "name": "get_entity_address",

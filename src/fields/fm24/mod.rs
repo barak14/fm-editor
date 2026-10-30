@@ -34,7 +34,7 @@ use crate::fields::VersionedSchemas;
 ///
 /// The stadium array root is not located; stadiums are reached per club via
 /// the `home_stadium` sub-record, so `rva_stadium_base` stays 0.
-pub const FM24: VersionedSchemas = VersionedSchemas {
+pub static FM24: VersionedSchemas = VersionedSchemas {
     player_fields: PLAYER_FIELDS,
     staff_fields: STAFF_FIELDS,
     club_fields: CLUB_FIELDS,

@@ -13,6 +13,9 @@
 
 ### Safety
 
+- Support several Football Manager versions open at once: the toolbar offers one attach button per running `fm.exe` with its version and PID, and the status bar names the attached game. The editor, the fm-debug MCP server and the diagnostic binaries each read through the schema of the process they attached to; the process-global "active version" is gone, so one attachment can no longer switch another's offsets.
+- fm-debug `attach_status` reports every running game, follows the game the editor is attached to, and takes an optional `pid` to switch; `get_known_schema` now reports the attached game's schema. `Tools/dump-manager.sh` and `Tools/scan-arrays.sh` accept `--pid <n>`.
+
 - Disable memory editing and Undo when read-only or awaiting acknowledgement; record undo entries only after successful writes.
 - Correlate write responses with request IDs, report detached writes as failures, preserve failed undo for retry, reconcile local buffers and keep write errors visible.
 - Clear stale-save undo addresses on reconnect; retain read-only detail snapshots and reject unrelated asynchronous detail responses.

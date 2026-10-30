@@ -8,6 +8,8 @@ use eframe::egui;
 
 use crate::bridge::{BridgeCmd, BridgeResult, ClubView, EntityCounts, ProcessBridge, StaffView};
 use crate::cache::{CachedClub, CachedPlayer, CachedStaff, EntityCache};
+use crate::game_version::GameVersion;
+use crate::process::RunningGame;
 use crate::player::PlayerRecord;
 use crate::settings::{AppSettings, Scale, Theme, WagePeriod, theme_data_id};
 use crate::staff::StaffRecord;
@@ -120,6 +122,10 @@ pub struct FmEditorApp {
     // Connection
     bridge: ProcessBridge,
     conn: ConnState,
+    attached_version: Option<GameVersion>,
+    /// Games offered by the last `ChooseGame` (several `fm.exe` running and
+    /// none chosen yet). Cleared once a game is attached.
+    game_choices: Vec<RunningGame>,
     auto_connect: bool,
     last_ping: Instant,
     last_auto_connect: Instant,
@@ -197,6 +203,8 @@ impl FmEditorApp {
             active_page: Page::HumanManager,
             bridge: ProcessBridge::new(),
             conn: ConnState::Disconnected,
+            attached_version: None,
+            game_choices: Vec::new(),
             auto_connect: true,
             last_ping: Instant::now(),
             last_auto_connect: Instant::now() - std::time::Duration::from_secs(10),
@@ -288,13 +296,30 @@ impl FmEditorApp {
                         done: 0,
                         total: cache_total,
                     };
-                    self.set_status(format!("Connected (PID {pid})"));
+                    let game = self.game_label(pid);
+                    self.set_status(format!("Connected to {game}"));
                 }
-                BridgeResult::Attached(pid) => {
+                BridgeResult::Attached(pid, version) => {
                     self.conn = ConnState::WaitingForSave(pid);
                     self.clear_entity_state();
                     self.clear_cache();
-                    self.set_status(format!("Attached (PID {pid}) \u{2014} waiting for save"));
+                    self.attached_version = Some(version);
+                    self.game_choices.clear();
+                    let game = self.game_label(pid);
+                    self.set_status(format!("Attached to {game} \u{2014} waiting for save"));
+                }
+                BridgeResult::ChooseGame(games) => {
+                    // A stale auto-connect answer after a game was attached.
+                    if !matches!(self.conn, ConnState::Disconnected | ConnState::ReadOnly(_)) {
+                        continue;
+                    }
+                    if games != self.game_choices {
+                        self.set_status(format!(
+                            "{} games running \u{2014} choose one to attach",
+                            games.len()
+                        ));
+                    }
+                    self.game_choices = games;
                 }
                 BridgeResult::SaveUnloaded(pid) => {
                     self.conn = ConnState::WaitingForSave(pid);
@@ -328,6 +353,7 @@ impl FmEditorApp {
                     self.conn = ConnState::Disconnected;
                     self.clear_entity_state();
                     self.clear_cache();
+                    self.attached_version = None;
                     self.set_status("Disconnected".into());
                 }
                 BridgeResult::PlayerLoaded(rec) => {
@@ -360,6 +386,11 @@ impl FmEditorApp {
                     self.complete_write(id, false, Some(error))
                 }
                 BridgeResult::Error(e) => {
+                    // While detached, errors come from attach attempts: the
+                    // games offered earlier may be gone, so stop offering them.
+                    if matches!(self.conn, ConnState::Disconnected | ConnState::ReadOnly(_)) {
+                        self.game_choices.clear();
+                    }
                     self.loading_entity = false;
                     self.manager_loading = false;
                     self.set_status(format!("Error: {e}"));
@@ -378,6 +409,15 @@ impl FmEditorApp {
             })
     }
 
+    /// "FM27 (PID 1234)" for the attached game; just the PID before the
+    /// version is known.
+    fn game_label(&self, pid: u32) -> String {
+        match self.attached_version {
+            Some(version) => RunningGame { pid, version }.to_string(),
+            None => format!("PID {pid}"),
+        }
+    }
+
     fn set_status(&mut self, msg: String) {
         self.status_msg = Some((msg, Instant::now()));
     }
@@ -389,7 +429,7 @@ impl FmEditorApp {
             && matches!(self.conn, ConnState::Disconnected | ConnState::ReadOnly(_))
             && self.last_auto_connect.elapsed().as_secs() >= 3
         {
-            self.bridge.send(BridgeCmd::Attach);
+            self.bridge.send(BridgeCmd::Attach(None));
             self.last_auto_connect = Instant::now();
         }
     }
@@ -423,7 +463,7 @@ impl FmEditorApp {
             .chain(self.selected_player.iter_mut())
         {
             patch_player_buffer(&mut p.raw, p.addr, entry.addr, bytes,
-                crate::fields::active_schema().player_person_offset, p.person_shift);
+                p.version.schemas().player_person_offset, p.person_shift);
             if let (Some(raw), Some(base)) = (&mut p.contract_raw, p.contract_addr) {
                 patch_buffer(raw, base, entry.addr, bytes);
             }
@@ -436,7 +476,7 @@ impl FmEditorApp {
             patch_buffer(&mut s.record.raw, s.record.addr, entry.addr, bytes);
         }
         if let Some(s) = &mut self.manager_view {
-            let schema = crate::fields::active_schema();
+            let schema = s.record.version.schemas();
             let normalized = entry
                 .addr
                 .checked_sub(s.record.addr)
@@ -520,6 +560,9 @@ impl FmEditorApp {
     }
 
     fn restore_tab_snapshot(&mut self, tab_idx: usize) -> bool {
+        let Some(version) = self.attached_version else {
+            return false;
+        };
         let Some(tab) = self.open_tabs.get(tab_idx) else {
             return false;
         };
@@ -532,7 +575,7 @@ impl FmEditorApp {
                             .players
                             .iter()
                             .find(|p| p.addr == tab.addr)
-                            .map(cached_player_record)
+                            .map(|cached| cached_player_record(cached, version))
                     });
                 self.selected_player.is_some()
             }
@@ -543,7 +586,7 @@ impl FmEditorApp {
                         .staff
                         .iter()
                         .find(|s| s.addr == tab.addr)
-                        .map(cached_staff_view)
+                        .map(|cached| cached_staff_view(cached, version))
                 });
                 self.selected_staff.is_some()
             }
@@ -620,6 +663,16 @@ impl eframe::App for FmEditorApp {
         // Background housekeeping (runs before UI so results are fresh)
         self.process_results();
         self.handle_auto_connect();
+        // Let the fm-debug MCP server follow the game this window shows when
+        // several are running.
+        #[cfg(debug_assertions)]
+        if let Some(ref mcp) = self.mcp_state {
+            let pid = match self.conn {
+                ConnState::Ready(pid) | ConnState::WaitingForSave(pid) => pid,
+                ConnState::ReadOnly(_) | ConnState::Disconnected => 0,
+            };
+            mcp.editor_pid.store(pid, std::sync::atomic::Ordering::Relaxed);
+        }
         self.handle_ping();
         ctx.request_repaint_after(Duration::from_secs(1));
 
@@ -644,6 +697,7 @@ impl eframe::App for FmEditorApp {
 
         // Collect deferred actions during UI rendering
         let mut attach_requested = false;
+        let mut attach_pid_requested: Option<u32> = None;
         let mut undo_requested = !ctx.wants_keyboard_input()
             && ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z));
         let mut edits: Vec<field_widget::FieldEdit> = Vec::new();
@@ -753,11 +807,12 @@ impl eframe::App for FmEditorApp {
         navigation::set_editing_enabled(ctx, self.conn.is_writable() && !self.writes.is_pending());
         let wage_period = self.settings.wage_period;
         let face_pack_path = self.settings.face_pack_path.clone();
+        let schemas = self.attached_version.map(GameVersion::schemas);
         // Only filter the active page — running all three every frame on a
         // large save (50k+ players) causes visible lag and hangs.
         let player_filtered: Vec<&CachedPlayer> = if self.active_page == Page::PlayerSearch {
-            if let Some(c) = &cache_arc {
-                pages::player_search::filter(&c.players, &self.player_search)
+            if let (Some(c), Some(schemas)) = (&cache_arc, schemas) {
+                pages::player_search::filter(schemas, &c.players, &self.player_search)
             } else {
                 Vec::new()
             }
@@ -765,8 +820,8 @@ impl eframe::App for FmEditorApp {
             Vec::new()
         };
         let staff_filtered: Vec<&CachedStaff> = if self.active_page == Page::StaffSearch {
-            if let Some(c) = &cache_arc {
-                pages::staff_search::filter(&c.staff, &self.staff_search)
+            if let (Some(c), Some(schemas)) = (&cache_arc, schemas) {
+                pages::staff_search::filter(schemas, &c.staff, &self.staff_search)
             } else {
                 Vec::new()
             }
@@ -847,13 +902,13 @@ impl eframe::App for FmEditorApp {
                     ConnState::Ready(pid) => {
                         ui.colored_label(
                             egui::Color32::from_rgb(76, 175, 80),
-                            format!("\u{25CF} PID {pid}"),
+                            format!("\u{25CF} {}", self.game_label(pid)),
                         );
                     }
                     ConnState::WaitingForSave(pid) => {
                         ui.colored_label(
                             egui::Color32::from_rgb(255, 193, 7),
-                            format!("\u{25CF} PID {pid} (no save)"),
+                            format!("\u{25CF} {} (no save)", self.game_label(pid)),
                         );
                     }
                     ConnState::ReadOnly(_) => {
@@ -872,6 +927,18 @@ impl eframe::App for FmEditorApp {
                         );
                         if ui.button("Load Game").clicked() {
                             attach_requested = true;
+                        }
+                    }
+                }
+                // Several fm.exe running: one button per game. Shown while no
+                // game is attached (including read-only after a game exits).
+                if matches!(self.conn, ConnState::Disconnected | ConnState::ReadOnly(_))
+                    && !self.game_choices.is_empty()
+                {
+                    ui.label("Attach:");
+                    for game in &self.game_choices {
+                        if ui.button(game.to_string()).clicked() {
+                            attach_pid_requested = Some(game.pid);
                         }
                     }
                 }
@@ -965,13 +1032,16 @@ impl eframe::App for FmEditorApp {
                     ConnState::Ready(pid) => {
                         ui.colored_label(
                             egui::Color32::from_rgb(76, 175, 80),
-                            format!("\u{25CF} Connected (PID {pid})"),
+                            format!("\u{25CF} Connected to {}", self.game_label(pid)),
                         );
                     }
                     ConnState::WaitingForSave(pid) => {
                         ui.colored_label(
                             egui::Color32::from_rgb(255, 193, 7),
-                            format!("\u{25CF} Attached (PID {pid}) \u{2014} waiting for save"),
+                            format!(
+                                "\u{25CF} Attached to {} \u{2014} waiting for save",
+                                self.game_label(pid)
+                            ),
                         );
                     }
                     ConnState::ReadOnly(_) => {
@@ -1050,6 +1120,10 @@ impl eframe::App for FmEditorApp {
                 });
             }
             ui.separator();
+            let Some(schemas) = schemas else {
+                ui.label("Waiting for fm.exe\u{2026}");
+                return;
+            };
             match self.active_page {
                 // ---- Search pages: filter row always visible, results area swaps ----
                 Page::PlayerSearch | Page::StaffSearch | Page::ClubSearch => {
@@ -1199,7 +1273,7 @@ impl eframe::App for FmEditorApp {
                                 if let Some(p) = self.selected_player.as_mut().filter(|p| p.addr == tab_addr) {
                                     let addr = p.addr;
                                     let e = player_panel::show(
-                                        ui, p, &mut self.player_tab, addr,
+                                        schemas, ui, p, &mut self.player_tab, addr,
                                         wage_period, face_pack_path.as_deref(),
                                     );
                                     edits.extend(e);
@@ -1209,7 +1283,7 @@ impl eframe::App for FmEditorApp {
                             }
                             EntityTabType::Staff => {
                                 if let Some(s) = self.selected_staff.as_mut().filter(|s| s.record.addr == tab_addr) {
-                                    let e = staff_panel::show(ui, s, &mut self.staff_tab);
+                                    let e = staff_panel::show(schemas, ui, s, &mut self.staff_tab);
                                     edits.extend(e);
                                 } else {
                                     ui.label("Staff details unavailable. Reload while the game is connected.");
@@ -1217,7 +1291,7 @@ impl eframe::App for FmEditorApp {
                             }
                             EntityTabType::Club => {
                                 if let Some(c) = self.selected_club.as_mut().filter(|c| c.addr == tab_addr) {
-                                    let e = club_panel::show(ui, c, &mut self.club_tab);
+                                    let e = club_panel::show(schemas, ui, c, &mut self.club_tab);
                                     edits.extend(e);
                                 } else {
                                     ui.label("Club details unavailable. Reload while the game is connected.");
@@ -1228,6 +1302,7 @@ impl eframe::App for FmEditorApp {
                         match self.active_page {
                             Page::PlayerSearch => {
                                 clicked_player = pages::player_search::results_grid(
+                                    schemas,
                                     ui,
                                     &mut self.player_search,
                                     &player_filtered,
@@ -1235,6 +1310,7 @@ impl eframe::App for FmEditorApp {
                             }
                             Page::StaffSearch => {
                                 clicked_staff = pages::staff_search::results_grid(
+                                    schemas,
                                     ui,
                                     &mut self.staff_search,
                                     &staff_filtered,
@@ -1266,7 +1342,7 @@ impl eframe::App for FmEditorApp {
                             if self.manager_loading {
                                 ui.spinner();
                             } else if let Some(ref mut mgr) = self.manager_view {
-                                let e = staff_panel::show_manager(ui, mgr);
+                                let e = staff_panel::show_manager(schemas, ui, mgr);
                                 if self.conn.is_writable() {
                                     edits.extend(e);
                                 }
@@ -1320,7 +1396,10 @@ impl eframe::App for FmEditorApp {
         // =================================================================
 
         if attach_requested {
-            self.bridge.send(BridgeCmd::Attach);
+            self.bridge.send(BridgeCmd::Attach(None));
+        }
+        if let Some(pid) = attach_pid_requested {
+            self.bridge.send(BridgeCmd::Attach(Some(pid)));
         }
 
         // A write becomes undoable only after the worker confirms success.
@@ -1372,7 +1451,7 @@ impl eframe::App for FmEditorApp {
         // (Cache-driven search needs no auto-submit — results appear immediately.)
 
         // Open player from search results — build PlayerRecord from cache (no bridge call)
-        if let Some(i) = clicked_player {
+        if let (Some(i), Some(version)) = (clicked_player, self.attached_version) {
             let cached = player_filtered[i];
             let name = if cached.name.is_empty() {
                 "Unknown".to_string()
@@ -1381,7 +1460,7 @@ impl eframe::App for FmEditorApp {
             };
             let addr = cached.addr;
             let index = cached.index;
-            let rec = cached_player_record(cached);
+            let rec = cached_player_record(cached, version);
             let existing = self
                 .open_tabs
                 .iter()
@@ -1418,7 +1497,7 @@ impl eframe::App for FmEditorApp {
         }
 
         // Open staff from search results — build StaffView from cache (no bridge call)
-        if let Some(i) = clicked_staff {
+        if let (Some(i), Some(version)) = (clicked_staff, self.attached_version) {
             let cached = staff_filtered[i];
             let name = if cached.name.is_empty() {
                 "Unknown".to_string()
@@ -1427,7 +1506,7 @@ impl eframe::App for FmEditorApp {
             };
             let addr = cached.addr;
             let index = cached.index;
-            let view = cached_staff_view(cached);
+            let view = cached_staff_view(cached, version);
             let existing = self
                 .open_tabs
                 .iter()
@@ -1587,8 +1666,9 @@ mod tests {
     }
 }
 
-fn cached_player_record(cached: &CachedPlayer) -> PlayerRecord {
+fn cached_player_record(cached: &CachedPlayer, version: GameVersion) -> PlayerRecord {
     PlayerRecord {
+        version,
         addr: cached.addr,
         index: cached.index,
         name: Some(cached.name.clone()),
@@ -1603,9 +1683,10 @@ fn cached_player_record(cached: &CachedPlayer) -> PlayerRecord {
     }
 }
 
-fn cached_staff_view(cached: &CachedStaff) -> StaffView {
+fn cached_staff_view(cached: &CachedStaff, version: GameVersion) -> StaffView {
     StaffView {
         record: StaffRecord {
+            version,
             addr: cached.addr,
             index: cached.index,
             raw: cached.raw.clone(),

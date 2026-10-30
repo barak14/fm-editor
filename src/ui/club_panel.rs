@@ -15,7 +15,12 @@ pub enum ClubTab {
     Stadium,
 }
 
-pub fn show(ui: &mut egui::Ui, club: &mut ClubView, tab: &mut ClubTab) -> Vec<FieldEdit> {
+pub fn show(
+    schemas: &'static crate::fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    club: &mut ClubView,
+    tab: &mut ClubTab,
+) -> Vec<FieldEdit> {
     let mut edits = Vec::new();
 
     entity_header::show(
@@ -56,16 +61,20 @@ pub fn show(ui: &mut egui::Ui, club: &mut ClubView, tab: &mut ClubTab) -> Vec<Fi
     ui.separator();
 
     egui::ScrollArea::vertical().show(ui, |ui| match tab {
-        ClubTab::Overview => show_overview(ui, club),
-        ClubTab::Facilities => show_facilities(ui, club, &mut edits),
-        ClubTab::Finance => show_finance(ui, club, &mut edits),
-        ClubTab::Stadium => show_stadium(ui, club),
+        ClubTab::Overview => show_overview(schemas, ui, club),
+        ClubTab::Facilities => show_facilities(schemas, ui, club, &mut edits),
+        ClubTab::Finance => show_finance(schemas, ui, club, &mut edits),
+        ClubTab::Stadium => show_stadium(schemas, ui, club),
     });
 
     edits
 }
 
-fn show_overview(ui: &mut egui::Ui, club: &ClubView) {
+fn show_overview(
+    schemas: &'static crate::fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    club: &ClubView,
+) {
     ui.strong("Identity");
     field_widget::info_label(ui, "Full Name", &club.full_name);
     field_widget::info_label(ui, "Short Name", &club.short_name);
@@ -75,7 +84,8 @@ fn show_overview(ui: &mut egui::Ui, club: &ClubView) {
     }
 
     // Gender byte — direct club offset, read via c_gender field.
-    let gender = fields::field("c_gender")
+    let gender = schemas
+        .field("c_gender")
         .and_then(|f| f.offset)
         .and_then(|l| club.raw.get(l.offset() as usize).copied());
     field_widget::info_label(
@@ -87,8 +97,9 @@ fn show_overview(ui: &mut egui::Ui, club: &ClubView) {
             None => "Unknown",
         },
     );
-    if let Some(rep) =
-        fields::field("c_reputation").and_then(|f| fields::read_field_u16(club, &club.raw, &f))
+    if let Some(rep) = schemas
+        .field("c_reputation")
+        .and_then(|f| fields::read_field_u16(club, &club.raw, &f))
     {
         field_widget::info_label(ui, "Reputation", rep);
     }
@@ -96,29 +107,38 @@ fn show_overview(ui: &mut egui::Ui, club: &ClubView) {
     ui.add_space(8.0);
     ui.strong("Club Details");
     // Year founded is a u16; on FM27 the following u16 is not always zero.
-    if let Some(v) =
-        fields::field("c_year_founded").and_then(|f| fields::read_field_u16(club, &club.raw, &f))
+    if let Some(v) = schemas
+        .field("c_year_founded")
+        .and_then(|f| fields::read_field_u16(club, &club.raw, &f))
     {
         field_widget::info_label(ui, "Year Founded", v);
     }
-    if let Some(v) =
-        fields::field("c_owner_status").and_then(|f| fields::read_field_u16(club, &club.raw, &f))
+    if let Some(v) = schemas
+        .field("c_owner_status")
+        .and_then(|f| fields::read_field_u16(club, &club.raw, &f))
     {
         field_widget::info_label(ui, "Owner Status", v);
     }
-    if let Some(v) =
-        fields::field("c_season_tickets").and_then(|f| fields::read_field_u32(club, &club.raw, &f))
+    if let Some(v) = schemas
+        .field("c_season_tickets")
+        .and_then(|f| fields::read_field_u32(club, &club.raw, &f))
     {
         field_widget::info_label(ui, "Season Tickets", v);
     }
-    if let Some(v) =
-        fields::field("c_social_media").and_then(|f| fields::read_field_u32(club, &club.raw, &f))
+    if let Some(v) = schemas
+        .field("c_social_media")
+        .and_then(|f| fields::read_field_u32(club, &club.raw, &f))
     {
         field_widget::info_label(ui, "Social Media", v);
     }
 }
 
-fn show_facilities(ui: &mut egui::Ui, club: &mut ClubView, edits: &mut Vec<FieldEdit>) {
+fn show_facilities(
+    schemas: &'static crate::fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    club: &mut ClubView,
+    edits: &mut Vec<FieldEdit>,
+) {
     ui.strong("Facilities");
     // Facility rows edit whichever sub-record the schema puts them in. Rows
     // with a `<key>_fin` mirror (FM27 academy coaching / youth recruitment,
@@ -132,7 +152,7 @@ fn show_facilities(ui: &mut egui::Ui, club: &mut ClubView, edits: &mut Vec<Field
         ("Youth Recruitment", "c_youth_recruit"),
         ("Corporate", "c_corporate"),
     ] {
-        let Some((container, offset)) = sub_location(key) else {
+        let Some((container, offset)) = sub_location(schemas, key) else {
             continue;
         };
         let before = edits.len();
@@ -141,7 +161,9 @@ fn show_facilities(ui: &mut egui::Ui, club: &mut ClubView, edits: &mut Vec<Field
         }
         if edits.len() > before {
             let new_val = edits[edits.len() - 1].new_raw[0];
-            if let Some(mirror) = mirror_u8_edit(club, &format!("{key}_fin"), label, new_val) {
+            if let Some(mirror) =
+                mirror_u8_edit(schemas, club, &format!("{key}_fin"), label, new_val)
+            {
                 edits.push(mirror);
             }
         }
@@ -158,7 +180,7 @@ fn show_facilities(ui: &mut egui::Ui, club: &mut ClubView, edits: &mut Vec<Field
             ("Casual %", "c_sup_casual"),
             ("Other %", "c_sup_other"),
         ] {
-            if let Some(f) = fields::field(key) {
+            if let Some(f) = schemas.field(key) {
                 if let Some(v) = fields::read_field_u8(club, &club.raw, &f) {
                     field_widget::info_label(ui, label, format!("{v}%"));
                 }
@@ -175,7 +197,7 @@ fn show_facilities(ui: &mut egui::Ui, club: &mut ClubView, edits: &mut Vec<Field
             ("Temperament", "c_sup_temperament"),
             ("Expectations", "c_sup_expectations"),
         ] {
-            if let Some(f) = fields::field(key) {
+            if let Some(f) = schemas.field(key) {
                 if let Some(v) = fields::read_field_u8(club, &club.raw, &f) {
                     field_widget::info_label(ui, label, v);
                 }
@@ -186,7 +208,12 @@ fn show_facilities(ui: &mut egui::Ui, club: &mut ClubView, edits: &mut Vec<Field
     }
 }
 
-fn show_finance(ui: &mut egui::Ui, club: &mut ClubView, edits: &mut Vec<FieldEdit>) {
+fn show_finance(
+    schemas: &'static crate::fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    club: &mut ClubView,
+    edits: &mut Vec<FieldEdit>,
+) {
     ui.strong("Finance");
     // Each row edits the sub-record its schema location names (FM26 keeps the
     // budgets in a finance → budget sub-record, FM27 in the finance object).
@@ -197,7 +224,7 @@ fn show_finance(ui: &mut egui::Ui, club: &mut ClubView, edits: &mut Vec<FieldEdi
         ("Transfer Remaining", "c_transfer_remaining"),
         ("Spending Wage Budget (p/w)", "c_wage_budget"),
     ] {
-        let Some((container, offset)) = sub_location(key) else {
+        let Some((container, offset)) = sub_location(schemas, key) else {
             continue;
         };
         if let Some((buf, base)) = club.sub_record_mut(container) {
@@ -209,7 +236,7 @@ fn show_finance(ui: &mut egui::Ui, club: &mut ClubView, edits: &mut Vec<FieldEdi
         ("Avg Ticket Price", "c_avg_ticket"),
         ("Avg Season Ticket", "c_avg_season_ticket"),
     ] {
-        let Some((container, offset)) = sub_location(key) else {
+        let Some((container, offset)) = sub_location(schemas, key) else {
             continue;
         };
         if let Some((buf, base)) = club.sub_record_mut(container) {
@@ -222,8 +249,9 @@ fn show_finance(ui: &mut egui::Ui, club: &mut ClubView, edits: &mut Vec<FieldEdi
         ("Total Wage Budget (p/w)", "c_wage_total"),
         ("Youth Grant Income", "c_youth_grant"),
     ] {
-        if let Some(v) =
-            fields::field(key).and_then(|f| fields::read_field_u32(club, &club.raw, &f))
+        if let Some(v) = schemas
+            .field(key)
+            .and_then(|f| fields::read_field_u32(club, &club.raw, &f))
         {
             field_widget::info_label(ui, label, v);
             shown = true;
@@ -234,11 +262,15 @@ fn show_finance(ui: &mut egui::Ui, club: &mut ClubView, edits: &mut Vec<FieldEdi
     }
 }
 
-fn show_stadium(ui: &mut egui::Ui, club: &ClubView) {
+fn show_stadium(
+    schemas: &'static crate::fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    club: &ClubView,
+) {
     ui.strong("Attendance");
     if club.stadium_raw.is_some() {
         for key in ["c_avg_attendance", "c_min_attendance", "c_max_attendance"] {
-            if let Some(f) = fields::field(key) {
+            if let Some(f) = schemas.field(key) {
                 if let Some(v) = fields::read_field_u32(club, &club.raw, &f) {
                     field_widget::info_label(ui, f.label, v);
                 }
@@ -264,21 +296,21 @@ fn show_stadium(ui: &mut egui::Ui, club: &ClubView) {
             "st_all_seater",
             "st_expansion",
         ] {
-            if let Some(f) = fields::field(key) {
+            if let Some(f) = schemas.field(key) {
                 if let Some(v) = fields::read_field_u32(&(), se, &f) {
                     field_widget::info_label(ui, f.label, v);
                 }
             }
         }
         for key in ["st_pitch_length", "st_pitch_width"] {
-            if let Some(f) = fields::field(key) {
+            if let Some(f) = schemas.field(key) {
                 if let Some(v) = fields::read_field_u16(&(), se, &f) {
                     field_widget::info_label(ui, f.label, format!("{:.1}m", v as f32 / 10.0));
                 }
             }
         }
         for key in ["st_environment", "st_condition"] {
-            if let Some(f) = fields::field(key) {
+            if let Some(f) = schemas.field(key) {
                 if let Some(v) = fields::read_field_u8(&(), se, &f) {
                     field_widget::info_label(ui, f.label, v);
                 }
@@ -288,8 +320,11 @@ fn show_stadium(ui: &mut egui::Ui, club: &ClubView) {
 }
 
 /// Container and byte offset of a sub-record field, from its schema key.
-fn sub_location(key: &str) -> Option<(fields::SubRecordId, usize)> {
-    match fields::field(key)?.offset? {
+fn sub_location(
+    schemas: &'static crate::fields::VersionedSchemas,
+    key: &str,
+) -> Option<(fields::SubRecordId, usize)> {
+    match schemas.field(key)?.offset? {
         FieldLocation::SubRecord {
             container, offset, ..
         } => Some((container, offset as usize)),
@@ -300,8 +335,14 @@ fn sub_location(key: &str) -> Option<(fields::SubRecordId, usize)> {
 /// Edit writing `new_val` to the mirror field `key` (a second copy of a
 /// facility rating that FM keeps in sync), or `None` when the schema has no
 /// such mirror or its value already matches.
-fn mirror_u8_edit(club: &mut ClubView, key: &str, label: &str, new_val: u8) -> Option<FieldEdit> {
-    let (container, offset) = sub_location(key)?;
+fn mirror_u8_edit(
+    schemas: &'static crate::fields::VersionedSchemas,
+    club: &mut ClubView,
+    key: &str,
+    label: &str,
+    new_val: u8,
+) -> Option<FieldEdit> {
+    let (container, offset) = sub_location(schemas, key)?;
     let (buf, base) = club.sub_record_mut(container)?;
     let old = *buf.get(offset)?;
     if old == new_val {

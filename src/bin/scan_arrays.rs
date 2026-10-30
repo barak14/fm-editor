@@ -1,12 +1,13 @@
 //! Scan game_plugin.dll's static data for (data_ptr, end_ptr) pointer pairs
-//! whose (end-data)/8 count matches the active schema's FMRTE reference
+//! whose (end-data)/8 count matches the attached game's FMRTE reference
 //! counts.
 //!
 //! Historically this tool was used to find the correct full-array RVAs for
 //! clubs/players/staff/humans after discovering the existing RVAs pointed
 //! at filtered subsets. Re-run whenever a game version bump shifts the
-//! arrays — auto-detects which game is attached via `FmProcess::attach()`
-//! and pulls reference counts from the active `VersionedSchemas`.
+//! arrays — auto-detects the game via `FmProcess::attach()` (pass
+//! `--pid <n>` when several fm.exe are running) and pulls reference counts
+//! from that process's `VersionedSchemas`.
 
 use fm_editor::process::FmProcess;
 
@@ -15,7 +16,18 @@ fn is_heap_ptr(p: u64) -> bool {
 }
 
 fn main() {
-    let fm = match FmProcess::attach() {
+    // `--pid <n>` picks one game when several fm.exe are running.
+    let args: Vec<String> = std::env::args().collect();
+    let pid = args
+        .windows(2)
+        .find(|w| w[0] == "--pid")
+        .map(|w| w[1].parse::<u32>().map_err(|e| format!("--pid {}: {e}", w[1])));
+    let attached = match pid {
+        Some(Ok(pid)) => FmProcess::attach_pid(pid),
+        Some(Err(e)) => Err(e),
+        None => FmProcess::attach(),
+    };
+    let fm = match attached {
         Ok(p) => p,
         Err(e) => {
             eprintln!("Failed: {e}");

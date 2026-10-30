@@ -22,7 +22,7 @@ use crate::fields::VersionedSchemas;
 /// FM27 schema. FM27 is a Unity build like FM26: game logic lives in
 /// `game_plugin.dll`, and the entity RVAs below are relative to its base.
 /// All values are inherited from FM26 and unverified.
-pub const FM27: VersionedSchemas = VersionedSchemas {
+pub static FM27: VersionedSchemas = VersionedSchemas {
     player_fields: PLAYER_FIELDS,
     staff_fields: STAFF_FIELDS,
     club_fields: CLUB_FIELDS,

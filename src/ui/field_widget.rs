@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-use crate::fields::{self, Category, Encoding, Entity, Field};
+use crate::fields::{Category, Encoding, Entity, Field};
 use crate::settings::{Theme, theme_data_id};
 
 use super::navigation;
@@ -245,6 +245,7 @@ pub fn attr_cell_compact(
 /// correct widget per encoding type. Fields with `offset: None` are silently
 /// skipped — they appear automatically when the offset is added to the schema.
 pub fn category_column(
+    schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
     heading: &str,
     entity: Entity,
@@ -255,7 +256,7 @@ pub fn category_column(
 ) {
     ui.strong(heading);
     ui.add_space(6.0);
-    let fields = fields::fields_for_category(entity, category);
+    let fields = schemas.fields_for_category(entity, category);
     for f in &fields {
         if let Some(edit) = render_field(ui, f, raw, entity_addr) {
             edits.push(edit);
@@ -270,10 +271,16 @@ pub fn category_column(
 /// (= FMSE display order). If `skip_zeros` is `true`, roles rated 0 are
 /// omitted — use this in the tabbed Overview panel to show only assigned roles.
 /// Pass `false` in the manager panel to always show the full list.
-pub fn roles_column(ui: &mut egui::Ui, heading: &str, roles: &[u8; 15], skip_zeros: bool) {
+pub fn roles_column(
+    schemas: &'static crate::fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    heading: &str,
+    roles: &[u8; 15],
+    skip_zeros: bool,
+) {
     ui.strong(heading);
     ui.add_space(6.0);
-    let role_fields = fields::fields_for_category(Entity::Staff, Category::StaffRole);
+    let role_fields = schemas.fields_for_category(Entity::Staff, Category::StaffRole);
     egui::Grid::new(heading)
         .num_columns(2)
         .spacing([8.0, 4.0])

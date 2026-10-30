@@ -82,16 +82,17 @@ fn transfer_error(op: &str, addr: u64, transferred: isize) -> String {
     }
 }
 
-/// Find a process by name, return its PID.
+/// Find every process with this name, return their PIDs in ascending order.
 ///
 /// Matches /proc/<pid>/comm, which the Wine loader usually sets to the exe
 /// name (truncated to 15 chars by the kernel). Some games rename their main
 /// thread instead (FM24's comm is "Main Thread"), so the basename of argv[0]
 /// — a Windows path like `S:\…\fm.exe` under Proton — is matched too.
-pub fn find_pid(name: &str) -> Result<u32, String> {
+pub fn find_pids(name: &str) -> Result<Vec<u32>, String> {
     let target = name.to_lowercase();
     let truncated: String = target.chars().take(15).collect();
     let entries = std::fs::read_dir("/proc").map_err(|e| format!("read /proc: {e}"))?;
+    let mut pids = Vec::new();
     for entry in entries.flatten() {
         let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
             continue;
@@ -99,18 +100,20 @@ pub fn find_pid(name: &str) -> Result<u32, String> {
         if let Ok(comm) = std::fs::read_to_string(format!("/proc/{pid}/comm")) {
             let comm = comm.trim().to_lowercase();
             if comm == target || comm == truncated {
-                return Ok(pid);
+                pids.push(pid);
+                continue;
             }
         }
         if let Ok(cmdline) = std::fs::read(format!("/proc/{pid}/cmdline")) {
             let argv0 = cmdline.split(|&b| b == 0).next().unwrap_or(&[]);
             let argv0 = String::from_utf8_lossy(argv0).to_lowercase();
             if argv0.rsplit(['/', '\\']).next() == Some(target.as_str()) {
-                return Ok(pid);
+                pids.push(pid);
             }
         }
     }
-    Err(format!("{name} not found"))
+    pids.sort_unstable();
+    Ok(pids)
 }
 
 /// Find a module's base address, size, and full on-disk path within a process.
@@ -215,6 +218,7 @@ mod tests {
     #[test]
     fn find_own_pid_by_comm() {
         let comm = std::fs::read_to_string("/proc/self/comm").unwrap();
-        assert!(find_pid(comm.trim()).is_ok());
+        let pids = find_pids(comm.trim()).unwrap();
+        assert!(pids.contains(&std::process::id()), "pids: {pids:?}");
     }
 }

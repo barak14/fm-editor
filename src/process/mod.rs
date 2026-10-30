@@ -22,13 +22,63 @@ use self::linux as backend;
 use crate::fields::VersionedSchemas;
 use crate::game_version::GameVersion;
 
+/// A running `fm.exe` whose game version could be identified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunningGame {
+    pub pid: u32,
+    pub version: GameVersion,
+}
+
+impl std::fmt::Display for RunningGame {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} (PID {})", self.version.display_name(), self.pid)
+    }
+}
+
+/// Every running `fm.exe` whose version can be determined, ordered by PID.
+///
+/// FM24, FM26 and FM27 all run as `fm.exe`, so several can be open at once.
+/// A process whose version cannot be sniffed (e.g. a launcher sharing the
+/// name) is left out; when nothing is identifiable the error says why.
+pub fn running_games() -> Result<Vec<RunningGame>, String> {
+    let pids = backend::find_pids("fm.exe")?;
+    if pids.is_empty() {
+        return Err("fm.exe is not running".to_string());
+    }
+    let mut games = Vec::with_capacity(pids.len());
+    let mut first_err = None;
+    for pid in pids {
+        match detect_version(pid) {
+            Ok(version) => games.push(RunningGame { pid, version }),
+            Err(e) => {
+                first_err.get_or_insert(format!("pid {pid}: {e}"));
+            }
+        }
+    }
+    match (games.is_empty(), first_err) {
+        (true, Some(e)) => Err(e),
+        _ => Ok(games),
+    }
+}
+
+/// Sniff the game version of one `fm.exe` from its install path (it always
+/// contains the release year): FM26/FM27 keep their game logic in
+/// `game_plugin.dll`, FM24 in `fm.exe` itself, so the plugin path is tried
+/// first and the exe path is the fallback.
+fn detect_version(pid: u32) -> Result<GameVersion, String> {
+    let sniff_path = backend::find_module_info(pid, "game_plugin.dll")
+        .or_else(|_| backend::find_module_info(pid, "fm.exe"))?
+        .2;
+    sniff_version(&sniff_path)
+}
+
 /// Handle to an open game process with its resolved game module and
 /// selected game version.
 pub struct FmProcess {
     handle: backend::ProcHandle,
     pub pid: u32,
     /// Base of the module that holds the game data RVAs:
-    /// `game_plugin.dll` on FM26, `fm.exe` itself on FM24
+    /// `game_plugin.dll` on FM26/FM27, `fm.exe` itself on FM24
     /// (see `GameVersion::module_name`).
     pub gp_base: u64,
     pub gp_end: u64,
@@ -40,20 +90,28 @@ pub struct FmProcess {
 }
 
 impl FmProcess {
-    /// Find a running game process and attach to it.
+    /// Attach to the only running game.
     ///
-    /// Both FM24 and FM26 run as `fm.exe`. The version is sniffed from the
-    /// install path (it always contains the release year): FM26 keeps its
-    /// game logic in `game_plugin.dll`, FM24 in `fm.exe` itself, so the
-    /// plugin path is tried first and the exe path is the fallback.
+    /// Fails when no game runs, and when several do (FM24, FM26 and FM27
+    /// all run as `fm.exe`): the error lists them so the caller can pick
+    /// one with [`FmProcess::attach_pid`].
     pub fn attach() -> Result<Self, String> {
-        let pid = backend::find_pid("fm.exe").map_err(|_| "fm.exe is not running".to_string())?;
+        let games = running_games()?;
+        match games.as_slice() {
+            [game] => Self::attach_pid(game.pid),
+            _ => Err(format!(
+                "{} games are running: {}. Choose one by PID.",
+                games.len(),
+                games.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "),
+            )),
+        }
+    }
+
+    /// Attach to the game with this PID. The schema comes from that
+    /// process's own install path, never from any other attachment.
+    pub fn attach_pid(pid: u32) -> Result<Self, String> {
         let handle = backend::open(pid)?;
-        let sniff_path = backend::find_module_info(pid, "game_plugin.dll")
-            .or_else(|_| backend::find_module_info(pid, "fm.exe"))?
-            .2;
-        let version = sniff_version(&sniff_path)?;
-        crate::fields::set_active_version(version);
+        let version = detect_version(pid)?;
         let (gp_base, gp_size, gp_path) = backend::find_module_info(pid, version.module_name())?;
         // Probe one read up front so a blocked cross-process access path
         // (e.g. Linux yama ptrace_scope) fails the attach with the OS hint
@@ -89,11 +147,11 @@ impl FmProcess {
         })
     }
 
-    /// The version-specific schema bundle for the attached process.
+    /// The version-specific schema bundle for this process.
     ///
-    /// Every reader / UI panel that used to reach into `crate::offsets::*`
-    /// or global `fields::field()` helpers should pull field data, RVAs,
-    /// and struct sizes through here.
+    /// Every reader that holds an `FmProcess` pulls field data, RVAs and
+    /// struct sizes through here, so two games open at once never share a
+    /// schema.
     pub fn schemas(&self) -> &'static VersionedSchemas {
         self.version.schemas()
     }
@@ -172,7 +230,7 @@ impl FmProcess {
 ///
 /// The Football Manager install directory always contains the release year
 /// (e.g. `…\Football Manager 2026\game_plugin.dll`), which is the only
-/// reliable distinguisher when both versions share the `fm.exe` exe name.
+/// reliable distinguisher when every version shares the `fm.exe` exe name.
 fn sniff_version(dll_path: &str) -> Result<GameVersion, String> {
     let lower = dll_path.to_lowercase();
     // Match both "Football Manager 2026" and "Football Manager 26" naming conventions.
@@ -206,4 +264,24 @@ fn hash_dll_header(dll_path: &str) -> u64 {
         h = h.wrapping_mul(0x100000000001b3);
     }
     h
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn running_game_label_names_version_and_pid() {
+        let game = RunningGame { pid: 4242, version: GameVersion::Fm27 };
+        assert_eq!(game.to_string(), "FM27 (PID 4242)");
+    }
+
+    #[test]
+    fn version_sniffed_per_install_path() {
+        let fm24 = r"S:\SteamLibrary\steamapps\common\Football Manager 2024\fm.exe";
+        let fm27 = r"S:\SteamLibrary\steamapps\common\Football Manager 27\data\game_plugin.dll";
+        assert_eq!(sniff_version(fm24), Ok(GameVersion::Fm24));
+        assert_eq!(sniff_version(fm27), Ok(GameVersion::Fm27));
+        assert!(sniff_version(r"C:\Games\fm.exe").is_err());
+    }
 }

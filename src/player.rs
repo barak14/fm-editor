@@ -6,6 +6,7 @@ use crate::process::FmProcess;
 /// A decoded player record.
 #[derive(Debug, Clone)]
 pub struct PlayerRecord {
+    pub version: crate::game_version::GameVersion,
     pub addr: u64,
     pub index: usize,
     pub name: Option<String>,
@@ -14,7 +15,7 @@ pub struct PlayerRecord {
     /// Bytes the person block is moved by in memory (player-coaches); edits
     /// to offsets at or past the schema's person offset must add it.
     pub person_shift: usize,
-    /// Contract sub-record bytes, when the active schema defines one.
+    /// Contract sub-record bytes, when the record's schema defines one.
     pub contract_raw: Option<Vec<u8>>,
     /// Address of the contract sub-record, for edits to contract fields.
     pub contract_addr: Option<u64>,
@@ -39,31 +40,31 @@ impl HasSubRecords for PlayerRecord {
 impl PlayerRecord {
     /// Read a field by key, decoded to displayed value (u8).
     pub fn field_u8(&self, key: &str) -> Option<u8> {
-        let f = fields::field(key)?;
-        fields::read_field_u8(self, &self.raw, &f)
+        let f = self.version.schemas().field(key)?;
+        fields::read_field_u8(self, &self.raw, f)
     }
 
     /// Read a field by key as u16.
     pub fn field_u16(&self, key: &str) -> Option<u16> {
-        let f = fields::field(key)?;
-        fields::read_field_u16(self, &self.raw, &f)
+        let f = self.version.schemas().field(key)?;
+        fields::read_field_u16(self, &self.raw, f)
     }
 
     /// Read a field by key as u32.
     pub fn field_u32(&self, key: &str) -> Option<u32> {
-        let f = fields::field(key)?;
-        fields::read_field_u32(self, &self.raw, &f)
+        let f = self.version.schemas().field(key)?;
+        fields::read_field_u32(self, &self.raw, f)
     }
 
     /// Read a field by key as u64.
     pub fn field_u64(&self, key: &str) -> Option<u64> {
-        let f = fields::field(key)?;
-        fields::read_field_u64(self, &self.raw, &f)
+        let f = self.version.schemas().field(key)?;
+        fields::read_field_u64(self, &self.raw, f)
     }
 
     /// Read all mapped fields for a category, returning (label, decoded_value).
     pub fn category(&self, category: Category) -> Vec<(&'static str, u8)> {
-        fields::fields_for_category(Entity::Player, category)
+        self.version.schemas().fields_for_category(Entity::Player, category)
             .iter()
             .filter_map(|f| {
                 let val = fields::read_field_u8(self, &self.raw, f)?;
@@ -74,7 +75,7 @@ impl PlayerRecord {
 
     /// Read all 15 positions as (label, value) pairs, skipping value=1.
     pub fn positions(&self) -> Vec<(&'static str, u8)> {
-        fields::fields_for_category(Entity::Player, Category::Positions)
+        self.version.schemas().fields_for_category(Entity::Player, Category::Positions)
             .iter()
             .filter_map(|f| {
                 let val = fields::read_field_u8(self, &self.raw, f)?;
@@ -230,17 +231,17 @@ pub(crate) fn read_first_name_from_sub(fm: &FmProcess, sub_ptr: u64) -> Option<S
 ///   1. Common name sub-record (`p_name_common_sub`) when set — "Lamine Yamal"
 ///   2. Block 1: first/last sub-records, then the `p_name` full-name FmString
 ///   3. Block 2: `p_name2` FmString + sub-records (FM26 fallback; unmapped on FM24 and FM27)
-/// Keys the active schema leaves unmapped are skipped.
+/// Keys the process's schema leaves unmapped are skipped.
 pub fn read_player_name(fm: &FmProcess, raw: &[u8]) -> Option<String> {
-    fn ptr_at(raw: &[u8], key: &str) -> u64 {
-        let Some(off) = fields::offset_of(key) else {
+    let ptr_at = |raw: &[u8], key: &str| -> u64 {
+        let Some(off) = fm.schemas().offset_of(key) else {
             return 0;
         };
         if off + 8 > raw.len() {
             return 0;
         }
         u64::from_le_bytes(raw[off..off + 8].try_into().unwrap())
-    }
+    };
 
     fn first_and_last(s: String) -> String {
         let parts: Vec<&str> = s.split_whitespace().collect();
@@ -310,8 +311,8 @@ pub fn person_shift(fm: &FmProcess, addr: u64) -> usize {
 
 /// Physical offset of schema offset `off` in a player object whose person
 /// block is moved by `shift` (see `person_shift`).
-pub fn player_phys_offset(off: u64, shift: usize) -> u64 {
-    let person = crate::fields::active_schema().player_person_offset as u64;
+pub fn player_phys_offset(schemas: &'static fields::VersionedSchemas, off: u64, shift: usize) -> u64 {
+    let person = schemas.player_person_offset as u64;
     if shift != 0 && off >= person { off + shift as u64 } else { off }
 }
 
@@ -344,7 +345,7 @@ pub fn read_player_at(fm: &FmProcess, addr: u64, index: usize) -> Result<PlayerR
     // Sub-record chains start from pointers in the player object; person
     // pointers (contract, nation, birth city) move with a player-coach.
     let subs = fm.schemas().player_sub_records;
-    let phys = |off: u64| player_phys_offset(off, person_shift);
+    let phys = |off: u64| player_phys_offset(fm.schemas(), off, person_shift);
     let contract_addr = fields::resolve_sub_ptr_mapped(fm, addr, "contract", subs, &phys);
     let contract_raw = contract_addr.and_then(|ptr| {
         let size = subs.iter().find(|s| s.id == "contract")?.size;
@@ -357,6 +358,7 @@ pub fn read_player_at(fm: &FmProcess, addr: u64, index: usize) -> Result<PlayerR
     let birthplace = fields::read_sub_fm_string(fm, addr, "p_birthplace", subs, &phys);
 
     Ok(PlayerRecord {
+        version: fm.version,
         addr, index, name, raw, person_shift,
         contract_raw, contract_addr, club_name, club_addr, nationality, birthplace,
     })
@@ -365,7 +367,7 @@ pub fn read_player_at(fm: &FmProcess, addr: u64, index: usize) -> Result<PlayerR
 /// Compute a player's age in whole years from the DOB year (u16 half of
 /// the `p_dob` DateDayYear field). Returns `None` if the year is unset (0).
 pub fn player_age(rec: &PlayerRecord) -> Option<u16> {
-    let dob_year_offset = fields::field("p_dob")?.offset?.offset() as usize + 2;
+    let dob_year_offset = rec.version.schemas().field("p_dob")?.offset?.offset() as usize + 2;
     if rec.raw.len() < dob_year_offset + 2 {
         return None;
     }
@@ -377,5 +379,47 @@ pub fn player_age(rec: &PlayerRecord) -> Option<u16> {
     if year == 0 {
         return None;
     }
-    Some(crate::fields::age_reference_year().saturating_sub(year))
+    Some(rec.version.schemas().age_reference_year.saturating_sub(year))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game_version::GameVersion;
+
+    #[test]
+    fn records_decode_with_their_own_version() {
+        let versions = [GameVersion::Fm24, GameVersion::Fm27];
+        let mut raw = vec![0; versions.iter().map(|v| v.schemas().player_struct_size).max().unwrap()];
+        let ca_offsets = versions.map(|v| v.schemas().offset_of("p_ca").unwrap());
+        assert_ne!(ca_offsets[0], ca_offsets[1]);
+        for (offset, value) in ca_offsets.into_iter().zip([123u16, 187]) {
+            raw[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        for version in versions {
+            let offset = version.schemas().offset_of("p_dob").unwrap() + 2;
+            let year = version.schemas().age_reference_year - 25;
+            raw[offset..offset + 2].copy_from_slice(&year.to_le_bytes());
+        }
+        let fm24 = PlayerRecord {
+            version: GameVersion::Fm24,
+            addr: 0,
+            index: 0,
+            name: None,
+            raw,
+            person_shift: 0,
+            contract_raw: None,
+            contract_addr: None,
+            club_name: None,
+            club_addr: None,
+            nationality: None,
+            birthplace: None,
+        };
+        let fm27 = PlayerRecord { version: GameVersion::Fm27, ..fm24.clone() };
+        assert_eq!(fm24.field_u16("p_ca"), Some(123));
+        assert_eq!(fm27.field_u16("p_ca"), Some(187));
+        assert_eq!(player_age(&fm24), Some(25));
+        assert_eq!(player_age(&fm27), Some(25));
+        assert_eq!(fm24.field_u16("p_ca"), Some(123));
+    }
 }

@@ -66,8 +66,8 @@ pub fn write_bytes(h: &ProcHandle, addr: u64, data: &[u8]) -> Result<(), String>
     Ok(())
 }
 
-/// Find a process by name, return its PID.
-pub fn find_pid(name: &str) -> Result<u32, String> {
+/// Find every process with this name, return their PIDs in ascending order.
+pub fn find_pids(name: &str) -> Result<Vec<u32>, String> {
     unsafe {
         let snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
             .map_err(|e| format!("CreateToolhelp32Snapshot: {e}"))?;
@@ -78,6 +78,7 @@ pub fn find_pid(name: &str) -> Result<u32, String> {
         };
 
         let target = name.to_lowercase();
+        let mut pids = Vec::new();
         if Process32FirstW(snap, &mut entry).is_ok() {
             loop {
                 let exe = String::from_utf16_lossy(
@@ -88,8 +89,7 @@ pub fn find_pid(name: &str) -> Result<u32, String> {
                         .unwrap_or(entry.szExeFile.len())],
                 );
                 if exe.to_lowercase() == target {
-                    let _ = CloseHandle(snap);
-                    return Ok(entry.th32ProcessID);
+                    pids.push(entry.th32ProcessID);
                 }
                 if Process32NextW(snap, &mut entry).is_err() {
                     break;
@@ -97,7 +97,8 @@ pub fn find_pid(name: &str) -> Result<u32, String> {
             }
         }
         let _ = CloseHandle(snap);
-        Err(format!("{name} not found"))
+        pids.sort_unstable();
+        Ok(pids)
     }
 }
 

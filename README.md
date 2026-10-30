@@ -38,6 +38,11 @@ The version is detected from the game's install path when the editor attaches. A
 can move fields; the editor checks a fingerprint of the game module and refuses to attach to
 a build its schema was not verified against (FM27 is not yet pinned to a build).
 
+Several versions can be open at once (they all run as `fm.exe`). The editor then attaches to
+none of them on its own: the toolbar shows one button per running game, labelled with its
+version and PID, and the status bar names the game you attached to. Each game is read with
+its own schema.
+
 ## Building
 
 Requires a recent stable Rust toolchain (edition 2024).

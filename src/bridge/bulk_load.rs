@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::sync::{mpsc, Arc};
 
 use crate::cache::{CachedClub, CachedPlayer, CachedStaff, EntityCache};
-use crate::fields;
 use crate::process::FmProcess;
 
 use super::cmd::BridgeResult;
@@ -23,6 +22,7 @@ pub(super) fn load_entity_cache(
     ac: &ArrayCache,
     tx: &mpsc::Sender<BridgeResult>,
 ) -> Result<Arc<EntityCache>, String> {
+    let schemas = fm.schemas();
     let total = ac.humans_count + ac.staff_count + ac.clubs_count;
     let mut done: usize = 0;
 
@@ -32,26 +32,26 @@ pub(super) fn load_entity_cache(
     // ------------------------------------------------------------------
 
     // Player offsets (p_name not needed here — read_player_name handles both name blocks)
-    let p_uid_off    = fields::field("p_uid") .ok_or("p_uid missing") ?.offset.ok_or("p_uid no offset") ?.offset();
-    let p_ca_off     = fields::field("p_ca")  .ok_or("p_ca missing")  ?.offset.ok_or("p_ca no offset")  ?.offset();
-    let p_pa_off     = fields::field("p_pa")  .ok_or("p_pa missing")  ?.offset.ok_or("p_pa no offset")  ?.offset();
+    let p_uid_off    = schemas.field("p_uid") .ok_or("p_uid missing") ?.offset.ok_or("p_uid no offset") ?.offset();
+    let p_ca_off     = schemas.field("p_ca")  .ok_or("p_ca missing")  ?.offset.ok_or("p_ca no offset")  ?.offset();
+    let p_pa_off     = schemas.field("p_pa")  .ok_or("p_pa missing")  ?.offset.ok_or("p_pa no offset")  ?.offset();
     // p_dob is a DateDayYear field; year is the u16 at offset+2.
-    let p_dob_year_off = fields::field("p_dob").ok_or("p_dob missing")?.offset.ok_or("p_dob no offset")?.offset() + 2;
+    let p_dob_year_off = schemas.field("p_dob").ok_or("p_dob missing")?.offset.ok_or("p_dob no offset")?.offset() + 2;
 
     // Staff offsets (s_name not needed here — read_staff_name handles FmString + sub-record fallback)
-    let s_id_off       = fields::field("s_id")      .ok_or("s_id missing")      ?.offset.ok_or("s_id no offset")      ?.offset();
-    let s_ca_off       = fields::field("s_ca")      .ok_or("s_ca missing")      ?.offset.ok_or("s_ca no offset")      ?.offset();
-    let s_pa_off       = fields::field("s_pa")      .ok_or("s_pa missing")      ?.offset.ok_or("s_pa no offset")      ?.offset();
-    let s_dob_year_off = fields::field("s_dob")     .ok_or("s_dob missing")     ?.offset.ok_or("s_dob no offset")     ?.offset() + 2;
+    let s_id_off       = schemas.field("s_id")      .ok_or("s_id missing")      ?.offset.ok_or("s_id no offset")      ?.offset();
+    let s_ca_off       = schemas.field("s_ca")      .ok_or("s_ca missing")      ?.offset.ok_or("s_ca no offset")      ?.offset();
+    let s_pa_off       = schemas.field("s_pa")      .ok_or("s_pa missing")      ?.offset.ok_or("s_pa no offset")      ?.offset();
+    let s_dob_year_off = schemas.field("s_dob")     .ok_or("s_dob missing")     ?.offset.ok_or("s_dob no offset")     ?.offset() + 2;
     // Optional: FM27 has no mapped role-ratings pointer.
-    let s_role_ptr_off = fields::offset_of("s_role_ptr");
+    let s_role_ptr_off = schemas.offset_of("s_role_ptr");
 
     // Club offsets
-    let c_uid_off       = fields::field("c_uid")      .ok_or("c_uid missing")      ?.offset.ok_or("c_uid no offset")      ?.offset();
-    let c_name_off      = fields::field("c_name")     .ok_or("c_name missing")     ?.offset.ok_or("c_name no offset")     ?.offset();
-    let c_full_name_off = fields::field("c_full_name").ok_or("c_full_name missing")?.offset.ok_or("c_full_name no offset")?.offset();
+    let c_uid_off       = schemas.field("c_uid")      .ok_or("c_uid missing")      ?.offset.ok_or("c_uid no offset")      ?.offset();
+    let c_name_off      = schemas.field("c_name")     .ok_or("c_name missing")     ?.offset.ok_or("c_name no offset")     ?.offset();
+    let c_full_name_off = schemas.field("c_full_name").ok_or("c_full_name missing")?.offset.ok_or("c_full_name no offset")?.offset();
     // Optional: FM24 has no mapped gender flag.
-    let c_gender_off    = fields::offset_of("c_gender").map(|o| o as u64);
+    let c_gender_off    = schemas.offset_of("c_gender").map(|o| o as u64);
 
     let staff_size  = fm.schemas().staff_struct_size;
 

@@ -11,7 +11,8 @@ selected at attach time. Supports FM24, FM26 and FM27. See [README.md](README.md
   `docs/<version>/memory-layout.md`. Change both in one commit or neither.
 - **Never trust inherited offsets.** Run verification yourself before acting on anything inherited.
 - **All offsets through the schema.** No raw hex outside `src/fields/`. Everything goes through
-  `fm.schemas()` or `fields::field(key)`.
+  `fm.schemas()` (or a record's / the attached game's `version.schemas()`). There is no global
+  active version: FM24, FM26 and FM27 can run side by side.
 - **Writes need undo.** Anything calling `WriteProcessMemory` must round-trip through the undo
   stack. Never write speculatively.
 - **Validate every pointer.** `ptr > 0x10000 && ptr < 0x7FFFFFFFFFFF` on every dereference.
@@ -63,7 +64,8 @@ cargo build                      # compile only
 bash Tools/build-and-launch.sh   # kill orphan → build → launch → verify survived
 ```
 
-Requires `fm.exe` running with a save loaded. Version auto-detected from `game_plugin.dll`.
+Requires `fm.exe` running with a save loaded. Version auto-detected from each process's install
+path; with several games open, pick one in the toolbar (diagnostic scripts take `--pid <n>`).
 
 ## Tools
 
@@ -81,6 +83,7 @@ Requires `fm.exe` running with a save loaded. Version auto-detected from `game_p
 
 Debug builds serve an MCP server (streamable HTTP, `POST /mcp`) on `localhost:7799` while the
 editor runs — `--mcp-port <n>` overrides it, and worktree launches use the port written to
-`.mcp-port`. It exposes read-only tools for the Research and Map phases: `attach_status`,
+`.mcp-port`. `attach_status` follows the editor's game when several are open; pass `pid` to
+switch. It exposes read-only tools for the Research and Map phases: `attach_status`,
 `search_entities`, `dump_struct`, `probe_range`, `probe_pointer_chain`, `compare_entities`,
 `read_entity_fields` and more. [`.mcp.json`](.mcp.json) is an example client config.
