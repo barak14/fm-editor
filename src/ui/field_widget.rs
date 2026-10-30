@@ -597,31 +597,62 @@ pub fn dob_edit(
     if end > raw.len() {
         return edits;
     }
-    let mut edits_block = dob_edit_inner(ui, raw, doy_offset, year_offset, entity_addr);
+    let mut edits_block = date_edit_inner(ui, "DOB", raw, doy_offset, year_offset, entity_addr, 1900..=2030);
     edits.append(&mut edits_block);
     edits
 }
 
-fn dob_edit_inner(
+/// Editable `DateDayYear` field labelled `label`, with years limited to
+/// `years`. Works on any buffer: pass a sub-record's bytes and address for a
+/// sub-record field (e.g. a contract's expiry date).
+pub fn date_edit(
     ui: &mut egui::Ui,
+    label: &str,
+    raw: &mut [u8],
+    field: &Field,
+    base_addr: u64,
+    years: std::ops::RangeInclusive<u16>,
+) -> Vec<FieldEdit> {
+    let Some(loc) = field.offset.as_ref() else { return Vec::new() };
+    let Ok(doy_offset) = usize::try_from(loc.offset()) else { return Vec::new() };
+    if doy_offset.checked_add(4).is_none_or(|end| end > raw.len()) {
+        return Vec::new();
+    }
+    date_edit_inner(ui, label, raw, doy_offset, doy_offset + 2, base_addr, years)
+}
+
+/// Bits of a date's u16 day-of-year word that hold the day; FM keeps flags in
+/// the bits above (a FM27 contract-signed date stores 7019 = flags | day 363).
+const DOY_MASK: u16 = 0x1FF;
+
+/// `word` with its day-of-year bits replaced by `doy`, keeping FM's flags.
+fn replace_doy(word: u16, doy: u16) -> u16 {
+    (word & !DOY_MASK) | (doy & DOY_MASK)
+}
+
+fn date_edit_inner(
+    ui: &mut egui::Ui,
+    label: &str,
     raw: &mut [u8],
     doy_offset: usize,
     year_offset: usize,
     entity_addr: u64,
+    years: std::ops::RangeInclusive<u16>,
 ) -> Vec<FieldEdit> {
     let mut edits = Vec::new();
 
     let old_doy_bytes = [raw[doy_offset], raw[doy_offset + 1]];
     let old_year_bytes = [raw[year_offset], raw[year_offset + 1]];
-    let doy = u16::from_le_bytes(old_doy_bytes);
+    let doy_word = u16::from_le_bytes(old_doy_bytes);
+    let doy = doy_word & DOY_MASK;
     let year = u16::from_le_bytes(old_year_bytes);
 
-    // Out-of-range DOB: render read-only so the DragValue doesn't clamp
-    // year to 1900 (overwriting genuine zeros/blanks in memory).
-    if !(1900..=2030).contains(&year) || doy == 0 || doy > 366 {
+    // Out-of-range date: render read-only so the DragValue doesn't clamp the
+    // year into range (overwriting genuine zeros/blanks in memory).
+    if !years.contains(&year) || doy == 0 || doy > 366 {
         let grey = egui::Color32::from_rgb(110, 110, 110);
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("DOB").color(grey));
+            ui.label(egui::RichText::new(label).color(grey));
             ui.label(egui::RichText::new(format!("doy={doy} year={year}")).color(grey));
         });
         return edits;
@@ -634,9 +665,10 @@ fn dob_edit_inner(
     let orig_day = day;
     let orig_month = month;
     let orig_year = yr;
+    let (min_year, max_year) = (*years.start() as i32, *years.end() as i32);
 
     ui.horizontal(|ui| {
-        ui.label("DOB");
+        ui.label(label);
         let day_changed = number_edit(
             ui,
             egui::DragValue::new(&mut day)
@@ -659,16 +691,16 @@ fn dob_edit_inner(
             ui,
             egui::DragValue::new(&mut yr)
                 .update_while_editing(false)
-                .range(1900..=2030)
+                .range(min_year..=max_year)
                 .speed(0.5),
             50.0,
         );
 
         if day_changed || month_changed || year_changed {
-            let new_year = yr.clamp(1900, 2030) as u16;
+            let new_year = yr.clamp(min_year, max_year) as u16;
             let new_doy = day_month_to_doy(new_year, day.clamp(1, 31), month.clamp(1, 12));
 
-            let new_doy_bytes = new_doy.to_le_bytes();
+            let new_doy_bytes = replace_doy(doy_word, new_doy).to_le_bytes();
             let new_year_bytes = new_year.to_le_bytes();
 
             if new_doy_bytes != old_doy_bytes {
@@ -679,7 +711,7 @@ fn dob_edit_inner(
                     old_raw: old_doy_bytes.to_vec(),
                     new_raw: new_doy_bytes.to_vec(),
                     description: format!(
-                        "DOB day: {}/{} \u{2192} {}/{}",
+                        "{label} day: {}/{} \u{2192} {}/{}",
                         orig_day, orig_month, day, month
                     ),
                 });
@@ -691,13 +723,156 @@ fn dob_edit_inner(
                     addr: entity_addr + year_offset as u64,
                     old_raw: old_year_bytes.to_vec(),
                     new_raw: new_year_bytes.to_vec(),
-                    description: format!("DOB year: {} \u{2192} {}", orig_year, yr),
+                    description: format!("{label} year: {} \u{2192} {}", orig_year, yr),
                 });
             }
         }
     });
 
     edits
+}
+
+/// Edit a u8 code chosen from `options` (code, label). A stored code not in
+/// `options` is shown read-only, so opening the panel never rewrites it.
+pub fn choice_u8_edit(
+    ui: &mut egui::Ui,
+    label: &str,
+    raw: &mut [u8],
+    field: &Field,
+    base_addr: u64,
+    options: &[(u8, &str)],
+) -> Option<FieldEdit> {
+    let offset = usize::try_from(field.offset.as_ref()?.offset()).ok()?;
+    let old = *raw.get(offset)?;
+    let Some(&(_, old_name)) = options.iter().find(|(code, _)| *code == old) else {
+        info_label(ui, label, format!("code {old}"));
+        return None;
+    };
+    let mut new = old;
+    let enabled = navigation::editing_enabled(ui) && ui.is_enabled();
+    ui.horizontal(|ui| {
+        ui.label(label);
+        ui.add_enabled_ui(enabled, |ui| {
+            egui::ComboBox::from_id_salt(("choice_u8", label, base_addr, offset))
+                .selected_text(old_name)
+                .show_ui(ui, |ui| {
+                    for &(code, name) in options {
+                        ui.selectable_value(&mut new, code, name);
+                    }
+                });
+        });
+    });
+    if !enabled || new == old {
+        return None;
+    }
+    raw[offset] = new;
+    let new_name = options.iter().find(|(code, _)| *code == new).map_or("?", |(_, n)| n);
+    Some(FieldEdit {
+        addr: base_addr + offset as u64,
+        old_raw: vec![old],
+        new_raw: vec![new],
+        description: format!("{label}: {old_name} \u{2192} {new_name}"),
+    })
+}
+
+/// Edit a u8 number where `none` means "no value" (e.g. squad number 255).
+/// The editor shows 0 as "None"; values run 1..=`max`.
+pub fn optional_u8_edit(
+    ui: &mut egui::Ui,
+    label: &str,
+    raw: &mut [u8],
+    field: &Field,
+    base_addr: u64,
+    max: u8,
+    none: u8,
+) -> Option<FieldEdit> {
+    let offset = usize::try_from(field.offset.as_ref()?.offset()).ok()?;
+    let old = *raw.get(offset)?;
+    if old != none && (old == 0 || old > max) {
+        info_label(ui, label, format!("raw={old}"));
+        return None;
+    }
+    let mut val: i32 = if old == none { 0 } else { old as i32 };
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.label(label);
+        changed = number_edit(
+            ui,
+            egui::DragValue::new(&mut val)
+                .update_while_editing(false)
+                .range(0..=max as i32)
+                .speed(0.2)
+                .custom_formatter(|n, _| if n == 0.0 { "None".into() } else { format!("{n:.0}") }),
+            VALUE_SIZE[0],
+        );
+    });
+    if !changed {
+        return None;
+    }
+    let new = if val <= 0 { none } else { val.min(max as i32) as u8 };
+    if new == old {
+        return None;
+    }
+    raw[offset] = new;
+    let show = |v: u8| if v == none { "None".to_string() } else { v.to_string() };
+    Some(FieldEdit {
+        addr: base_addr + offset as u64,
+        old_raw: vec![old],
+        new_raw: vec![new],
+        description: format!("{label}: {} \u{2192} {}", show(old), show(new)),
+    })
+}
+
+/// Edit an i32 amount (pounds) where -1 means "not set" (asking price).
+/// The editor shows -1 as "Not set"; amounts run 0..=i32::MAX.
+pub fn optional_money_edit(
+    ui: &mut egui::Ui,
+    label: &str,
+    raw: &mut [u8],
+    field: &Field,
+    base_addr: u64,
+) -> Option<FieldEdit> {
+    let offset = usize::try_from(field.offset.as_ref()?.offset()).ok()?;
+    let old_bytes: [u8; 4] = raw.get(offset..offset + 4)?.try_into().ok()?;
+    let old = i32::from_le_bytes(old_bytes);
+    if old < -1 {
+        info_label(ui, label, format!("raw={old}"));
+        return None;
+    }
+    let mut val = old as i64;
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.label(label);
+        changed = number_edit(
+            ui,
+            egui::DragValue::new(&mut val)
+                .update_while_editing(false)
+                .range(-1..=i32::MAX as i64)
+                .speed(10_000.0)
+                .custom_formatter(|n, _| if n < 0.0 { "Not set".into() } else { format!("£{n:.0}") })
+                .custom_parser(|s| {
+                    let t = s.trim().trim_start_matches('£').replace(',', "");
+                    if t.is_empty() || t.eq_ignore_ascii_case("not set") { Some(-1.0) } else { t.parse().ok() }
+                }),
+            90.0,
+        );
+    });
+    if !changed {
+        return None;
+    }
+    let new = val.clamp(-1, i32::MAX as i64) as i32;
+    if new == old {
+        return None;
+    }
+    let new_bytes = new.to_le_bytes();
+    raw[offset..offset + 4].copy_from_slice(&new_bytes);
+    let show = |v: i32| if v < 0 { "Not set".to_string() } else { format!("£{v}") };
+    Some(FieldEdit {
+        addr: base_addr + offset as u64,
+        old_raw: old_bytes.to_vec(),
+        new_raw: new_bytes.to_vec(),
+        description: format!("{label}: {} \u{2192} {}", show(old), show(new)),
+    })
 }
 
 fn doy_to_day_month(year: u16, doy: u16) -> (i32, i32) {
@@ -745,6 +920,16 @@ pub fn info_label(ui: &mut egui::Ui, label: &str, value: impl std::fmt::Display)
 
 #[cfg(test)]
 mod tests {
+    use super::replace_doy;
+
+    #[test]
+    fn replace_doy_keeps_flag_bits() {
+        // Saka's contract-signed word: flags 0x1A00 | day 363 (0x16B).
+        assert_eq!(replace_doy(7019, 181), 0x1A00 | 181);
+        // A plain date has no flags to keep.
+        assert_eq!(replace_doy(181, 1), 1);
+    }
+
     use super::*;
     use crate::fields::FieldLocation;
 

@@ -474,8 +474,14 @@ impl FmEditorApp {
             .chain(self.selected_staff.iter_mut())
         {
             patch_buffer(&mut s.record.raw, s.record.addr, entry.addr, bytes);
+            if let (Some(raw), Some(base)) = (&mut s.contract_raw, s.contract_addr) {
+                patch_buffer(raw, base, entry.addr, bytes);
+            }
         }
         if let Some(s) = &mut self.manager_view {
+            if let (Some(raw), Some(base)) = (&mut s.contract_raw, s.contract_addr) {
+                patch_buffer(raw, base, entry.addr, bytes);
+            }
             let schema = s.record.version.schemas();
             let normalized = entry
                 .addr
@@ -1699,5 +1705,6 @@ fn cached_staff_view(cached: &CachedStaff, version: GameVersion) -> StaffView {
         club_addr: None,
         birthplace: None,
         contract_raw: None,
+        contract_addr: None,
     }
 }

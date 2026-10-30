@@ -1,9 +1,9 @@
 {
-  "//": "Example MCP client config (Claude Code format). Debug builds of fm-editor serve the fm-debug MCP server on http://localhost:7841/mcp while the editor runs; Tools/create-worktree.sh patches the port for worktree builds. See README.md.",
+  "//": "Example MCP client config (Claude Code format). Debug builds of fm-editor serve the fm-debug MCP server on http://localhost:7877/mcp while the editor runs; Tools/create-worktree.sh patches the port for worktree builds. See README.md.",
   "mcpServers": {
     "fm-debug": {
       "type": "http",
-      "url": "http://localhost:7841/mcp"
+      "url": "http://localhost:7877/mcp"
     }
   }
 }

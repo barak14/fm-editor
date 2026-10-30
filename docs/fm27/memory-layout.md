@@ -232,6 +232,33 @@ Not decoded: sponsorship deals (club+0x130 vector did not parse), morale /
 condition / sharpness / injuries (FM27€0 also leaves these read-only), staff
 role ratings, cup prize money.
 
+### Player appearance
+
+Bytes at person +0x8D..+0x90 (player +0x315..+0x318), shown in the 3D match:
+ethnicity, hair colour, hair length, skin tone. Checked on nine players:
+
+| Player | Ethnicity | Hair colour | Skin tone |
+|--------|-----------|-------------|-----------|
+| Haaland | 0 Northern European | 7 | 2 |
+| De Bruyne | 0 Northern European | 7 | 4 |
+| Ronaldo | 1 Mediterranean/Hispanic | 15 | 6 |
+| Kubo | 10 East Asian | 15 | 7 |
+| Salah | 2 North African/Middle Eastern | 15 | 9 |
+| Mbappé | 3 African/Caribbean | 15 | 13 |
+| Yamal | 2 North African/Middle Eastern | 9 | 14 |
+| Vinícius Júnior | 9 Mixed Race | 15 | 17 |
+| Saka | 3 African/Caribbean | 12 | 19 |
+
+Hair length is 1 for all nine. Ranges (FM27€0's survey of every person):
+ethnicity 0-10, hair colour 0-18, hair length 0-6, skin tone 0-19, 255 = not
+set. Edits are not yet confirmed in a match.
+
+### Dates carry flags
+
+A date's u16 day-of-year word keeps flags above bit 8: Saka's contract-signed
+date stores 7019 = 0x1A00 | 363 (29 Dec 2025). Readers mask the low 9 bits and
+the date editor keeps the flag bits when it writes.
+
 ### Player-coaches
 
 391 players in this save are player-coach objects (vtable game_plugin+0x4F75A08;

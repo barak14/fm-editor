@@ -44,6 +44,7 @@ pub(super) fn load_staff_view(
         club_addr: extras.club_addr,
         birthplace: extras.birthplace,
         contract_raw: extras.contract_raw,
+        contract_addr: extras.contract_addr,
     })
 }
 
@@ -54,6 +55,7 @@ pub(super) struct StaffExtras {
     pub club_addr: Option<u64>,
     pub birthplace: Option<String>,
     pub contract_raw: Option<Vec<u8>>,
+    pub contract_addr: Option<u64>,
 }
 
 /// Resolve the staff sub-records from `base` — the staff struct for AI staff,
@@ -61,16 +63,20 @@ pub(super) struct StaffExtras {
 /// including the nation/contract pointers, lives at the shifted offsets).
 pub(super) fn load_staff_extras(fm: &FmProcess, base: u64) -> StaffExtras {
     let subs = fm.schemas().staff_sub_records;
-    let contract_raw = resolve_sub_ptr(fm, base, "contract", subs).and_then(|ptr| {
+    let contract_addr = resolve_sub_ptr(fm, base, "contract", subs);
+    let contract_raw = contract_addr.and_then(|ptr| {
         let size = subs.iter().find(|s| s.id == "contract")?.size;
         fm.read_bytes(ptr, size).ok()
     });
+    // Keep the address only when the bytes were read (write-back safety).
+    let contract_addr = contract_raw.as_ref().and(contract_addr);
     StaffExtras {
         nationality: crate::fields::read_sub_fm_string(fm, base, "s_nationality", subs, &|o| o),
         club_name: crate::fields::read_sub_fm_string(fm, base, "s_club", subs, &|o| o),
         club_addr: resolve_sub_ptr(fm, base, "club", subs),
         birthplace: crate::fields::read_sub_fm_string(fm, base, "s_birthplace", subs, &|o| o),
         contract_raw,
+        contract_addr,
     }
 }
 
@@ -436,5 +442,6 @@ pub(super) fn load_human_manager(fm: &FmProcess) -> Result<StaffView, String> {
         club_addr: extras.club_addr,
         birthplace: extras.birthplace,
         contract_raw: extras.contract_raw,
+        contract_addr: extras.contract_addr,
     })
 }

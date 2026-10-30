@@ -53,7 +53,7 @@ pub fn show(
     });
 
     ui.horizontal(|ui| {
-        ui.selectable_value(tab, ClubTab::Overview, "Overview (read-only)");
+        ui.selectable_value(tab, ClubTab::Overview, "Overview");
         ui.selectable_value(tab, ClubTab::Facilities, "Facilities");
         ui.selectable_value(tab, ClubTab::Finance, "Finance");
         ui.selectable_value(tab, ClubTab::Stadium, "Stadium (read-only)");
@@ -61,7 +61,7 @@ pub fn show(
     ui.separator();
 
     egui::ScrollArea::vertical().show(ui, |ui| match tab {
-        ClubTab::Overview => show_overview(schemas, ui, club),
+        ClubTab::Overview => show_overview(schemas, ui, club, &mut edits),
         ClubTab::Facilities => show_facilities(schemas, ui, club, &mut edits),
         ClubTab::Finance => show_finance(schemas, ui, club, &mut edits),
         ClubTab::Stadium => show_stadium(schemas, ui, club),
@@ -73,7 +73,8 @@ pub fn show(
 fn show_overview(
     schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
-    club: &ClubView,
+    club: &mut ClubView,
+    edits: &mut Vec<FieldEdit>,
 ) {
     ui.strong("Identity");
     field_widget::info_label(ui, "Full Name", &club.full_name);
@@ -97,11 +98,14 @@ fn show_overview(
             None => "Unknown",
         },
     );
-    if let Some(rep) = schemas
-        .field("c_reputation")
-        .and_then(|f| fields::read_field_u16(club, &club.raw, &f))
-    {
-        field_widget::info_label(ui, "Reputation", rep);
+    // Reputation lives in a sub-record (FM27: the senior team object); edit
+    // that record's bytes at its own address.
+    if let Some(f) = schemas.field("c_reputation") {
+        if let Some((container, _)) = sub_location(schemas, "c_reputation") {
+            if let Some((buf, base)) = club.sub_record_mut(container) {
+                edits.extend(field_widget::raw_u16_edit(ui, f, buf, 10000, base));
+            }
+        }
     }
 
     ui.add_space(8.0);

@@ -40,6 +40,8 @@ pub struct StaffView {
     pub birthplace: Option<String>,
     /// Contract sub-record bytes (job, wage, expiry), when mapped and present.
     pub contract_raw: Option<Vec<u8>>,
+    /// Address of the contract sub-record, for edits to contract fields.
+    pub contract_addr: Option<u64>,
 }
 
 /// Full club data with resolved sub-records.

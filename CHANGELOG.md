@@ -21,6 +21,13 @@
 - Clear stale-save undo addresses on reconnect; retain read-only detail snapshots and reject unrelated asynchronous detail responses.
 - Reject unmapped/out-of-bounds trait writes, avoid invalid ticket-price clamping on render, and safely handle missing DOB/gender data.
 
+### Editing
+
+- Player contracts are editable: wage, expiry, squad status (FM's selectable statuses only) and squad number, plus asking price; transfer listing stays read-only.
+- Player height and appearance (ethnicity, skin tone, hair colour and length, FM27) are editable.
+- Staff and human-manager contract wage and expiry, and club reputation, are editable.
+- Dates keep FM's flag bits above the day-of-year when edited and display correctly when flags are set.
+
 ### Project
 
 - Add a README and license the project under GPL-3.0-or-later.

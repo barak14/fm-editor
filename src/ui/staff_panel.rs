@@ -29,14 +29,14 @@ pub fn show(
     ui.horizontal(|ui| {
         ui.selectable_value(tab, StaffTab::Overview, "Overview");
         if has_contract {
-            ui.selectable_value(tab, StaffTab::Contract, "Contract (read-only)");
+            ui.selectable_value(tab, StaffTab::Contract, "Contract");
         }
     });
     ui.separator();
 
     egui::ScrollArea::vertical().show(ui, |ui| match tab {
         StaffTab::Overview => show_overview(schemas, ui, staff, &mut edits),
-        StaffTab::Contract => show_contract(schemas, ui, staff),
+        StaffTab::Contract => show_contract(schemas, ui, staff, &mut edits),
     });
 
     edits
@@ -221,7 +221,7 @@ pub fn show_manager(
                     categories(schemas, col, staff, groups[group], &mut edits);
                     if group == 0 {
                         if staff.contract_raw.is_some() {
-                            show_contract(schemas, col, staff);
+                            show_contract(schemas, col, staff, &mut edits);
                             col.add_space(4.0);
                         }
                         roles(schemas, col, staff, false);
@@ -246,19 +246,23 @@ pub fn show_manager(
 fn show_contract(
     schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
-    staff: &StaffView,
+    staff: &mut StaffView,
+    edits: &mut Vec<FieldEdit>,
 ) {
-    ui.strong("Contract (read-only)");
-    contract_rows(schemas, ui, staff);
+    ui.strong("Contract");
+    contract_rows(schemas, ui, staff, edits);
 }
 
-/// Job, club, wage and expiry from the staff contract sub-record.
+/// Job and club (read-only), wage and expiry (editable) from the staff
+/// contract sub-record. Edits address the contract itself, so the human
+/// manager's shifted-identity redirect in `show_manager` leaves them alone.
 fn contract_rows(
     schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
-    staff: &StaffView,
+    staff: &mut StaffView,
+    edits: &mut Vec<FieldEdit>,
 ) {
-    let Some(cr) = &staff.contract_raw else {
+    let (Some(cr), Some(caddr)) = (staff.contract_raw.as_mut(), staff.contract_addr) else {
         return;
     };
     if let Some(job) = schemas.offset_of("s_job").and_then(|o| cr.get(o).copied()) {
@@ -271,16 +275,10 @@ fn contract_rows(
     if let Some(club) = &staff.club_name {
         field_widget::info_label(ui, "Club", club);
     }
-    if let Some(wage) = schemas
-        .offset_of("s_weekly_wage")
-        .and_then(|o| Some(u32::from_le_bytes(cr.get(o..o + 4)?.try_into().ok()?)))
-    {
-        field_widget::info_label(ui, "Wage", format!("£{wage} p/w"));
+    if let Some(f) = schemas.field("s_weekly_wage") {
+        edits.extend(field_widget::raw_u32_edit(ui, f, cr, caddr));
     }
-    if let Some(s) = schemas
-        .offset_of("s_contract_expiry")
-        .and_then(|o| crate::ui::player_panel::fmt_date_at(cr, o))
-    {
-        field_widget::info_label(ui, "Expiry", s);
+    if let Some(f) = schemas.field("s_contract_expiry") {
+        edits.extend(field_widget::date_edit(ui, "Expiry", cr, f, caddr, 2000..=2060));
     }
 }

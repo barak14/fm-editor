@@ -47,7 +47,7 @@ pub fn show(
         ui.selectable_value(tab, PlayerTab::Overview, "Overview");
         ui.selectable_value(tab, PlayerTab::PositionsTraits, "Positions & Traits");
         if player.contract_raw.is_some() {
-            ui.selectable_value(tab, PlayerTab::Contract, "Contract (read-only)");
+            ui.selectable_value(tab, PlayerTab::Contract, "Contract");
         }
     });
     ui.separator();
@@ -63,7 +63,7 @@ pub fn show(
             face_pack_path,
         ),
         PlayerTab::PositionsTraits => show_positions_traits(schemas, ui, player, addr, &mut edits),
-        PlayerTab::Contract => show_contract(schemas, ui, player, wage_period),
+        PlayerTab::Contract => show_contract(schemas, ui, player, &mut edits),
     });
 
     // Widgets address edits as `addr + schema offset`. A player-coach's person
@@ -119,12 +119,31 @@ fn show_overview(
         ui.vertical(|ui| {
             ui.strong("Identity");
             edits.extend(field_widget::dob_edit(ui, &mut player.raw, &p_dob, addr));
-            let height = player.field_u16("p_height").unwrap_or(0);
-            field_widget::info_label(ui, "Height", format!("{height} cm"));
+            if let Some(f) = schemas.field("p_height") {
+                edits.extend(field_widget::raw_u16_edit(ui, &f, &mut player.raw, 250, addr));
+            }
             if let Some(birthplace) = &player.birthplace {
                 field_widget::info_label(ui, "Place of Birth", birthplace);
             }
         });
+
+        // Appearance (shown in the 3D match), when the schema maps it.
+        if schemas.offset_of("p_skin_tone").is_some() {
+            ui.separator();
+            ui.vertical(|ui| {
+                ui.strong("Appearance");
+                if let Some(f) = schemas.field("p_ethnicity") {
+                    edits.extend(field_widget::choice_u8_edit(
+                        ui, "Ethnicity", &mut player.raw, &f, addr, ETHNICITIES,
+                    ));
+                }
+                for (key, max) in [("p_skin_tone", 19), ("p_hair_colour", 18), ("p_hair_length", 6)] {
+                    if let Some(f) = schemas.field(key) {
+                        edits.extend(field_widget::raw_u8_edit(ui, &f, &mut player.raw, max, addr));
+                    }
+                }
+            });
+        }
 
         ui.separator();
 
@@ -505,74 +524,54 @@ fn render_trait_column(ui: &mut egui::Ui, groups: &[(&str, &[u8])], mask: &mut u
 fn show_contract(
     schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
-    player: &PlayerRecord,
-    wage_period: WagePeriod,
+    player: &mut PlayerRecord,
+    edits: &mut Vec<FieldEdit>,
 ) {
     ui.strong("Contract");
 
-    if player.contract_raw.is_some() {
-        if let Some(wage) = player.field_u32("p_contract_wage") {
-            field_widget::info_label(ui, "Wage", format_wage(wage, wage_period));
+    // Contract fields live in the contract sub-record: edit its bytes and
+    // address. Asking price is in the player struct itself.
+    if let (Some(cr), Some(caddr)) = (player.contract_raw.as_mut(), player.contract_addr) {
+        if let Some(f) = schemas.field("p_contract_wage") {
+            edits.extend(field_widget::raw_u32_edit(ui, &f, cr, caddr));
         }
-        if let Some(v) = player.field_u8("p_squad_status") {
-            let text = match squad_status_name(v) {
-                Some(name) => format!("{name} ({v})"),
-                None => v.to_string(),
-            };
-            field_widget::info_label(ui, "Squad Status", text);
+        if let Some(f) = schemas.field("p_contract_expiry") {
+            edits.extend(field_widget::date_edit(ui, "Expiry", cr, &f, caddr, 2000..=2060));
         }
-        if let Some(v) = player.field_u8("p_squad_number") {
-            let text = if v == 255 {
-                "None".to_string()
-            } else {
-                v.to_string()
-            };
-            field_widget::info_label(ui, "Squad Number", text);
+        if let Some(f) = schemas.field("p_squad_status") {
+            let code = schemas.offset_of("p_squad_status").and_then(|o| cr.get(o).copied());
+            match code {
+                // FM's own statuses (Out On Loan, ...) are shown, not offered.
+                Some(c) if !SQUAD_STATUS_OFFERED.iter().any(|(o, _)| *o == c) => {
+                    let name = squad_status_name(c).map_or(format!("code {c}"), |n| format!("{n} ({c})"));
+                    field_widget::info_label(ui, "Squad Status", name);
+                }
+                _ => edits.extend(field_widget::choice_u8_edit(
+                    ui, "Squad Status", cr, &f, caddr, SQUAD_STATUS_OFFERED,
+                )),
+            }
         }
-        if let Some(flags) = player.field_u8("p_list_flags") {
+        if let Some(f) = schemas.field("p_squad_number") {
+            edits.extend(field_widget::optional_u8_edit(ui, "Squad Number", cr, &f, caddr, 99, 255));
+        }
+        if let Some(flags) = schemas.offset_of("p_list_flags").and_then(|o| cr.get(o).copied()) {
             let status = match (flags & 1 != 0, flags & 2 != 0) {
                 (true, true) => "Transfer and loan listed",
                 (true, false) => "Transfer listed",
                 (false, true) => "Loan listed",
                 (false, false) => "Not listed",
             };
-            field_widget::info_label(ui, "Listing", status);
+            field_widget::info_label(ui, "Listing (read-only)", status);
         }
-        if let Some(v) = player.field_u32("p_asking_price") {
-            let text = if v as i32 == -1 {
-                "Not set".to_string()
-            } else {
-                format!("£{}", v as i32)
-            };
-            field_widget::info_label(ui, "Asking Price", text);
-        }
-        if let Some(v) = player.field_u16("p_contract_type") {
-            let label = match v {
-                1 => "Full Time",
-                2 => "Part Time",
-                3 => "Amateur",
-                4 => "Youth",
-                5 => "Non Contract",
-                _ => "Unknown",
-            };
-            field_widget::info_label(ui, "Contract Type", label);
-        }
-        if let Some(cr) = &player.contract_raw {
-            if let Some(s) = schemas
-                .offset_of("p_contract_signed")
-                .and_then(|o| fmt_date_at(cr, o))
-            {
-                field_widget::info_label(ui, "Signed", s);
-            }
-            if let Some(s) = schemas
-                .offset_of("p_contract_expiry")
-                .and_then(|o| fmt_date_at(cr, o))
-            {
-                field_widget::info_label(ui, "Expiry", s);
-            }
+        if let Some(s) = schemas.offset_of("p_contract_signed").and_then(|o| fmt_date_at(cr, o)) {
+            field_widget::info_label(ui, "Signed", s);
         }
     } else {
         ui.label("Contract sub-record unavailable.");
+    }
+    if let Some(f) = schemas.field("p_asking_price") {
+        let addr = player.addr;
+        edits.extend(field_widget::optional_money_edit(ui, "Asking Price", &mut player.raw, &f, addr));
     }
 
     ui.add_space(4.0);
@@ -591,6 +590,26 @@ fn show_contract(
         }
     }
 }
+
+/// Squad statuses offered for editing: one code per distinct label. Codes
+/// 6, 8, 19 and 21 duplicate a label; 0 ("-"), 23 (Scouting Required) and
+/// 24 (Out On Loan) are FM's own and not offered. A stored code outside
+/// this list is shown read-only.
+const SQUAD_STATUS_OFFERED: &[(u8, &str)] = &[
+    (1, "Star Player"), (2, "Important Player"), (3, "Regular Starter"), (4, "Squad Player"),
+    (5, "Impact Sub"), (7, "Fringe Player"), (9, "Emergency Backup"),
+    (10, "Breakthrough Prospect"), (11, "Future Prospect"), (12, "Hot Prospect"),
+    (13, "Youngster"), (14, "Regular"), (15, "First-Choice Goalkeeper"), (16, "Cup Goalkeeper"),
+    (17, "Domestic Cup Goalkeeper"), (18, "Continental Cup Goalkeeper"), (20, "Backup"),
+    (22, "Surplus to Requirements"),
+];
+
+/// FM's ethnicity codes (`p_ethnicity`).
+const ETHNICITIES: &[(u8, &str)] = &[
+    (0, "Northern European"), (1, "Mediterranean/Hispanic"), (2, "North African/Middle Eastern"),
+    (3, "African/Caribbean"), (4, "Asian"), (5, "South East Asian"), (6, "Pacific Islander"),
+    (7, "Native American"), (8, "Native Australian"), (9, "Mixed Race"), (10, "East Asian"),
+];
 
 /// FM's label for a squad-status code (contract "agreed playing time").
 /// Codes from FM's Squad Status list; several codes share a label.
@@ -635,7 +654,8 @@ pub(crate) fn fmt_date_at(buf: &[u8], off: usize) -> Option<String> {
     if off + 4 > buf.len() {
         return None;
     }
-    let doy = u16::from_le_bytes(buf[off..off + 2].try_into().ok()?);
+    // Low 9 bits hold the day; FM keeps flags above them.
+    let doy = u16::from_le_bytes(buf[off..off + 2].try_into().ok()?) & 0x1FF;
     let year = u16::from_le_bytes(buf[off + 2..off + 4].try_into().ok()?);
     if year == 0 || doy == 0 || doy > 366 || !(1900..=2050).contains(&year) {
         return None;
@@ -700,5 +720,12 @@ mod tests {
             Some((0, 1))
         );
         assert_eq!(trait_value(&[0; 16], direct(8)), Some((8, 0)));
+    }
+
+    #[test]
+    fn fmt_date_masks_flag_bits() {
+        // Day word 7019 = flags | day 363 → 29 Dec 2025.
+        let buf = [7019u16.to_le_bytes(), 2025u16.to_le_bytes()].concat();
+        assert_eq!(fmt_date_at(&buf, 0).as_deref(), Some("29 Dec 2025"));
     }
 }

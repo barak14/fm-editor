@@ -93,7 +93,7 @@ pub(crate) const FIELDS: &[Field] = &[
         // 150000 / 2029; the test save's human manager Head Coach /
         // Tottenham Hotspur / 120000 / 2028. Guardiola, Slot and Ancelotti
         // have no contract in this save (pointer 0).
-        Field { key: "s_weekly_wage",     label: "Weekly Wage",     entity: Staff, category: Contract, offset: sub_raw_u32("contract", 0x20) },
+        Field { key: "s_weekly_wage",     label: "Wage (£ p/w)",     entity: Staff, category: Contract, offset: sub_raw_u32("contract", 0x20) },
         Field { key: "s_contract_expiry", label: "Contract Expiry", entity: Staff, category: Contract, offset: sub_date("contract", 0x48) },
         // Job code: 16 = Head Coach, 20 = Assistant Coach, 2 = Coach, ...
         // (see `staff::job_name`).

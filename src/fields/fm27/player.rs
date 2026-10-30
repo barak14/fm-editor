@@ -180,7 +180,7 @@ pub(crate) const FIELDS: &[Field] = &[
         //   signed Haaland 17 Jan 2025, Mbappé 1 Jul 2024
         // FM26's squad status (+0x24) reads 11 for every player; +0x26 is the
         // job code (1 = player), not a contract type.
-        Field { key: "p_contract_wage",    label: "Contract Wage",    entity: Player, category: Contract,   offset: sub_raw_u32("contract", 0x20) },
+        Field { key: "p_contract_wage",    label: "Wage (£ p/w)",    entity: Player, category: Contract,   offset: sub_raw_u32("contract", 0x20) },
         Field { key: "p_squad_status",     label: "Squad Status",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x54)  },
         Field { key: "p_contract_type",    label: "Contract Type",    entity: Player, category: Contract,   offset: None },
         Field { key: "p_contract_signed",  label: "Contract Signed",  entity: Player, category: Contract,   offset: sub_date("contract", 0x44)    },
@@ -197,6 +197,20 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "p_current_club",     label: "Club",             entity: Player, category: General,    offset: sub_fm_string("club", 0xC0) },
         Field { key: "p_nationality",      label: "Nationality",      entity: Player, category: General,    offset: sub_fm_string("nation", 0x18) },
         Field { key: "p_birthplace",       label: "Place of Birth",   entity: Player, category: General,    offset: sub_fm_string("birth_city", 0x18) },
+
+        // Appearance (person +0x8D..+0x90), used by the 3D match engine.
+        // Witnesses: ethnicity Haaland / De Bruyne 0 Northern European, Ronaldo 1
+        // Mediterranean/Hispanic, Salah / Yamal 2 North African/Middle Eastern,
+        // Saka / Mbappé 3 African/Caribbean, Vinícius 9 Mixed Race, Kubo 10 East
+        // Asian; skin tone runs light → dark (Haaland 2, De Bruyne 4, Ronaldo 6,
+        // Kubo 7, Salah 9, Mbappé 13, Yamal 14, Vinícius 17, Saka 19); hair
+        // colour 7 for Haaland and De Bruyne. Ranges from FM27€0's survey of every
+        // person: ethnicity 0-10, hair colour 0-18, hair length 0-6, skin tone
+        // 0-19 (255 = not set).
+        Field { key: "p_ethnicity",        label: "Ethnicity",        entity: Player, category: General,    offset: direct(0x0315) },
+        Field { key: "p_hair_colour",      label: "Hair Colour",      entity: Player, category: General,    offset: direct(0x0316) },
+        Field { key: "p_hair_length",      label: "Hair Length",      entity: Player, category: General,    offset: direct(0x0317) },
+        Field { key: "p_skin_tone",        label: "Skin Tone",        entity: Player, category: General,    offset: direct(0x0318) },
 
         // Person base struct (embedded at +0x258)
         Field { key: "p_ca",           label: "Current Ability",  entity: Player, category: Ability,     offset: raw(0x0264) },
