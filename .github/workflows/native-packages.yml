@@ -35,6 +35,7 @@ jobs:
   inputs:
     name: Verify existing application release
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.identity.outputs.version }}
       commit: ${{ steps.identity.outputs.commit }}
@@ -42,7 +43,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Download and verify portable release inputs
+      - name: Download and verify pinned successful Actions inputs
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 Tools/fetch-native-inputs.py --tag "$RELEASE_TAG" --repository "$GITHUB_REPOSITORY" --output-dir dist/native-inputs
@@ -75,6 +76,11 @@ jobs:
                   member = tarfile.TarInfo(f'{prefix}/PACKAGING-INFO.json')
                   member.size = len(data); member.mode = 0o644
                   archive.addfile(member, io.BytesIO(data))
+                  for path in sorted(Path('dist/native-inputs').iterdir()):
+                      payload = path.read_bytes()
+                      member = tarfile.TarInfo(f'{prefix}/inputs/{path.name}')
+                      member.size = len(payload); member.mode = 0o644
+                      archive.addfile(member, io.BytesIO(payload))
               with raw.open('rb') as source, gzip.open(out / f'{prefix}.tar.gz', 'wb') as dest:
                   shutil.copyfileobj(source, dest)
           PY
@@ -95,6 +101,7 @@ jobs:
     name: Windows installer
     needs: inputs
     runs-on: windows-2022
+    timeout-minutes: 20
     env:
       APP_VERSION: ${{ needs.inputs.outputs.version }}
       APP_COMMIT: ${{ needs.inputs.outputs.commit }}
@@ -124,7 +131,7 @@ jobs:
       - name: Compile per-user installer from the existing application ZIP
         shell: pwsh
         run: |
-          python Tools/package-windows.py --archive "dist/native-inputs/fm-editor-${env:APP_VERSION}-windows-x64.zip" --checksums dist/native-inputs/SHA256SUMS --commit "$env:APP_COMMIT" --version "$env:APP_VERSION" --output-dir dist/native-windows --iscc "$env:RUNNER_TEMP/fm-editor-inno/ISCC.exe"
+          python Tools/package-windows.py --archive "dist/native-inputs/fm-editor-${env:APP_VERSION}-windows-input.zip" --checksums dist/native-inputs/SHA256SUMS --commit "$env:APP_COMMIT" --version "$env:APP_VERSION" --output-dir dist/native-windows --iscc "$env:RUNNER_TEMP/fm-editor-inno/ISCC.exe"
       - name: Install, verify and uninstall the native package
         shell: pwsh
         env:
@@ -173,6 +180,7 @@ jobs:
     name: Arch Linux package
     needs: inputs
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     container:
       image: archlinux:base-devel@sha256:624bdc7fc6615155d67bc34cf7146c0c9fd0e3c92943977da63a630e4ca49c30
     env:
@@ -202,7 +210,7 @@ jobs:
         run: python -m unittest discover -s Tools/tests -p 'test_*.py' -v
       - name: Stage pinned makepkg inputs
         run: |
-          python Tools/stage-arch-package.py --archive "dist/native-inputs/fm-editor-$APP_VERSION-linux-x64.tar.gz" --checksums dist/native-inputs/SHA256SUMS --commit "$APP_COMMIT" --version "$APP_VERSION" --output-dir dist/arch-stage
+          python Tools/stage-arch-package.py --archive "dist/native-inputs/fm-editor-$APP_VERSION-linux-input.tar" --checksums dist/native-inputs/SHA256SUMS --commit "$APP_COMMIT" --version "$APP_VERSION" --output-dir dist/arch-stage
           chown -R builder:builder dist/arch-stage
       - name: Build Arch package without root
         run: |

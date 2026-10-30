@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Stage a pinned Arch prebuilt package from a verified local release (stdlib only).
+"""Stage a pinned Arch prebuilt package from a verified local input tar (stdlib only).
 
-The draft release URL need not be public: makepkg reuses the staged archive and
+The first source is local (no network): makepkg reuses the staged archive and
 checks the recipe's fixed SHA-256. This tool never installs or changes privileges.
 """
 from __future__ import annotations
@@ -17,9 +17,9 @@ from native_package_common import extract_portable, verify_checksum
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-ARCHIVE_NAME = "fm-editor-0.1.0-linux-x64.tar.gz"
+ARCHIVE_NAME = "fm-editor-0.1.0-linux-input.tar"
 ARCHIVE_ROOT = "fm-editor-0.1.0-linux-x64"
-ARCHIVE_SHA256 = "9af2544043dfb119ea28231025f5ca3c7266b4eb95841f2dfbd4951db7c93475"
+ARCHIVE_SHA256 = "186a0ab076084c7baaf70e0a5e17080f5e314b9a8900008540f1f2621446d594"
 DESKTOP_SHA256 = "d54a0fd346af7814c55176bcb0754d38ac1fbf957ac7243ab211a9f5cf5864a5"
 ICON_SHA256 = "205ab5d2560312caeb1cda6b33b2e92baa4b4ab54e00a79a54b8b538cae348a8"
 
@@ -41,7 +41,7 @@ def stage(archive: Path, checksums: Path, commit: str, version: str, output_dir:
         digest = verify_checksum(snapshot, checksums)
         if digest != ARCHIVE_SHA256:
             raise ValueError("Archive does not match the fixed Arch recipe SHA-256")
-        with tarfile.open(snapshot, "r:gz") as source:
+        with tarfile.open(snapshot, "r:*") as source:
             if any(entry.name.rstrip("/").split("/")[0] != ARCHIVE_ROOT for entry in source.getmembers()):
                 raise ValueError("Archive root does not match the fixed Arch recipe")
         payload = temporary / "payload"

@@ -64,10 +64,17 @@ as a default workaround.
 
 ## Building or reviewing the packages
 
-The **Native packages** workflow downloads the existing release assets and verifies
-checksums, application version, full source commit, release profile and executable
-format before creating native packages. It has read-only GitHub permissions and
-never publishes a release or moves a tag.
+The **Native packages** workflow uses the pinned, successful Actions build for the
+existing application tag. `packaging/releases/v0.1.0.json` records the source commit,
+run, original archive hashes and executable hashes. CI verifies them before making
+native packages. It remains read-only: GitHub hides private draft releases from
+read-only tokens, so this does not fetch draft assets or grant write permissions.
+It never publishes a release or moves a tag.
+
+Containers are normalized into deterministic native inputs (plain USTAR for Linux,
+stored ZIP for Windows), with their own pinned checksums. Executable bytes remain
+identical to the tagged preview's portable binaries; only archive layout and the
+generated source-archive filename reference are normalized.
 
 - Windows compilation uses pinned, SHA-256-verified **Inno Setup 6.7.4**. The Python
   wrapper extracts a verified private snapshot and supplies paths/version to the
@@ -75,36 +82,42 @@ never publishes a release or moves a tag.
 - Arch uses an official digest-pinned Arch base-devel container. `makepkg` runs
   as a non-root builder. System dependency installation and package install/remove
   tests happen only inside that ephemeral container, not on a user's machine.
-- `packaging/arch/PKGBUILD` pins the portable archive, desktop file and SVG by
-  SHA-256. Updating a release requires updating those pins deliberately; there is
-  no `SKIP` checksum or automatic rewrite.
+- `packaging/arch/PKGBUILD` pins the local Linux input tar, desktop file and SVG by
+  SHA-256. The input tar is bundled with packaging source. Updating a release
+  requires updating pins deliberately; there is no `SKIP` or automatic rewrite.
 - The workflow is configured to check install/uninstall, application identity,
   shortcuts/desktop resources, disconnected GUI startup, and preservation of
   settings. These checks do not replace the user's live FM attach/edit/Undo test.
 
 The additional **`fm-editor-0.1.0-packaging-source.tar.gz`** contains the native
-packaging recipes, icons, helper scripts, tests, workflow, licence and this guide.
-`PACKAGING-INFO.json` identifies both the application source and the independent
-packaging revision. The existing application source archive remains unchanged.
+packaging recipes, icons, helper scripts, tests, workflow, licence and this guide,
+plus verified binary inputs under `inputs/`. This is a binary-package recipe bundle,
+not a substitute for the separate application source archive.
+`PACKAGING-INFO.json` identifies application and packaging revisions. The application
+source archive and tag remain unchanged.
 
-For local builds, use Python 3.10+ and the portable archive plus `SHA256SUMS`:
+Initial CI bootstrap uses pinned Actions artifacts, which expire after 14 days.
+The source bundle retains the verified inputs for offline rebuilds afterward;
+missing/expired CI inputs fail closed rather than silently using another build.
+
+For local builds, extract that bundle and use Python 3.10+:
 
 ```bash
 python3 Tools/stage-arch-package.py \
-  --archive fm-editor-0.1.0-linux-x64.tar.gz --checksums SHA256SUMS \
+  --archive inputs/fm-editor-0.1.0-linux-input.tar --checksums inputs/SHA256SUMS \
   --commit <full-application-commit> --version 0.1.0 --output-dir dist/arch
 cd dist/arch
 makepkg --syncdeps
 ```
 
-Run `makepkg` as your normal user. The staged archive allows building while the
-GitHub release is still a private draft; makepkg validates the pinned local bytes
-rather than trying to download an unpublished URL.
+Run `makepkg` as your normal user. It validates the pinned local input and needs no
+private-release download. The recipe is not submitted to the AUR; before any AUR
+submission, choose a durable public upstream source URL and follow AUR guidelines.
 
 On Windows, with ISCC installed:
 
 ```powershell
-python Tools/package-windows.py --archive fm-editor-0.1.0-windows-x64.zip --checksums SHA256SUMS --commit <full-application-commit> --version 0.1.0 --output-dir dist/native-windows --iscc 'C:\Path\To\ISCC.exe'
+python Tools/package-windows.py --archive inputs/fm-editor-0.1.0-windows-input.zip --checksums inputs/SHA256SUMS --commit <full-application-commit> --version 0.1.0 --output-dir dist/native-windows --iscc 'C:\Path\To\ISCC.exe'
 ```
 
 Use the full application commit from the release's portable `BUILD-INFO.json` or

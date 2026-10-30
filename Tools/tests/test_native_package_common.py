@@ -146,5 +146,38 @@ class NativeInputTests(unittest.TestCase):
         self.assertFalse(self.destination.exists())
 
 
+class CanonicalInputTests(unittest.TestCase):
+    setUp = NativeInputTests.setUp
+    fixture = NativeInputTests.fixture
+
+    def test_canonical_inputs_preserve_executable_and_are_deterministic(self):
+        for target in (WINDOWS, LINUX):
+            executable, _ = common.TARGETS[target]
+            source = f"Source: https://github.com/barak14/fm-editor/commit/{COMMIT}\nArchive: fm-editor-{VERSION}-source-{COMMIT}.tar.gz\n".encode()
+            raw, _, entries = self.fixture(target, update=lambda e: e.__setitem__("SOURCE.txt", (source, 0o644)))
+            digest = hashlib.sha256(entries[executable][0]).hexdigest()
+            outputs = [self.root / f"{target}-{i}" for i in range(2)]
+            for output in outputs:
+                common.canonicalize_portable(raw, output, expected_target=target,
+                    expected_version=VERSION, expected_commit=COMMIT, expected_executable_sha256=digest)
+                actual = common._entries(output, target)
+                self.assertEqual(actual[executable][0], entries[executable][0])
+                self.assertIn(f"fm-editor-{VERSION}-source.tar.gz".encode(), actual["SOURCE.txt"][0])
+                self.assertNotIn(f"source-{COMMIT}".encode(), actual["SOURCE.txt"][0])
+                self.assertEqual(json.loads(actual["BUILD-INFO.json"][0])["commit"], COMMIT)
+            self.assertEqual(outputs[0].read_bytes(), outputs[1].read_bytes())
+            if target == LINUX:
+                with tarfile.open(outputs[0], "r:") as archive:
+                    self.assertTrue(all(m.mtime == 0 and m.uid == 0 and m.gid == 0 for m in archive.getmembers()))
+
+    def test_wrong_binary_pin_leaves_no_canonical_output(self):
+        raw, _, _ = self.fixture()
+        output = self.root / "canonical.tar"
+        with self.assertRaisesRegex(ValueError, "pinned release binary"):
+            common.canonicalize_portable(raw, output, expected_target=LINUX,
+                expected_version=VERSION, expected_commit=COMMIT, expected_executable_sha256="0" * 64)
+        self.assertFalse(output.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

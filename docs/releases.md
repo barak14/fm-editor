@@ -15,8 +15,8 @@ change game/system permissions. Its token has read-only repository permissions.
    tar.gz, a matching source tar.gz, and `SHA256SUMS`. Verify the checksums, then
    extract the platform archive and run `fm-editor.exe` or `./fm-editor` inside it.
 
-The separate **Native packages** workflow wraps an existing versioned release's
-verified portable assets. Its artifacts are `fm-editor-windows-installer`,
+The separate **Native packages** workflow wraps the same verified application
+binaries using pinned successful CI inputs. Its artifacts are `fm-editor-windows-installer`,
 `fm-editor-arch-package` and `native-packaging-source`. See
 [native installation/build instructions](native-packages.md). It neither moves
 the application tag nor publishes a release; install/remove tests run only in

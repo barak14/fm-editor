@@ -35,7 +35,7 @@ class ArchStagingTests(unittest.TestCase):
             shutil.copyfile(ROOT / "packaging/arch" / name, self.root / "packaging/arch" / name)
         shutil.copyfile(ROOT / "packaging/assets/fm-editor.svg", self.root / "packaging/assets/fm-editor.svg")
         self.recipe = (ROOT / "packaging/arch/PKGBUILD").read_text(encoding="utf-8")
-        self.archive = self.directory / "local-release.tar.gz"
+        self.archive = self.directory / "local-release.tar"
         self.checksums = self.directory / "SHA256SUMS"
         self.output = self.directory / "staged"
         self.info = {"version": "0.1.0", "target": "x86_64-unknown-linux-gnu", "commit": COMMIT, "profile": "release"}
@@ -54,7 +54,7 @@ class ArchStagingTests(unittest.TestCase):
     def write_archive(self, *, root=None, extra=None):
         files = dict(self.files, **{"BUILD-INFO.json": json.dumps(self.info).encode()})
         files.update(extra or {})
-        with tarfile.open(self.archive, "w:gz") as stream:
+        with tarfile.open(self.archive, "w:", format=tarfile.USTAR_FORMAT) as stream:
             for name, data in files.items():
                 entry = tarfile.TarInfo(f"{root or arch.ARCHIVE_ROOT}/{name}")
                 entry.mode = 0o755 if name == "fm-editor" else 0o644
@@ -197,7 +197,8 @@ class ArchRecipeTests(unittest.TestCase):
         for path, digest in (("packaging/arch/fm-editor.desktop", arch.DESKTOP_SHA256),
                              ("packaging/assets/fm-editor.svg", arch.ICON_SHA256)):
             self.assertEqual(hashlib.sha256((ROOT / path).read_bytes()).hexdigest(), digest)
-        self.assertIn("https://github.com/barak14/fm-editor/releases/download/v${pkgver}/fm-editor-${pkgver}-linux-x64.tar.gz", self.recipe)
+        self.assertIn('source=("fm-editor-${pkgver}-linux-input.tar"', self.recipe)
+        self.assertNotIn("https://", self.recipe.split("sha256sums")[0].split("source=")[1])
         self.assertNotIn("SKIP", self.recipe)
 
     def test_no_hooks_privileged_actions_or_compilation(self):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -78,7 +79,7 @@ def _entries(archive: Path, target: str) -> dict[str, tuple[bytes, int]]:
                     raise ValueError("Nonregular ZIP file")
                 add(entry.filename, source.read(entry), mode)
     else:
-        with tarfile.open(archive, "r:gz") as source:
+        with tarfile.open(archive, "r:*") as source:
             for entry in source.getmembers():
                 if entry.isdir():
                     continue
@@ -149,4 +150,56 @@ def extract_portable(
         if destination.exists():
             raise ValueError("Extraction destination appeared while staging")
         os.rename(stage, destination)
+    return info
+
+
+def canonicalize_portable(archive: Path, destination: Path, *, expected_target: str,
+                          expected_version: str, expected_commit: str,
+                          expected_executable_sha256: str) -> dict:
+    """Normalize package containers, never executable bytes, from a pinned CI input.
+
+    Plain USTAR / stored ZIP avoid platform-specific gzip or deflate output.
+    The resulting inputs are bundled with recipes for offline rebuilds.
+    """
+    destination = Path(destination)
+    if destination.exists() or destination.is_symlink():
+        raise ValueError("Refusing to overwrite canonical native input")
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_executable_sha256):
+        raise ValueError("A pinned executable SHA-256 is required")
+    with tempfile.TemporaryDirectory(prefix="fm-editor-canonical-") as temporary:
+        payload = Path(temporary) / "payload"
+        info = extract_portable(archive, payload, expected_target=expected_target,
+                                expected_version=expected_version, expected_commit=expected_commit)
+        executable = TARGETS[expected_target][0]
+        if hashlib.sha256((payload / executable).read_bytes()).hexdigest() != expected_executable_sha256:
+            raise ValueError("Application executable differs from the pinned release binary")
+        source = payload / "SOURCE.txt"
+        old = f"fm-editor-{expected_version}-source-{expected_commit}.tar.gz"
+        source.write_bytes(source.read_bytes().replace(old.encode(), f"fm-editor-{expected_version}-source.tar.gz".encode()))
+        label = "windows-x64" if executable.endswith(".exe") else "linux-x64"
+        prefix = f"fm-editor-{expected_version}-{label}"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open("xb") as stream:
+            try:
+                if executable.endswith(".exe"):
+                    with zipfile.ZipFile(stream, "w", compression=zipfile.ZIP_STORED) as output:
+                        for path in sorted((p for p in payload.rglob("*") if p.is_file()), key=lambda p: p.relative_to(payload).as_posix()):
+                            name = path.relative_to(payload).as_posix()
+                            entry = zipfile.ZipInfo(f"{prefix}/{name}")
+                            entry.create_system = 3
+                            entry.external_attr = (stat.S_IFREG | (0o755 if name == executable else 0o644)) << 16
+                            output.writestr(entry, path.read_bytes())
+                else:
+                    with tarfile.open(fileobj=stream, mode="w", format=tarfile.USTAR_FORMAT) as output:
+                        for path in sorted((p for p in payload.rglob("*") if p.is_file()), key=lambda p: p.relative_to(payload).as_posix()):
+                            name = path.relative_to(payload).as_posix()
+                            data = path.read_bytes()
+                            entry = tarfile.TarInfo(f"{prefix}/{name}")
+                            entry.size = len(data)
+                            entry.mode = 0o755 if name == executable else 0o644
+                            output.addfile(entry, io.BytesIO(data))
+            except BaseException:
+                stream.close()
+                destination.unlink()
+                raise
     return info

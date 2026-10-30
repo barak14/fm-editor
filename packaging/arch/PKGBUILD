@@ -11,10 +11,10 @@ optdepends=('xdg-desktop-portal: file dialogs (also install an appropriate porta
 provides=('fm-editor')
 conflicts=('fm-editor')
 options=('!strip' '!debug')
-source=("https://github.com/barak14/fm-editor/releases/download/v${pkgver}/fm-editor-${pkgver}-linux-x64.tar.gz"
+source=("fm-editor-${pkgver}-linux-input.tar"
         'fm-editor.desktop'
         'fm-editor.svg')
-sha256sums=('9af2544043dfb119ea28231025f5ca3c7266b4eb95841f2dfbd4951db7c93475'
+sha256sums=('186a0ab076084c7baaf70e0a5e17080f5e314b9a8900008540f1f2621446d594'
             'd54a0fd346af7814c55176bcb0754d38ac1fbf957ac7243ab211a9f5cf5864a5'
             '205ab5d2560312caeb1cda6b33b2e92baa4b4ab54e00a79a54b8b538cae348a8')
 
