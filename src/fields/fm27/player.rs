@@ -14,6 +14,9 @@ pub(crate) const PLAYER_SUB_RECORDS: &[SubRecord] = &[
     // player's person object (player+0x288) for every witness, which is how
     // the chain was validated (Haaland, Yamal, Mbappé, Saka, Ronaldo).
     SubRecord { id: "contract", parent: SubRecordParent::Direct, ptr_offset: 0x330, size: 0xC4 },
+    // Verified 2026-10-30: Izaguirre -> Juventud; Cortes -> Granada (both on loan at Huelva).
+    SubRecord { id: "contract_team", parent: SubRecordParent::In("contract"), ptr_offset: 0x10, size: 0xB0 },
+    SubRecord { id: "owning_club", parent: SubRecordParent::In("contract_team"), ptr_offset: 0x30, size: 0xD0 },
     // Team the player plays for (player+0x130); the team's club is at
     // team+0x30. Haaland → Manchester City, Yamal → Barcelona, Mbappé → R. Madrid.
     SubRecord { id: "team",       parent: SubRecordParent::Direct,     ptr_offset: 0x130, size: 0xB0 },

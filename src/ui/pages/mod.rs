@@ -10,6 +10,7 @@
 //! adding one field + one match arm in `app.rs`.
 
 pub mod advanced_search_modal;
+pub mod best_xi;
 pub mod club_search;
 pub mod player_search;
 pub mod staff_search;

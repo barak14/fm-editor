@@ -53,6 +53,8 @@ pub enum SortDir {
 pub struct PlayerSearchState {
     // --- Quick filters (visible in filter row) ---
     pub query: String,
+    pub club_id: String,
+    pub my_clubs: bool,
     pub ca_min: String,
     pub pa_min: String,
     pub age_min: String,
@@ -74,6 +76,8 @@ impl Default for PlayerSearchState {
     fn default() -> Self {
         Self {
             query: String::new(),
+            club_id: String::new(),
+            my_clubs: false,
             ca_min: String::new(),
             pa_min: String::new(),
             age_min: String::new(),
@@ -91,6 +95,7 @@ impl Default for PlayerSearchState {
 impl PlayerSearchState {
     /// Reset everything edited by the advanced modal, keeping search and sorting.
     pub fn clear_advanced(&mut self) {
+        self.club_id.clear();
         self.ca_min.clear();
         self.ca_max.clear();
         self.pa_min.clear();
@@ -103,10 +108,17 @@ impl PlayerSearchState {
 
     pub fn clear_filters(&mut self) {
         self.query.clear();
+        self.my_clubs = false;
         self.clear_advanced();
     }
 
     pub fn validation_error(&self) -> Option<String> {
+        if !self.my_clubs
+            && !self.club_id.trim().is_empty()
+            && self.club_id.trim().parse::<u32>().is_err()
+        {
+            return Some("Club ID: enter a whole number from 0 to 4294967295.".into());
+        }
         for (label, min, max, limit) in [
             ("CA", &self.ca_min, &self.ca_max, 200u16),
             ("PA", &self.pa_min, &self.pa_max, 200u16),
@@ -146,7 +158,7 @@ impl PlayerSearchState {
 /// Count how many advanced filters differ from their default.
 /// Used for the badge on the "⚙ Advanced" button.
 pub fn advanced_filter_count(state: &PlayerSearchState) -> usize {
-    let mut n = 0;
+    let mut n = usize::from(!state.my_clubs && !state.club_id.trim().is_empty());
     if !state.ca_max.trim().is_empty() {
         n += 1;
     }
@@ -166,7 +178,19 @@ pub fn filter<'a>(
     cache: &'a [CachedPlayer],
     state: &PlayerSearchState,
 ) -> Vec<&'a CachedPlayer> {
-    if state.validation_error().is_some() {
+    filter_with_clubs(schemas, cache, state, None)
+}
+
+pub fn filter_with_clubs<'a>(
+    schemas: &'static crate::fields::VersionedSchemas,
+    cache: &'a [CachedPlayer],
+    state: &PlayerSearchState,
+    my_clubs: Option<&crate::cache::MyClubs>,
+) -> Vec<&'a CachedPlayer> {
+    if (state.my_clubs && my_clubs.is_none())
+        || state.validation_error().is_some()
+        || (!state.my_clubs && !state.club_id.trim().is_empty() && !club_filter_supported(schemas))
+    {
         return Vec::new();
     }
     let trimmed = state.query.trim();
@@ -182,6 +206,7 @@ pub fn filter<'a>(
     };
     let name_query_active = !words.is_empty();
 
+    let club_id: Option<u32> = state.club_id.trim().parse().ok();
     let ca_min: Option<u8> = state.ca_min.trim().parse().ok();
     let ca_max: Option<u8> = state.ca_max.trim().parse().ok();
     let pa_min: Option<u8> = state.pa_min.trim().parse().ok();
@@ -192,6 +217,20 @@ pub fn filter<'a>(
     cache
         .iter()
         .filter(|p| {
+            if state.my_clubs {
+                let Some(scope) = my_clubs else {
+                    return false;
+                };
+                if ![p.club_id, p.owning_club_id]
+                    .into_iter()
+                    .flatten()
+                    .any(|id| scope.club_ids.contains(&id))
+                {
+                    return false;
+                }
+            } else if club_id.is_some_and(|id| p.club_id != Some(id)) {
+                return false;
+            }
             if let Some(m) = ca_min {
                 if p.ca < m {
                     return false;
@@ -262,7 +301,12 @@ pub fn filter<'a>(
 /// even when a detail panel has taken over the results area.
 /// Filtering is live — no submit button needed.
 /// Returns true if the Advanced button was clicked.
-pub fn filter_row(ui: &mut egui::Ui, state: &mut PlayerSearchState) -> bool {
+pub fn filter_row(
+    ui: &mut egui::Ui,
+    state: &mut PlayerSearchState,
+    schemas: Option<&'static crate::fields::VersionedSchemas>,
+    my_clubs: Option<&crate::cache::MyClubs>,
+) -> bool {
     let mut advanced_clicked = false;
     ui.horizontal_wrapped(|ui| {
         ui.label("Name/UID:");
@@ -285,6 +329,14 @@ pub fn filter_row(ui: &mut egui::Ui, state: &mut PlayerSearchState) -> bool {
             ui.label("≤");
             ui.add(egui::TextEdit::singleline(&mut state.age_max).desired_width(36.0));
         });
+        ui.add_enabled(
+            my_clubs.is_some() || state.my_clubs,
+            egui::Checkbox::new(&mut state.my_clubs, "My clubs"),
+        )
+        .on_hover_text(my_clubs.map_or("Managed club unavailable", |c| c.label.as_str()))
+        .on_disabled_hover_text(
+            "Unavailable: no managed club resolved, incomplete reserve data, or unsupported build.",
+        );
         let count = advanced_filter_count(state);
         let label = if count > 0 {
             format!("Advanced ({count})")
@@ -298,6 +350,21 @@ pub fn filter_row(ui: &mut egui::Ui, state: &mut PlayerSearchState) -> bool {
     });
     if let Some(error) = state.validation_error() {
         ui.colored_label(ui.visuals().error_fg_color, error);
+    }
+    if state.my_clubs && my_clubs.is_none() {
+        ui.colored_label(
+            ui.visuals().error_fg_color,
+            "My clubs is unavailable for this save. Reload Save to retry.",
+        );
+    }
+    if !state.my_clubs
+        && !state.club_id.trim().is_empty()
+        && !schemas.is_some_and(club_filter_supported)
+    {
+        ui.colored_label(
+            ui.visuals().error_fg_color,
+            "Current club filtering is unavailable for this attachment.",
+        );
     }
     advanced_clicked
 }
@@ -554,6 +621,7 @@ mod tests {
 
     fn player(addr: u64, year: u16) -> CachedPlayer {
         CachedPlayer {
+            owning_club_id: None,
             addr,
             index: 0,
             name: "Test Player".into(),
@@ -663,6 +731,7 @@ mod search_tests {
     #[test]
     fn query_uses_all_words_or_exact_uid_and_combines_with_filters() {
         let cache = [CachedPlayer {
+            owning_club_id: None,
             addr: 1,
             index: 0,
             name: "Ada Example".into(),
@@ -724,6 +793,7 @@ mod position_tests {
             raw[schemas.offset_of(POSITION_OFFSETS[bit].0).unwrap()] = value;
         }
         CachedPlayer {
+            owning_club_id: None,
             addr: 1,
             index: 0,
             name: "Witness".into(),
@@ -803,5 +873,133 @@ mod position_tests {
         state.position_minimums = [20; 15];
         state.clear_filters();
         assert_eq!(state.position_minimums, [2; 15]);
+    }
+}
+
+/// The Game Pass schema is inherited and must not imply verified support.
+pub fn club_filter_supported(schemas: &'static crate::fields::VersionedSchemas) -> bool {
+    !std::ptr::eq(
+        schemas,
+        crate::game_version::GameBuild::Fm27GamePass.schemas(),
+    ) && schemas.player_sub_records.iter().any(|sr| sr.id == "club")
+}
+
+#[cfg(test)]
+mod club_filter_tests {
+    use super::*;
+    use crate::game_version::GameBuild;
+    fn row(uid: u32, club_id: Option<u32>) -> CachedPlayer {
+        CachedPlayer {
+            owning_club_id: None,
+            addr: 0x20000 + uid as u64,
+            index: 0,
+            name: "Witness".into(),
+            uid,
+            ca: 100,
+            pa: 150,
+            dob_year: 2000,
+            raw: vec![],
+            person_shift: 0,
+            nation_id: None,
+            club_id,
+            value: None,
+        }
+    }
+    #[test]
+    fn exact_current_club_combines_with_other_filters() {
+        let rows = [row(1, Some(1751)), row(2, Some(814499)), row(3, None)];
+        let mut state = PlayerSearchState {
+            club_id: " 1751 ".into(),
+            ..Default::default()
+        };
+        let schemas = GameBuild::Fm27Steam.schemas();
+        assert_eq!(
+            filter(schemas, &rows, &state)
+                .iter()
+                .map(|p| p.uid)
+                .collect::<Vec<_>>(),
+            [1]
+        );
+        state.query = "2".into();
+        assert!(filter(schemas, &rows, &state).is_empty());
+        state.query.clear();
+        state.ca_min = "101".into();
+        assert!(filter(schemas, &rows, &state).is_empty());
+        state.clear_filters();
+        assert_eq!(filter(schemas, &rows, &state).len(), 3);
+    }
+    #[test]
+    fn my_clubs_unions_current_and_owned_membership_and_overrides_manual() {
+        let mut outgoing = row(3, Some(9999));
+        outgoing.owning_club_id = Some(1751);
+        let rows = [
+            row(1, Some(1751)),
+            row(2, Some(814499)),
+            outgoing,
+            row(4, None),
+            row(5, Some(9999)),
+        ];
+        let scope = crate::cache::MyClubs {
+            club_ids: [1751, 814499].into_iter().collect(),
+            label: "Huelva".into(),
+        };
+        let mut state = PlayerSearchState {
+            my_clubs: true,
+            club_id: "invalid".into(),
+            ..Default::default()
+        };
+        let schemas = GameBuild::Fm27Steam.schemas();
+        assert_eq!(
+            filter_with_clubs(schemas, &rows, &state, Some(&scope))
+                .iter()
+                .map(|p| p.uid)
+                .collect::<Vec<_>>(),
+            [1, 2, 3]
+        );
+        assert!(filter_with_clubs(schemas, &rows, &state, None).is_empty());
+        let other = crate::cache::MyClubs {
+            club_ids: [8888].into_iter().collect(),
+            label: "Other save".into(),
+        };
+        assert!(filter_with_clubs(schemas, &rows, &state, Some(&other)).is_empty());
+        state.ca_min = "101".into();
+        assert!(filter_with_clubs(schemas, &rows, &state, Some(&scope)).is_empty());
+    }
+    #[test]
+    fn invalid_unknown_and_unsupported_clubs_fail_closed() {
+        let rows = [row(1, Some(1751))];
+        let mut state = PlayerSearchState::default();
+        for value in ["-1", "1.5", "abc", "4294967296"] {
+            state.club_id = value.into();
+            assert!(state.validation_error().is_some());
+            assert!(filter(GameBuild::Fm27Steam.schemas(), &rows, &state).is_empty());
+        }
+        state.club_id = "9999".into();
+        assert!(state.validation_error().is_none());
+        assert!(filter(GameBuild::Fm27Steam.schemas(), &rows, &state).is_empty());
+        state.club_id = "1751".into();
+        for build in [GameBuild::Fm26Steam, GameBuild::Fm27GamePass] {
+            assert!(filter(build.schemas(), &rows, &state).is_empty());
+        }
+    }
+    #[test]
+    fn inactive_manual_id_is_preserved_and_not_validated_or_counted() {
+        let mut state = PlayerSearchState {
+            club_id: "invalid".into(),
+            my_clubs: true,
+            ..Default::default()
+        };
+        assert!(state.validation_error().is_none());
+        assert_eq!(advanced_filter_count(&state), 0);
+        let snapshot = state.clone();
+        state.clear_advanced();
+        assert!(state.my_clubs);
+        assert!(state.club_id.is_empty());
+        state = snapshot;
+        state.my_clubs = false;
+        assert_eq!(state.club_id, "invalid");
+        assert!(state.validation_error().is_some());
+        state.clear_filters();
+        assert!(!state.my_clubs);
     }
 }

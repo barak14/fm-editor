@@ -67,6 +67,19 @@ pub fn show(ctx: &egui::Context, state: &mut PlayerSearchState, open: &mut bool)
 
 fn show_general_tab(ui: &mut egui::Ui, state: &mut PlayerSearchState) {
     // Stack sections so resizing never strands controls beyond the right edge.
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Club ID:");
+        ui.add_enabled(
+            !state.my_clubs,
+            egui::TextEdit::singleline(&mut state.club_id)
+                .desired_width(130.0)
+                .hint_text("Exact current club UID"),
+        )
+        .on_hover_text(
+            "Matches the current club UID only, without related clubs or outgoing loans.",
+        );
+    });
+    ui.separator();
     section_title(ui, "Inclusive ranges");
     for (label, min, max) in [
         ("Age", &mut state.age_min, &mut state.age_max),

@@ -26,6 +26,10 @@ unverified; never assume another build's layout is compatible.
 - **Bind UI data to identity.** Async results and retained buffers must match the
   active entity's type/address. Failed loads must not expose a previous entity's
   editable data. Resolve related clubs by cached object identity, not fuzzy names.
+- **Derive relationships from the save.** Resolve the managed club and related
+  squads from the attached save, and rebuild membership on reload/reconnection.
+  Keep current club and owning club distinct for loans. Witness UIDs belong in
+  tests and documentation, never as runtime rules for a particular save.
 
 ## Code map
 
@@ -42,7 +46,8 @@ unverified; never assume another build's layout is compatible.
 |---|---|
 | Rust code | `cargo check` and relevant tests; `cargo test` for integration |
 | Runtime/UI behaviour | `bash Tools/build-and-launch.sh`, then exercise the affected workflow; inspect UI changes at desktop and narrow sizes |
-| Field mapping or write path | Live FM verification for the affected build; compare in-game values and round-trip an edit through Undo |
+| Field mapping | Live FM verification for the affected build against independently known in-game values; read-only mappings require no test writes |
+| Write path | Live FM verification for the affected build; round-trip an edit through Undo and confirm restoration |
 | Documentation only | Check paths, links and consistency; no game launch needed |
 
 Report what actually ran and any missing live evidence. A successful launch or an

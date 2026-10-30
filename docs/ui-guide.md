@@ -25,11 +25,54 @@ Every search starts with **Name/UID**, followed by its supported filters and **R
 - Numeric bounds are inclusive. Invalid numbers or reversed bounds show an explanation and match no records; they are not silently ignored.
 - Click supported column headings to sort. Unknown ages remain last in either direction.
 - When a text field or advanced search does not have keyboard focus, use Up/Down to select a result and Enter to open it. The selected/last-opened row is highlighted.
+- Player **Advanced → Club ID** matches the exact current club UID (for example, Huelva is 1751 and Huelva B is 814499). It does not expand to related clubs or outgoing loans. Blank means no club restriction; invalid input matches no records. Membership is refreshed with **Reload Save**. Current club filtering uses existing FM24/FM27 Steam mappings; FM26 and Game Pass are unavailable.
+- **My clubs** appears before Advanced and includes the managed club, its reserve/B and youth squads, incoming loans and owned players loaned elsewhere. It overrides the manual Club ID while preserving its text. Available on verified FM27 Steam layouts; unavailable or incomplete managed-club data disables activation. Reload Save refreshes membership. Clear All preserves the checkbox; Reset all clears both filters.
 - Player **Advanced** exposes only implemented filters. **Clear All** clears the fields shown there; Cancel restores the state from before the dialog opened.
 - Position filters use explicit checkboxes and an editable **minimum familiarity (1–20)** per position. A player must meet at least one selected position's minimum (OR); no selected positions means no position restriction. Defaults are 2, preserving the previous “greater than 1” filter. Unmapped/missing or invalid familiarity values never match a selected position. No colour cycling is required.
 - Advanced Search is resizable and its inputs scroll independently of Clear All/Cancel/OK. Sweeper is included with the other positions; scroll to reach lower options in short windows.
 
 Column widths are currently fixed; resizable/customizable tables are separate follow-up work.
+
+## Best XI
+
+The **Best XI** sidebar button opens a read-only lineup planner. It starts with
+**4-1-2-2-1** (GK, back four, DM, two MCs, AML/AMR, ST); also available are
+4-2-3-1 (two DMs), 4-4-2, 4-3-1-2 and 3-4-2-1 (wing-backs and wide attackers).
+Managed clubs is the default scope; select an exact club by name/UID to narrow it.
+Current membership includes youth and incoming loans and excludes away loans.
+Unlike the player-search **My clubs** filter, contract ownership is not included.
+Unavailable managed-club data requires an explicit club selection.
+Current club scope uses the inherited FM24/FM27 Steam mappings. FM26 and Game
+Pass are unavailable; this feature adds no new field mappings.
+
+The solver fills as many slots as possible, then maximizes the whole XI's score
+without using a player twice. Minimum familiarity defaults to 15 (accomplished),
+and can be set from 1 to 20. Missing/invalid data cannot supply a player score.
+Current strength uses the existing heuristic position attribute weights, scaled
+by familiarity/20. This is not an FM match-engine rating. Central left/right
+slots share weights; preferred foot, roles and duties are not modeled.
+
+**Room to grow** changes the objective to total `max(PA - CA, 0)`, with positional
+fit breaking ties. This is an ability headroom proxy for attribute growth, not
+a predicted final attribute distribution or growth rate. Professionalism,
+determination, ambition and birth year are shown as context, not multipliers.
+The [FM24 development research](https://fm-arena.com/thread/20900-some-training-and-development-conventional-wisdom-for-fm24/)
+links growth to age, professionalism and match exposure, with late-bloomer
+exceptions. Those mechanics have not been verified in FM27; this feature does
+not map or read match points or late-bloomer flags, or predict monthly growth.
+
+Each slot shows its selection and the next three eligible alternatives. By
+default alternatives exclude all starters; uncheck **Alternatives outside XI**
+to include players starting elsewhere, explicitly labeled with their slot.
+Alternatives are independent lists, not a unique substitute bench. Click any
+name to open that player's profile; Back returns to the lineup. The pitch is
+replaced by the same slot information in stacked cards on narrow windows.
+
+Results use the current cache: **Reload Save** refreshes membership and attributes.
+Injuries, fitness, suspensions and competition registration are not checked.
+An incomplete squad leaves positions visibly unfilled. Snapshot results remain
+read-only after the game closes; a lost connection, save change or attachment
+change clears them.
 
 ## Editing and undo
 

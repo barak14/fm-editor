@@ -17,64 +17,73 @@ use std::collections::HashMap;
 // ---------------------------------------------------------------------------
 
 pub struct CachedPlayer {
-    pub addr:      u64,
-    pub index:     usize,
-    pub name:      String,
-    pub uid:       u32,
-    pub ca:        u8,
-    pub pa:        u8,
-    pub dob_year:  u16,
+    /// Contract employer, which can differ from current club during a loan.
+    pub owning_club_id: Option<u32>,
+    pub addr: u64,
+    pub index: usize,
+    pub name: String,
+    pub uid: u32,
+    pub ca: u8,
+    pub pa: u8,
+    pub dob_year: u16,
     /// Full 968-byte player struct — used by the detail panel for instant
     /// field reads without a bridge round-trip.
-    pub raw:       Vec<u8>,
+    pub raw: Vec<u8>,
     /// Person-block shift in memory (player-coaches); see `player::read_player_raw`.
     pub person_shift: usize,
-    // Unmapped list-column fields (None until offsets added to fields/fm26/player.rs):
+    // Optional list fields; unavailable mappings remain None.
     pub nation_id: Option<u32>,
-    pub club_id:   Option<u32>,
-    pub value:     Option<u64>,
+    /// Current club UID, resolved by object identity in this cache.
+    pub club_id: Option<u32>,
+    pub value: Option<u64>,
 }
 
 pub struct CachedStaff {
-    pub addr:      u64,
-    pub index:     usize,
-    pub name:      String,
-    pub uid:       u32,
-    pub ca:        u8,
-    pub pa:        u8,
-    pub dob_year:  u16,
-    pub roles:     [u8; 15],
-    pub role_ptr:  u64,
+    pub addr: u64,
+    pub index: usize,
+    pub name: String,
+    pub uid: u32,
+    pub ca: u8,
+    pub pa: u8,
+    pub dob_year: u16,
+    pub roles: [u8; 15],
+    pub role_ptr: u64,
     /// Full staff struct in schema layout — used by the detail panel.
-    pub raw:       Vec<u8>,
+    pub raw: Vec<u8>,
     /// Identity-field shift in memory (human managers); see `staff::read_staff_raw`.
     pub identity_shift: usize,
     // Unmapped list-column fields:
     pub nation_id: Option<u32>,
-    pub club_id:   Option<u32>,
+    pub club_id: Option<u32>,
 }
 
 pub struct CachedClub {
-    pub addr:            u64,
-    pub index:           usize,
-    pub uid:             u32,
-    pub name:            String,
-    pub gender:          u8,
+    pub addr: u64,
+    pub index: usize,
+    pub uid: u32,
+    pub name: String,
+    pub gender: u8,
     pub transfer_budget: Option<u32>,
     // Unmapped list-column fields:
-    pub nation_id:       Option<u32>,
-    pub status:          Option<u8>,
-    pub reputation:      Option<u16>,
+    pub nation_id: Option<u32>,
+    pub status: Option<u8>,
+    pub reputation: Option<u16>,
 }
 
 // ---------------------------------------------------------------------------
 // Top-level cache
 // ---------------------------------------------------------------------------
 
+pub struct MyClubs {
+    pub club_ids: std::collections::HashSet<u32>,
+    pub label: String,
+}
+
 pub struct EntityCache {
-    pub players:    Vec<CachedPlayer>,
-    pub staff:      Vec<CachedStaff>,
-    pub clubs:      Vec<CachedClub>,
+    pub my_clubs: Option<MyClubs>,
+    pub players: Vec<CachedPlayer>,
+    pub staff: Vec<CachedStaff>,
+    pub clubs: Vec<CachedClub>,
     /// uid → short name; built from `clubs` on cache completion.
     /// Used to display the Club column in player/staff list rows once
     /// club_id fields are mapped.

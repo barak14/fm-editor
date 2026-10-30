@@ -28,6 +28,7 @@ use crate::write_tracker::WriteTracker;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Page {
+    BestXi,
     PlayerSearch,
     StaffSearch,
     ClubSearch,
@@ -134,6 +135,7 @@ pub struct FmEditorApp {
     // Per-page filter state. Each struct owns all its filter inputs.
     // Filtering runs every frame against the entity cache — no bridge round-trip.
     player_search: PlayerSearchState,
+    best_xi: pages::best_xi::BestXiState,
     staff_search: StaffSearchState,
     club_search: ClubSearchState,
 
@@ -211,6 +213,7 @@ impl FmEditorApp {
             last_ping: Instant::now(),
             last_auto_connect: Instant::now() - std::time::Duration::from_secs(10),
             player_search: PlayerSearchState::default(),
+            best_xi: pages::best_xi::BestXiState::default(),
             staff_search: StaffSearchState::default(),
             club_search: ClubSearchState::default(),
             advanced_open: false,
@@ -287,6 +290,7 @@ impl FmEditorApp {
     /// starts loading. Not called on GameClosed (cache is preserved for
     /// read-only browsing).
     fn clear_cache(&mut self) {
+        self.best_xi.clear();
         self.entity_cache = None;
         self.cache_load_state = CacheLoadState::Idle;
     }
@@ -735,6 +739,7 @@ impl eframe::App for FmEditorApp {
         let mut edits: Vec<field_widget::FieldEdit> = Vec::new();
         let mut load_tab: Option<usize> = None;
         let mut clicked_player: Option<usize> = None;
+        let mut clicked_xi_player: Option<usize> = None;
         let mut clicked_staff: Option<usize> = None;
         let mut clicked_club: Option<usize> = None;
         // Sidebar nav history actions — handled post-closure so we don't
@@ -844,7 +849,9 @@ impl eframe::App for FmEditorApp {
         // large save (50k+ players) causes visible lag and hangs.
         let player_filtered: Vec<&CachedPlayer> = if self.active_page == Page::PlayerSearch {
             if let (Some(c), Some(schemas)) = (&cache_arc, schemas) {
-                pages::player_search::filter(schemas, &c.players, &self.player_search)
+                pages::player_search::filter_with_clubs(
+                    schemas, &c.players, &self.player_search, c.my_clubs.as_ref(),
+                )
             } else {
                 Vec::new()
             }
@@ -939,6 +946,7 @@ impl eframe::App for FmEditorApp {
                 ui.add_space(8.0);
                 ui.label(egui::RichText::new("BROWSE").small().strong().weak());
                 for (page, label) in [
+                    (Page::BestXi, "Best XI"),
                     (Page::PlayerSearch, "Players"),
                     (Page::StaffSearch, "Staff"),
                     (Page::ClubSearch, "Clubs"),
@@ -1171,12 +1179,20 @@ impl eframe::App for FmEditorApp {
                 return;
             };
             match self.active_page {
+                Page::BestXi => {
+                    clicked_xi_player = pages::best_xi::show(
+                        ui, &mut self.best_xi, schemas, cache_arc.as_ref(),
+                    );
+                }
                 // ---- Search pages: filter row always visible, results area swaps ----
                 Page::PlayerSearch | Page::StaffSearch | Page::ClubSearch => {
                     // Filter row — always rendered, live filtering each frame.
                     match self.active_page {
                         Page::PlayerSearch => {
-                            if pages::player_search::filter_row(ui, &mut self.player_search)
+                            if pages::player_search::filter_row(
+                                ui, &mut self.player_search, Some(schemas),
+                                cache_arc.as_ref().and_then(|c| c.my_clubs.as_ref()),
+                            )
                                 && !self.advanced_open
                             {
                                 self.advanced_snapshot = Some(self.player_search.clone());
@@ -1185,7 +1201,7 @@ impl eframe::App for FmEditorApp {
                         }
                         Page::StaffSearch  => pages::staff_search::filter_row(ui, &mut self.staff_search),
                         Page::ClubSearch   => pages::club_search::filter_row(ui, &mut self.club_search),
-                        Page::HumanManager => unreachable!(),
+                        Page::HumanManager | Page::BestXi => unreachable!(),
                     }
 
                     ui.add_space(4.0);
@@ -1201,7 +1217,7 @@ impl eframe::App for FmEditorApp {
                         Page::PlayerSearch => format!("Results ({})", player_filtered.len()),
                         Page::StaffSearch  => format!("Results ({})", staff_filtered.len()),
                         Page::ClubSearch   => format!("Results ({})", club_filtered.len()),
-                        Page::HumanManager => "Results".to_string(),
+                        Page::HumanManager | Page::BestXi => "Results".to_string(),
                     };
                     let mut close_idx: Option<usize> = None;
                     let mut results_badge_clicked = false;
@@ -1368,7 +1384,7 @@ impl eframe::App for FmEditorApp {
                                     &club_filtered,
                                 );
                             }
-                            Page::HumanManager => unreachable!(),
+                            Page::HumanManager | Page::BestXi => unreachable!(),
                         }
                     }
                 }
@@ -1483,6 +1499,7 @@ impl eframe::App for FmEditorApp {
 
         // Handle reload_save — clear stale cache and re-trigger bulk load.
         if reload_save_clicked {
+            self.best_xi.clear();
             self.entity_cache = None;
             self.cache_load_state = CacheLoadState::Loading { done: 0, total: 0 };
             self.bridge.send(BridgeCmd::LoadEntityCache);
@@ -1495,6 +1512,17 @@ impl eframe::App for FmEditorApp {
         }
 
         // (Cache-driven search needs no auto-submit — results appear immediately.)
+
+        if let Some(cached) = clicked_xi_player.and_then(|i| cache_arc.as_ref()?.players.get(i)) {
+            let entry = HistoryEntry {
+                entity_type: EntityTabType::Player,
+                addr: cached.addr,
+                index: cached.index,
+                display_name: cached.name.clone(),
+            };
+            self.history.visit(Location::Entity(entry.clone()));
+            self.activate_history_entry(entry);
+        }
 
         // Open player from search results — build PlayerRecord from cache (no bridge call)
         if let (Some(i), Some(build)) = (clicked_player, self.attached_build) {
