@@ -1,0 +1,39 @@
+[package]
+name = "fm-editor"
+version = "0.1.0"
+edition = "2024"
+description = "Real-time memory editor for Football Manager 24, 26 and 27 (Windows and Linux/Proton)"
+license = "GPL-3.0-or-later"
+readme = "README.md"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+eframe = "0.31"
+egui_extras = { version = "0.31", features = ["image"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+rfd = "0.14"
+# fm-debug MCP server for live memory probing (src/debug/). The server code is
+# compiled only when debug_assertions is set (cargo run / cargo build); Cargo
+# cannot select dependencies on debug_assertions, so these crates are always
+# built but unused in release binaries.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync"] }
+axum = "0.7"
+
+# Platform process-access backends (src/process/): Win32 APIs on Windows,
+# /proc + process_vm_readv on Linux (targets fm.exe under Proton/Wine).
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Threading",
+    "Win32_System_Memory",
+    "Win32_System_ProcessStatus",
+    "Win32_Foundation",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+

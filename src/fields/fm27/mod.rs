@@ -1,0 +1,78 @@
+//! FM27 per-version field tables, same layout as `fields::fm26`.
+//!
+//! UNVERIFIED: every offset and RVA here is the FM26 (2026-10 patch) value,
+//! copied as the starting point for the FM27 bring-up. Nothing in this
+//! module has been checked against FM27 witnesses yet.
+
+mod player;
+pub mod staff;
+mod club;
+mod stadium;
+
+pub(crate) use player::FIELDS as PLAYER_FIELDS;
+pub(crate) use player::PLAYER_SUB_RECORDS;
+pub(crate) use staff::FIELDS as STAFF_FIELDS;
+pub(crate) use staff::STAFF_SUB_RECORDS;
+pub(crate) use club::FIELDS as CLUB_FIELDS;
+pub(crate) use club::CLUB_SUB_RECORDS;
+pub(crate) use stadium::FIELDS as STADIUM_FIELDS;
+
+use crate::fields::VersionedSchemas;
+
+/// FM27 schema. FM27 is a Unity build like FM26: game logic lives in
+/// `game_plugin.dll`, and the entity RVAs below are relative to its base.
+/// All values are inherited from FM26 and unverified.
+pub const FM27: VersionedSchemas = VersionedSchemas {
+    player_fields: PLAYER_FIELDS,
+    staff_fields: STAFF_FIELDS,
+    club_fields: CLUB_FIELDS,
+    stadium_fields: STADIUM_FIELDS,
+
+    player_sub_records: PLAYER_SUB_RECORDS,
+    staff_sub_records: STAFF_SUB_RECORDS,
+    club_sub_records: CLUB_SUB_RECORDS,
+    stadium_sub_records: &[],
+
+    player_struct_size: 992,   // 0x3E0 — covers block-2 name sub-records at 0x3D0/0x3D8
+    staff_struct_size: 576,
+    club_read_size: 0x2000,
+    stadium_entity_stride: 0xC0, // 192 bytes, flat inline array (was 0x170 before the 2026-10 patch)
+
+    human_manager_shift: staff::HUMAN_MANAGER_SHIFT,
+    manager_shifted_fields: staff::MANAGER_SHIFTED_FIELDS,
+
+    // FM27 keeps FM26's array cluster layout, shifted +0x8BA158 as a block.
+    // Found by sampling elements of every heap vector in .sdata and decoding
+    // names at FM26's offsets: players (p_name 0x2C8), staff (s_name 0x140),
+    // clubs (c_full_name 0xC0 / c_name 0xC8) all decode. Stadium RVA is the
+    // same shift applied, not yet checked.
+    rva_humans_data: 0x57037D0,
+    rva_humans_end: 0x57037D8,
+    rva_staff_data: 0x5703818,
+    rva_staff_end: 0x5703820,
+    rva_clubs_data: 0x5703988,
+    rva_clubs_end: 0x5703990,
+    rva_stadium_base: 0x5703750,
+
+    // No FMRTE reference counts exist for FM27 yet. These are the counts
+    // observed in a fresh FM27 save (day 1 of the first season); they
+    // depend on the database size chosen at game creation.
+    fmrte_players: 106868,
+    fmrte_staff: 51466,
+    fmrte_clubs: 33570,
+    fmrte_humans: 1,
+
+    // Not calibrated: attach reports the running game_plugin.dll hash.
+    known_dll_hash: 0,
+    // Full club finance class: Spurs, Arsenal, Man City, Liverpool and 881
+    // other clubs. 32,682 clubs use a smaller class (vtable +0x4CF07F8) where
+    // the budget offsets read packed dates and floats.
+    full_finance_vtable_rva: 0x4CF0CC8,
+    // Player-coaches (391 in this save): vtable +0x4F75A08, person block at
+    // +0x288+0xF8. Witnesses: James Milner (born 4 Jan 1986, Leeds, England,
+    // 61 caps), David Nugent, Keisuke Honda (FC Jurong), Remko Pasveer (Twente).
+    player_coach_vtable_rva: 0x4F75A08,
+    player_person_offset: 0x288,
+    player_coach_shift: 0xF8,
+    age_reference_year: 2027,
+};

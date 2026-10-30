@@ -1,0 +1,2 @@
+# Force LF on shell scripts so bash hooks don't break on Windows checkouts.
+*.sh text eol=lf

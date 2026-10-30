@@ -1,0 +1,50 @@
+Club: Tottenham Hotspur (UID 728)
+==================================
+
+Identity & Status
+  Name:           Tottenham Hotspur
+  Year Founded:   1882
+  Nickname:       The Lilywhites
+  Reputation:     7750
+  UID:            728
+  Morale:         15 (Good)
+  Status:         Professional
+  Social Media:   9.7M Followers
+  Owner Status:   10000
+  Benefactor:     None
+
+Facilities
+  Training:       20 (Superb)
+  Youth Fac:      20 (Superb)
+  Youth Coach:    16 (Very Good)
+  Youth Recruit:  16 (Very Good)
+  Youth Imp:      18 (Very Good)
+  Corporate:      20 (Superb)
+
+Stadium
+  Name:           Tottenham Hotspur Stadium
+  Capacity:       62850
+  Expansion:      78562
+  Pitch Type:     Grass
+  Pitch Size:     105m x 68m
+  Training Ground: Hotspur Way
+
+Finance
+  Balance:        242,301,502
+  Transfer Budget: 45,400,000
+  Wage Budget:    3,760,528
+  Avg Ticket:     65
+  Avg Season Tkt: 1296
+
+Attendance
+  Season Tickets: 50,000
+  Average:        61,127
+  ESC Slots:      4
+  Transfer Embargo: None
+  Scout Range:    World
+
+Tactical
+  Preferred Formation:  4-2-3-1 DM AM Wide
+  2nd Preferred:        4-3-3 DM Wide
+  Defensive:            4-3-3 DM Wide
+  Attacking:            4-2-3-1 DM AM Wide
