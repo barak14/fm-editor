@@ -46,6 +46,13 @@ Other pairs in the cluster:
 - 0x57037E8 — same count as the player array (106,868).
 - 0x57039A0 (5,116), 0x57039E8 (30,771), 0x5703A90 (2,799) — club subsets.
 
+Three entries in the club array are not clubs: UIDs 2000000000, 2000000002
+and 2000000003 use their own class (vtable +0x4F65538; real clubs use
++0x4CDA1F8), have no name strings and no players (2000000000 has six empty
+teams). The club list skips entries with no name. One real club, "C.D.
+35600" (UID 2000567841), has a full name but no short name and is listed
+under its full name.
+
 `Tools/scan-arrays.sh` scans gp+0x4000000..0x5400000 (the FM26 window) and
 does not reach the FM27 cluster.
 

@@ -159,6 +159,15 @@ pub(super) fn load_entity_cache(
             .or_else(|_| fm.read_fm_name(full_ptr))
             .unwrap_or_default();
 
+        // A club with neither name is not a real club: FM27 keeps three
+        // nameless placeholder objects of their own class (UIDs 2000000000,
+        // 2000000002, 2000000003; no squads) in the club array. They can't
+        // be searched for or recognised, so leave them out of the list.
+        if name.is_empty() {
+            done += 1;
+            continue;
+        }
+
         let transfer_budget = super::entity_load::read_club_field_u32(fm, ptr, "c_transfer_budget");
 
         clubs.push(CachedClub {
