@@ -180,6 +180,15 @@ pub fn show(
     clicked
 }
 
+/// Cached name, or the UID when the name could not be read.
+fn display_name(p: &crate::cache::CachedPlayer) -> String {
+    if p.name.is_empty() {
+        format!("Player {}", p.uid)
+    } else {
+        p.name.clone()
+    }
+}
+
 fn player(
     ui: &mut egui::Ui,
     schemas: &'static VersionedSchemas,
@@ -192,11 +201,7 @@ fn player(
     let p = &cache.players[c.player];
     ui.weak(label);
     if ui
-        .add(egui::Link::new(if p.name.is_empty() {
-            format!("Player {}", p.uid)
-        } else {
-            p.name.clone()
-        }))
+        .add(egui::Link::new(display_name(p)))
         .clicked()
     {
         *clicked = Some(c.player);
@@ -265,7 +270,7 @@ fn pitch(
                 } else {
                     format!("{:.1} fit", c.fit)
                 };
-                format!("{} · {score}\n{}", slot.label, p.name)
+                format!("{} · {score}\n{}", slot.label, display_name(p))
             },
         );
         if ui.put(card, egui::Button::new(text).wrap()).clicked() {

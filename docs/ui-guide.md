@@ -71,7 +71,8 @@ replaced by the same slot information in stacked cards on narrow windows.
 Results use the current cache: **Reload Save** refreshes membership and attributes.
 Injuries, fitness, suspensions and competition registration are not checked.
 An incomplete squad leaves positions visibly unfilled. Snapshot results remain
-read-only after disconnection and are cleared on save/attachment changes.
+read-only after the game closes; a lost connection, save change or attachment
+change clears them.
 
 ## Editing and undo
 

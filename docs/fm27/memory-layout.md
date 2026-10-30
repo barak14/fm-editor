@@ -386,6 +386,6 @@ Steam; Game Pass and other builds have not been verified for this capability.
 No game-memory writes were performed for this read-only feature.
 
 Verified module SHA-256: `BC940E472418FC5C214208D7CF30FECF600F689B6F9D71C11BA19A2DF0FE057F`.
-Manager discovery now requires the already-mapped human-manager vtable when available and excludes the platform-account placeholder.
+On FM27 Steam, manager discovery now requires the already-mapped human-manager vtable and excludes the platform-account placeholder. Game Pass keeps the previous heuristic because its inherited vtable RVA is unverified.
 
 Live feature UI: manual current Club ID 1751 returned 24 players; My clubs returned 41, including the reserve group and both incoming-loan witnesses. Counts are save-specific, not constants.
