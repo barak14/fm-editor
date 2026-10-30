@@ -139,6 +139,7 @@ mod tests {
     use crate::cache::CachedClub;
     fn cache(names: &[&str]) -> EntityCache {
         EntityCache {
+            my_clubs: None,
             players: vec![],
             staff: vec![],
             clubs: names

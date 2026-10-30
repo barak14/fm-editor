@@ -358,3 +358,34 @@ Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
   (`s_fitness`, manager+0x34, encoded): 13 → 14 in the editor, undo back to
   13, confirmed in memory (raw 65) and after reloading in the editor. No
   other field has been written.
+
+### Club search membership (2026-10-30, Steam Huelva save)
+
+Read-only verification against FM27 Steam, game date 2 August 2026.
+Current club remains player +0x130 -> team +0x30 -> cached club identity.
+Ownership is player +0x330 -> contract +0x10 -> team +0x30 -> club.
+Every hop is a little-endian u64 pointer. Player-coach person shifts apply to
+the contract pointer through the existing schema resolver.
+
+Independently checked in the game's player profiles:
+- Mateo Izaguirre (2000159662): parent Juventud (130848), on loan at Huelva (1751).
+- Samu Cortés (2000402336): parent Granada (1714), on loan at Huelva (1751).
+Both current-team links resolve Huelva while both contract links resolve their
+different parent clubs. Jero Lario (67210974) resolves Huelva through both.
+
+Reserve teams use a u64 pointer vector at club +0x30 (begin), +0x38 (end).
+Each entry is a team, whose +0x30 resolves its cached club identity.
+The game's squad navigation independently shows:
+- Huelva (1751): Huelva U19 and Huelva B; reserve vector resolves Huelva B (814499).
+- Granada (1714): Granada U19 and Granada B; reserve vector resolves Granada B (67040821).
+Youth squads belonging to the same club require no separate club UID.
+Membership expansion follows these reserve vectors only, never fuzzy names or
+general affiliates. Cycles are deduplicated; malformed or incomplete reserve
+graphs make My clubs unavailable. These additions are enabled only for FM27
+Steam; Game Pass and other builds have not been verified for this capability.
+No game-memory writes were performed for this read-only feature.
+
+Verified module SHA-256: `BC940E472418FC5C214208D7CF30FECF600F689B6F9D71C11BA19A2DF0FE057F`.
+Manager discovery now requires the already-mapped human-manager vtable when available and excludes the platform-account placeholder.
+
+Live feature UI: manual current Club ID 1751 returned 24 players; My clubs returned 41, including the reserve group and both incoming-loan witnesses. Counts are save-specific, not constants.

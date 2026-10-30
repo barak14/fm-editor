@@ -293,13 +293,15 @@ pub fn resolve_sub_ptr_mapped(
     sub_records: &[SubRecord],
     phys: &dyn Fn(u64) -> u64,
 ) -> Option<u64> {
+    if !(base_ptr > 0x10000 && base_ptr < 0x7FFFFFFFFFFF) { return None; }
     let sr = sub_records.iter().find(|s| s.id == target_id)?;
     let ptr_addr = match &sr.parent {
-        SubRecordParent::Direct => base_ptr + phys(sr.ptr_offset),
+        SubRecordParent::Direct => base_ptr.checked_add(phys(sr.ptr_offset))?,
         SubRecordParent::In(pid) => {
-            resolve_sub_ptr_mapped(fm, base_ptr, pid, sub_records, phys)? + sr.ptr_offset
+            resolve_sub_ptr_mapped(fm, base_ptr, pid, sub_records, phys)?.checked_add(sr.ptr_offset)?
         }
     };
+    if !(ptr_addr > 0x10000 && ptr_addr.checked_add(8)? < 0x7FFFFFFFFFFF) { return None; }
     let ptr = fm.read_u64(ptr_addr).ok()?;
     (ptr > 0x10000 && ptr < 0x7FFFFFFFFFFF).then_some(ptr)
 }

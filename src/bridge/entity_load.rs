@@ -331,6 +331,18 @@ pub fn find_human_manager(fm: &FmProcess) -> Result<u64, String> {
         if vtable < gp_base || vtable >= gp_end {
             return false;
         }
+        // FM27 has a known human-manager class. Generic staff can otherwise
+        // pass the shifted-name heuristic by reading bytes in neighbouring objects.
+        if schema.human_manager_vtable_rva != 0 {
+            if gp_base.checked_add(schema.human_manager_vtable_rva) != Some(vtable) {
+                return false;
+            }
+            let Ok((identity, identity_shift)) = staff::read_staff_raw(fm, ptr) else { return false; };
+            let Some(off) = schema.offset_of("s_dob") else { return false; };
+            let Some(year) = identity.get(off + 2..off + 4)
+                .and_then(|b| <[u8; 2]>::try_from(b).ok()).map(u16::from_le_bytes) else { return false; };
+            if year == 0 || staff::is_account_placeholder(identity_shift, year) { return false; }
+        }
         // CA / PA sanity
         let ca = buf[ca_offset];
         let pa = buf[pa_offset];

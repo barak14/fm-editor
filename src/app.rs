@@ -844,7 +844,9 @@ impl eframe::App for FmEditorApp {
         // large save (50k+ players) causes visible lag and hangs.
         let player_filtered: Vec<&CachedPlayer> = if self.active_page == Page::PlayerSearch {
             if let (Some(c), Some(schemas)) = (&cache_arc, schemas) {
-                pages::player_search::filter(schemas, &c.players, &self.player_search)
+                pages::player_search::filter_with_clubs(
+                    schemas, &c.players, &self.player_search, c.my_clubs.as_ref(),
+                )
             } else {
                 Vec::new()
             }
@@ -1176,7 +1178,10 @@ impl eframe::App for FmEditorApp {
                     // Filter row — always rendered, live filtering each frame.
                     match self.active_page {
                         Page::PlayerSearch => {
-                            if pages::player_search::filter_row(ui, &mut self.player_search)
+                            if pages::player_search::filter_row(
+                                ui, &mut self.player_search, Some(schemas),
+                                cache_arc.as_ref().and_then(|c| c.my_clubs.as_ref()),
+                            )
                                 && !self.advanced_open
                             {
                                 self.advanced_snapshot = Some(self.player_search.clone());

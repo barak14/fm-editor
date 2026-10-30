@@ -33,6 +33,9 @@ pub(crate) const CLUB_SUB_RECORDS: &[SubRecord] = &[
 ];
 
 pub(crate) const FIELDS: &[Field] = &[
+    // u64 pointer-vector bounds, verified Huelva -> Huelva B and Granada -> Granada B.
+    Field { key: "c_reserve_teams_begin", label: "Reserve teams begin", entity: Club, category: Internal, offset: pointer(0x30) },
+    Field { key: "c_reserve_teams_end", label: "Reserve teams end", entity: Club, category: Internal, offset: pointer(0x38) },
     // ── Top-level direct offsets ──────────────────────────────────────────
     Field { key: "c_uid",                label: "UID",                entity: Club, category: General,    offset: raw(0x0C)      },
     Field { key: "c_name",               label: "Name",               entity: Club, category: General,    offset: fm_string(0xC8)},
