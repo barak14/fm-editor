@@ -47,9 +47,20 @@ class WindowsInstallerTests(unittest.TestCase):
             "SOURCE.txt": f"https://github.com/barak14/fm-editor/commit/{COMMIT}\n".encode(),
         })
         self.write_archive()
+        self.manifest_dir = self.root / "release manifests"
+        self.manifest_dir.mkdir()
+        self.write_manifest()
+        mock.patch.object(windows, "RELEASES_DIR", self.manifest_dir).start()
         self.compiler = mock.patch.object(windows.subprocess, "run", side_effect=self.compile).start()
         self.addCleanup(mock.patch.stopall)
         self.stages = []
+
+    def write_manifest(self):
+        manifest = {"version": VERSION, "commit": COMMIT, "targets": {windows.TARGET: {
+            "canonical_sha256": hashlib.sha256(self.archive.read_bytes()).hexdigest(),
+            "executable_sha256": hashlib.sha256(self.entries["fm-editor.exe"]).hexdigest(),
+        }}}
+        (self.manifest_dir / f"v{VERSION}.json").write_text(json.dumps(manifest), encoding="utf-8")
 
     def write_archive(self):
         with zipfile.ZipFile(self.archive, "w") as archive:
@@ -129,6 +140,30 @@ class WindowsInstallerTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
         self.assertTrue(all(not path.exists() for path in self.stages))
 
+    def test_modified_executable_and_updated_sidecar_rejected_by_release_pin(self):
+        self.entries["fm-editor.exe"] = b"MZ modified executable"
+        self.write_archive()
+        with self.assertRaisesRegex(ValueError, "verified source-bundle native input"):
+            self.package()
+        self.compiler.assert_not_called()
+        self.assertFalse(self.output_dir.exists())
+
+    def test_executable_pin_checked_after_extraction(self):
+        manifest_path = self.manifest_dir / f"v{VERSION}.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["targets"][windows.TARGET]["executable_sha256"] = "0" * 64
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Executable is not the pinned release"):
+            self.package()
+        self.compiler.assert_not_called()
+        self.assertFalse(self.output_dir.exists())
+
+    def test_missing_manifest_rejected(self):
+        (self.manifest_dir / f"v{VERSION}.json").unlink()
+        with self.assertRaisesRegex(ValueError, "verified source-bundle native input"):
+            self.package()
+        self.compiler.assert_not_called()
+
     def test_bad_identity_and_unsafe_payload_stop_before_compiler(self):
         original = self.entries.copy()
         mutations = [
@@ -142,6 +177,7 @@ class WindowsInstallerTests(unittest.TestCase):
             with self.subTest(name=name, data=data):
                 self.entries = {**original, name: data}
                 self.write_archive()
+                self.write_manifest()
                 with self.assertRaises(ValueError):
                     self.package()
                 self.compiler.assert_not_called()

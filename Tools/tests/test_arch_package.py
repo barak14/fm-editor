@@ -8,6 +8,8 @@ import json
 from pathlib import Path
 import re
 import shutil
+import os
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -216,6 +218,34 @@ class ArchRecipeTests(unittest.TestCase):
         desktop = (ROOT / "packaging/arch/fm-editor.desktop").read_text(encoding="utf-8")
         for line in ("Type=Application", "Exec=fm-editor", "Icon=fm-editor", "Terminal=false"):
             self.assertIn(line, desktop.splitlines())
+
+    def test_pinned_files_remain_lf_under_windows_style_checkout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            env.update({"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"})
+            def git(*args):
+                return subprocess.run(["git", *args], cwd=root, env=env, check=True, capture_output=True)
+            files = ["packaging/arch/fm-editor.desktop", "packaging/assets/fm-editor.svg"]
+            shutil.copyfile(ROOT / ".gitattributes", root / ".gitattributes")
+            for name in files:
+                destination = root / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / name, destination)
+            (root / "control.txt").write_bytes(b"control\n")
+            git("init", "--quiet")
+            for key, value in [("user.name", "Checkout Test"), ("user.email", "test@example.invalid"), ("commit.gpgsign", "false"), ("core.autocrlf", "false")]:
+                git("config", key, value)
+            git("add", ".")
+            git("commit", "--quiet", "-m", "fixture")
+            git("config", "core.autocrlf", "true")
+            git("config", "core.eol", "crlf")
+            for name in files + ["control.txt"]:
+                (root / name).unlink()
+            git("checkout", "--", *files, "control.txt")
+            self.assertEqual((root / "control.txt").read_bytes(), b"control\r\n")
+            self.assertEqual(hashlib.sha256((root / files[0]).read_bytes()).hexdigest(), arch.DESKTOP_SHA256)
+            self.assertEqual(hashlib.sha256((root / files[1]).read_bytes()).hexdigest(), arch.ICON_SHA256)
 
 
 if __name__ == "__main__":

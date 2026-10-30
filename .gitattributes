@@ -1,2 +1,6 @@
-# Force LF on shell scripts so bash hooks don't break on Windows checkouts.
+# Keep scripts and checksum-pinned package sources identical across checkouts.
 *.sh text eol=lf
+packaging/arch/PKGBUILD text eol=lf
+*.desktop text eol=lf
+*.svg text eol=lf
+*.ico binary

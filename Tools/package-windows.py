@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 from pathlib import Path
 import re
 import shutil
@@ -14,8 +15,25 @@ import zipfile
 from native_package_common import extract_portable, verify_checksum
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "packaging/windows/fm-editor.iss"
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "packaging/windows/fm-editor.iss"
+RELEASES_DIR = ROOT / "packaging/releases"
 TARGET = "x86_64-pc-windows-msvc"
+
+
+def release_target(version: str, commit: str) -> dict:
+    """Read pins shipped in the trusted source bundle, not caller metadata."""
+    try:
+        manifest = json.loads((RELEASES_DIR / f"v{version}.json").read_text(encoding="utf-8"))
+        if manifest["version"] != version or manifest["commit"] != commit:
+            raise ValueError("Release identity mismatch")
+        target = manifest["targets"][TARGET]
+        for field in ("canonical_sha256", "executable_sha256"):
+            if not isinstance(target[field], str) or not re.fullmatch(r"[0-9a-f]{64}", target[field]):
+                raise ValueError("Invalid release digest")
+        return target
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise ValueError("Release pin mismatch or missing manifest; use the verified source-bundle native input") from error
 
 
 def package(archive: Path, checksums: Path, commit: str, version: str,
@@ -32,6 +50,7 @@ def package(archive: Path, checksums: Path, commit: str, version: str,
     output = output_dir / f"fm-editor-{version}-windows-x64-setup.exe"
     if output.exists() or output.is_symlink():
         raise FileExistsError(f"Refusing to overwrite installer: {output}")
+    target = release_target(version, commit)
     digest = verify_checksum(Path(archive), Path(checksums))
     with tempfile.TemporaryDirectory(prefix="fm-editor-windows-") as temporary:
         stage = Path(temporary).resolve()
@@ -39,9 +58,13 @@ def package(archive: Path, checksums: Path, commit: str, version: str,
         shutil.copyfile(archive, snapshot)
         if hashlib.sha256(snapshot.read_bytes()).hexdigest() != digest:
             raise ValueError("Portable archive changed while copying verified input")
+        if digest != target["canonical_sha256"]:
+            raise ValueError("Archive is not the pinned release; use the verified source-bundle native input")
         payload = stage / "payload"
         extract_portable(snapshot, payload, expected_target=TARGET,
                          expected_version=version, expected_commit=commit)
+        if hashlib.sha256((payload / "fm-editor.exe").read_bytes()).hexdigest() != target["executable_sha256"]:
+            raise ValueError("Executable is not the pinned release; use the verified source-bundle native input")
         compiled = stage / "compiled"
         compiled.mkdir()
         # Each /D definition is one argument even when its value contains spaces.

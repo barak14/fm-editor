@@ -3,6 +3,7 @@ name: Native packages
 on:
   push:
     paths:
+      - '.gitattributes'
       - 'packaging/**'
       - 'Tools/*native*'
       - 'Tools/package-windows.py'
@@ -58,7 +59,7 @@ jobs:
               output.write(f"version={info['version']}\ncommit={info['commit']}\n")
           commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
           prefix = f"fm-editor-{info['version']}-packaging-source"
-          paths = ['LICENSE', 'packaging', 'Tools/native_package_common.py',
+          paths = ['LICENSE', '.gitattributes', 'packaging', 'Tools/native_package_common.py',
                    'Tools/fetch-native-inputs.py', 'Tools/package-windows.py',
                    'Tools/stage-arch-package.py', 'Tools/smoke-release.py',
                    'Tools/tests/test_native_package_common.py',
@@ -150,6 +151,13 @@ jobs:
           if ($process.ExitCode -ne 0 -or !(Test-Path "$install/fm-editor.exe")) { throw 'Application installation failed' }
           $info = Get-Content "$install/BUILD-INFO.json" | ConvertFrom-Json
           if ($info.commit -ne $env:APP_COMMIT -or $info.version -ne $env:APP_VERSION) { throw 'Installed application identity mismatch' }
+          $pins = Get-Content "packaging/releases/${env:RELEASE_TAG}.json" | ConvertFrom-Json
+          $expectedExe = $pins.targets.'x86_64-pc-windows-msvc'.executable_sha256
+          if ((Get-FileHash "$install/fm-editor.exe" -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedExe) { throw 'Installer changed application binary bytes' }
+          $startLink = Join-Path ([Environment]::GetFolderPath('Programs')) 'FM Editor/FM Editor.lnk'
+          $desktopLink = Join-Path ([Environment]::GetFolderPath('Desktop')) 'FM Editor.lnk'
+          if (!(Test-Path $startLink) -or !(Test-Path "$install/fm-editor.ico")) { throw 'Start Menu shortcut or icon missing' }
+          if (Test-Path $desktopLink) { throw 'Desktop shortcut must not be created by default' }
           $key = 'Software/Microsoft/Windows/CurrentVersion/Uninstall/{A8BB287F-FCC2-48EA-9FD9-8E65B616AA65}_is1'
           if (!(Test-Path "HKCU:/$key") -or (Test-Path "HKLM:/$key")) { throw 'Installer did not use per-user registration' }
           if ((Get-Content $settings -Raw) -ne $sentinel) { throw 'Installer changed user settings' }
@@ -168,6 +176,8 @@ jobs:
           if (!$uninstall) { throw 'Uninstaller missing' }
           $process = Start-Process $uninstall.FullName -Wait -PassThru -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
           if ($process.ExitCode -ne 0 -or (Test-Path "$install/fm-editor.exe") -or (Test-Path "HKCU:/$key")) { throw 'Uninstall failed' }
+          for ($i = 0; $i -lt 10 -and (Test-Path $install); $i++) { Start-Sleep -Milliseconds 500 }
+          if ((Test-Path $install) -or (Test-Path $startLink) -or (Test-Path $desktopLink)) { throw 'Uninstall left application files or shortcuts behind' }
           if ((Get-Content $settings -Raw) -ne $sentinel) { throw 'Uninstall removed user settings' }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -231,10 +241,13 @@ jobs:
           test -f /usr/share/icons/hicolor/scalable/apps/fm-editor.svg
           python - <<'PY'
           import json, os
+          import hashlib
           from pathlib import Path
           info=json.loads(Path('/usr/share/doc/fm-editor-bin/BUILD-INFO.json').read_text())
           assert info['commit']==os.environ['APP_COMMIT']
           assert info['version']==os.environ['APP_VERSION']
+          pins=json.loads(Path(f"packaging/releases/{os.environ['RELEASE_TAG']}.json").read_text())
+          assert hashlib.sha256(Path('/usr/bin/fm-editor').read_bytes()).hexdigest()==pins['targets']['x86_64-unknown-linux-gnu']['executable_sha256']
           PY
           install -d -m 700 -o builder -g builder /tmp/fm-editor-runtime
           runuser -u builder -- env -u WAYLAND_DISPLAY XDG_RUNTIME_DIR=/tmp/fm-editor-runtime LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a python Tools/smoke-release.py --binary /usr/bin/fm-editor
