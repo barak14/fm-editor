@@ -1,14 +1,14 @@
 # Windows installer and Arch package
 
 Native packages wrap the existing portable application binaries. For this preview,
-application version **0.2.0** is pinned by tag **v0.2.0**; adding native packaging
+application version **0.3.0** is pinned by tag **v0.3.0**; adding native packaging
 does not move that tag or rebuild/replace the application. The native packaging
 recipes have their own source revision, recorded in the packaging-source bundle.
 The portable ZIP/tarball remain available alongside the native packages.
 
 ## Windows x64
 
-Download **`fm-editor-0.2.0-windows-x64-setup.exe`** from the release assets. Verify it
+Download **`fm-editor-0.3.0-windows-x64-setup.exe`** from the release assets. Verify it
 against the release's `SHA256SUMS`, then run it.
 
 - Installs for the current user under `%LOCALAPPDATA%\Programs\FM Editor` by
@@ -28,10 +28,10 @@ only test tools and are not bundled into the installer.
 
 ## Arch Linux / CachyOS x86-64
 
-Download **`fm-editor-bin-0.2.0-1-x86_64.pkg.tar.zst`**, verify its checksum, then run:
+Download **`fm-editor-bin-0.3.0-1-x86_64.pkg.tar.zst`**, verify its checksum, then run:
 
 ```bash
-sudo pacman -U ./fm-editor-bin-0.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U ./fm-editor-bin-0.3.0-1-x86_64.pkg.tar.zst
 fm-editor
 ```
 
@@ -57,7 +57,7 @@ sudo pacman -R fm-editor-bin
 User preferences are not removed. The package has **no installation hooks that
 change capabilities, ptrace settings or game permissions**. If attachment fails
 with a memory-access error, review the
-[Linux setup instructions](https://github.com/barak14/fm-editor/blob/v0.2.0/README.md#linux--proton)
+[Linux setup instructions](https://github.com/barak14/fm-editor/blob/v0.3.0/README.md#linux--proton)
 before making security changes. For the native package, the executable path is
 `/usr/bin/fm-editor`, not a `target/release` path. Do not run the whole GUI as root
 as a default workaround.
@@ -65,7 +65,7 @@ as a default workaround.
 ## Building or reviewing the packages
 
 The **Native packages** workflow uses the pinned, successful Actions build for the
-existing application tag. `packaging/releases/<tag>.json` (for example `v0.2.0.json`) records the source commit,
+existing application tag. `packaging/releases/<tag>.json` (for example `v0.3.0.json`) records the source commit,
 run, original archive hashes and executable hashes. CI verifies them before making
 native packages. It remains read-only: GitHub hides private draft releases from
 read-only tokens, so this does not fetch draft assets or grant write permissions.
@@ -89,7 +89,7 @@ generated source-archive filename reference are normalized.
   shortcuts/desktop resources, disconnected GUI startup, and preservation of
   settings. These checks do not replace the user's live FM attach/edit/Undo test.
 
-The additional **`fm-editor-0.2.0-packaging-source.tar.gz`** contains the native
+The additional **`fm-editor-0.3.0-packaging-source.tar.gz`** contains the native
 packaging recipes, icons, helper scripts, tests, workflow, licence and this guide,
 plus verified binary inputs under `inputs/`. This is a binary-package recipe bundle,
 not a substitute for the separate application source archive.
@@ -104,8 +104,8 @@ For local builds, extract that bundle and use Python 3.10+:
 
 ```bash
 python3 Tools/stage-arch-package.py \
-  --archive inputs/fm-editor-0.2.0-linux-input.tar --checksums inputs/SHA256SUMS \
-  --commit <full-application-commit> --version 0.2.0 --output-dir dist/arch
+  --archive inputs/fm-editor-0.3.0-linux-input.tar --checksums inputs/SHA256SUMS \
+  --commit <full-application-commit> --version 0.3.0 --output-dir dist/arch
 cd dist/arch
 makepkg --syncdeps
 ```
@@ -117,7 +117,7 @@ submission, choose a durable public upstream source URL and follow AUR guideline
 On Windows, with ISCC installed:
 
 ```powershell
-python Tools/package-windows.py --archive inputs/fm-editor-0.2.0-windows-input.zip --checksums inputs/SHA256SUMS --commit <full-application-commit> --version 0.2.0 --output-dir dist/native-windows --iscc 'C:\Path\To\ISCC.exe'
+python Tools/package-windows.py --archive inputs/fm-editor-0.3.0-windows-input.zip --checksums inputs/SHA256SUMS --commit <full-application-commit> --version 0.3.0 --output-dir dist/native-windows --iscc 'C:\Path\To\ISCC.exe'
 ```
 
 Use the full application commit from the release's portable `BUILD-INFO.json` or
