@@ -185,8 +185,11 @@ cmd_launch() {
   running_pid >/dev/null || die "not running; start it first"
   command -v steam >/dev/null || die "missing steam"
   # The game only lands here if its Steam launch option reads `display`.
-  steam -applaunch "$appid" > /dev/null 2>&1 &
-  disown
+  # Run in the foreground: it hands the request to the running Steam client
+  # and exits within seconds. Backgrounded and orphaned, it can die before
+  # the hand-off and Steam never sees the request.
+  timeout 60 steam -applaunch "$appid" > /dev/null 2>&1 \
+    || die "steam -applaunch $appid failed or timed out"
   echo "requested Steam launch of $appid; check with: bash $0 status"
 }
 
