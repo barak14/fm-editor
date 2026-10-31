@@ -28,6 +28,41 @@ Worktree launches use `.mcp-port` and a branch-specific executable
 `/tmp/fm-editor.log`. A build failure and a startup panic are different failures:
 read the compiler output or the corresponding launch log before changing code.
 
+## Headless FM session (Linux)
+
+`Tools/fm-headless.sh` runs FM on a headless labwc compositor with XWayland on
+the GPU, so live checks can screenshot and drive the game without using the
+desktop. It needs `labwc`, `wlr-randr`, `grim` and `xdotool`.
+
+Set this Steam launch option once per FM version (use the main worktree's path):
+
+```
+DISPLAY=$(bash /path/to/fm-editor/Tools/fm-headless.sh display 2>/dev/null || echo "$DISPLAY") %command%
+```
+
+`display` prints the headless X display only while the compositor is alive, so
+FM opens on the normal desktop whenever the harness is stopped.
+
+```bash
+bash Tools/fm-headless.sh start           # optional size, default 1920x1080
+bash Tools/fm-headless.sh launch fm27     # fm24 | fm26 | fm27 | <appid>
+bash Tools/fm-headless.sh status          # shows whether FM is on it
+bash Tools/fm-headless.sh shot            # grim capture; prints the PNG path
+eval "$(bash Tools/fm-headless.sh env)"   # DISPLAY/WAYLAND_DISPLAY for clients
+xdotool mousemove 400 280 click 1         # input, after the eval above
+bash Tools/fm-headless.sh stop            # refuses while FM is on it
+```
+
+The compositor is detached from the shell that starts it, because FM loses its
+display and will likely crash if the compositor stops. Save and quit FM before
+`stop`; `stop --force` skips that check. To drive write/undo checks, start the
+editor with the `env` output too, so its window is in the same session.
+Screenshots supplement the in-game comparison described below; they do not
+replace checking against FM's own values. Verified with FM27 (Steam, Proton)
+only: render, `grim` capture, `xdotool` clicks and typing. FM24 and FM26 use the
+same launch option but have not been run headless yet.
+
+
 ## Field research and verification
 
 This procedure is for new/changed mappings. UI-only changes to existing fields do
