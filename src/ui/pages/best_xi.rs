@@ -200,10 +200,7 @@ fn player(
 ) {
     let p = &cache.players[c.player];
     ui.weak(label);
-    if ui
-        .add(egui::Link::new(display_name(p)))
-        .clicked()
-    {
+    if ui.add(egui::Link::new(display_name(p))).clicked() {
         *clicked = Some(c.player);
     }
     ui.label(format!(
@@ -239,46 +236,75 @@ fn pitch(
     clicked: &mut Option<usize>,
 ) {
     let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), 410.0),
+        egui::vec2(ui.available_width().min(1000.0), 600.0),
         egui::Sense::hover(),
     );
-    let painter = ui.painter();
-    painter.rect_filled(rect, 6.0, egui::Color32::from_rgb(24, 65, 48));
-    let field = rect.shrink(12.0);
-    let stroke = egui::Stroke::new(1.0_f32, egui::Color32::from_rgb(91, 139, 111));
-    painter.rect_stroke(field, 0.0, stroke, egui::StrokeKind::Inside);
-    painter.line_segment(
-        [
-            egui::pos2(field.left(), field.center().y),
-            egui::pos2(field.right(), field.center().y),
-        ],
-        stroke,
-    );
-    painter.circle_stroke(field.center(), 40.0, stroke);
+    let field = crate::ui::pitch::paint(ui.painter(), rect);
     for (i, slot) in FORMATIONS[state.formation].slots.iter().enumerate() {
-        let center = egui::pos2(
-            field.left() + field.width() * slot.x,
-            field.top() + field.height() * slot.y,
-        );
-        let card = egui::Rect::from_center_size(center, egui::vec2(field.width() * 0.23, 56.0));
-        let text = lineup.selected[i].map_or_else(
-            || format!("{}\nUnfilled", slot.label),
+        let center = crate::ui::pitch::point(field, slot.x, slot.y);
+        let card = egui::Rect::from_center_size(center, egui::vec2(field.width() * 0.23, 72.0));
+        let selected = lineup.selected[i];
+        let color = if selected.is_none() {
+            crate::ui::pitch::UNFILLED
+        } else if slot.position == "pos_gk" {
+            crate::ui::pitch::KEEPER
+        } else {
+            crate::ui::pitch::OUTFIELD
+        };
+        let kit =
+            egui::Rect::from_center_size(center - egui::vec2(0.0, 20.0), egui::vec2(54.0, 30.0));
+        crate::ui::pitch::shirt(ui.painter(), kit, slot.label, color);
+        let score = selected.map_or_else(
+            || "Unfilled".to_owned(),
             |c| {
-                let p = &cache.players[c.player];
-                let score = if state.growth {
-                    format!("+{} room", c.headroom.unwrap_or(0))
+                if state.growth {
+                    c.headroom
+                        .map_or("? room".into(), |room| format!("+{room} room"))
                 } else {
                     format!("{:.1} fit", c.fit)
-                };
-                format!("{} · {score}\n{}", slot.label, display_name(p))
+                }
             },
         );
-        if ui.put(card, egui::Button::new(text).wrap()).clicked() {
-            *clicked = lineup.selected[i].map(|c| c.player);
+        let score_rect = egui::Rect::from_center_size(
+            center + egui::vec2(0.0, 4.0),
+            egui::vec2(card.width(), 17.0),
+        );
+        ui.painter()
+            .rect_filled(score_rect, 3.0, egui::Color32::from_rgb(19, 44, 33));
+        ui.painter().text(
+            score_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            score,
+            egui::FontId::proportional(12.0),
+            egui::Color32::WHITE,
+        );
+        let name_rect = egui::Rect::from_center_size(
+            center + egui::vec2(0.0, 24.0),
+            egui::vec2(card.width(), 22.0),
+        );
+        if let Some(c) = selected {
+            let name = display_name(&cache.players[c.player]);
+            let response = ui
+                .put(name_rect, egui::Button::new(&name).truncate())
+                .on_hover_text(&name);
+            let kit_response = ui
+                .interact(kit, ui.id().with(("pitch_kit", i)), egui::Sense::click())
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text(&name);
+            if response.clicked() || kit_response.clicked() {
+                *clicked = Some(c.player);
+            }
+        } else {
+            ui.put(
+                name_rect,
+                egui::Label::new(
+                    egui::RichText::new("No eligible player").color(egui::Color32::WHITE),
+                )
+                .truncate(),
+            );
         }
     }
-    // `put` advances the cursor to each positioned card; the last card is at
-    // the attacking end. Reserve the complete pitch before laying out depth.
+    // Positioned widgets must not move the following depth cards into the pitch.
     ui.advance_cursor_after_rect(rect);
 }
 
@@ -351,9 +377,20 @@ mod tests {
         assert!(state.lineup.is_none());
     }
 
+    fn text_contents(shape: &egui::Shape, texts: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Text(text) => texts.push(text.galley.text().to_owned()),
+            egui::Shape::Vec(shapes) => {
+                for shape in shapes {
+                    text_contents(shape, texts);
+                }
+            }
+            _ => {}
+        }
+    }
+
     #[test]
-    fn pitch_reserves_full_height_before_depth_cards() {
-        let ctx = egui::Context::default();
+    fn pitch_reserves_full_height_and_keeps_cards_separate_for_all_formations() {
         let cache = EntityCache {
             my_clubs: None,
             players: vec![],
@@ -366,21 +403,245 @@ mod tests {
             selected: vec![None; 11],
             ranked: vec![vec![]; 11],
         };
-        let _ = ctx.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(1000.0, 800.0),
-                )),
-                ..Default::default()
-            },
-            |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    let start = ui.cursor().top();
-                    pitch(ui, &cache, &lineup, &BestXiState::default(), &mut None);
-                    assert!(ui.cursor().top() >= start + 410.0);
-                });
-            },
-        );
+        for width in [636.0, 1200.0] {
+            for formation in 0..FORMATIONS.len() {
+                let ctx = egui::Context::default();
+                let mut clicked = None;
+                let output = ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(width, 800.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            let start = ui.cursor().top();
+                            let available = ui.available_rect_before_wrap();
+                            pitch(
+                                ui,
+                                &cache,
+                                &lineup,
+                                &BestXiState {
+                                    formation,
+                                    ..Default::default()
+                                },
+                                &mut clicked,
+                            );
+                            assert!(ui.cursor().top() >= start + 600.0);
+                            assert!(ui.min_rect().right() <= available.right());
+                            let field = egui::Rect::from_min_size(
+                                available.min,
+                                egui::vec2(available.width().min(1000.0), 600.0),
+                            )
+                            .shrink(14.0);
+                            let cards: Vec<_> = FORMATIONS[formation]
+                                .slots
+                                .iter()
+                                .map(|slot| {
+                                    egui::Rect::from_center_size(
+                                        crate::ui::pitch::point(field, slot.x, slot.y),
+                                        egui::vec2(field.width() * 0.23, 72.0),
+                                    )
+                                })
+                                .collect();
+                            for (i, card) in cards.iter().enumerate() {
+                                assert!(field.contains_rect(*card));
+                                assert!(
+                                    cards
+                                        .iter()
+                                        .skip(i + 1)
+                                        .all(|other| !card.intersects(*other))
+                                );
+                            }
+                        });
+                    },
+                );
+                let mut texts = Vec::new();
+                for shape in output.shapes {
+                    text_contents(&shape.shape, &mut texts);
+                }
+                assert_eq!(
+                    texts
+                        .iter()
+                        .filter(|text| text.as_str() == "Unfilled")
+                        .count(),
+                    11
+                );
+                for slot in FORMATIONS[formation].slots {
+                    assert!(texts.iter().any(|text| text == slot.label));
+                }
+                assert!(clicked.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn selected_shirt_and_name_navigate_with_fit_and_growth_scores() {
+        let schemas = crate::game_version::GameBuild::Fm27Steam.schemas();
+        let mut raw = vec![0; schemas.player_struct_size];
+        for field in schemas.player_fields {
+            if let Some(crate::fields::FieldLocation::Direct { offset, encoding }) = field.offset {
+                match encoding {
+                    crate::fields::Encoding::Direct => raw[offset as usize] = 20,
+                    crate::fields::Encoding::Encoded => raw[offset as usize] = 98,
+                    _ => {}
+                }
+            }
+        }
+        for (key, value) in [("p_ca", 100u16), ("p_pa", 150u16)] {
+            let loc = schemas.field(key).unwrap().offset.unwrap();
+            let offset = loc.offset() as usize;
+            raw[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        let name = "A very long footballer name that must not overflow adjacent positions";
+        let cache = EntityCache {
+            my_clubs: None,
+            players: vec![crate::cache::CachedPlayer {
+                addr: 0x20000,
+                index: 7,
+                uid: 42,
+                name: name.into(),
+                ca: 100,
+                pa: 150,
+                dob_year: 2000,
+                raw,
+                person_shift: 0,
+                nation_id: None,
+                club_id: Some(42),
+                owning_club_id: Some(42),
+                value: None,
+            }],
+            staff: vec![],
+            clubs: vec![],
+            club_names: Default::default(),
+        };
+        for width in [636.0, 1200.0] {
+            for growth in [false, true] {
+                let lineup = best_xi::calculate(schemas, &cache, Some(42), 0, growth, 15);
+                let selected = lineup
+                    .selected
+                    .iter()
+                    .position(Option::is_some)
+                    .expect("fixture supplies a starter");
+                let candidate = lineup.selected[selected].unwrap();
+                let expected_score = if growth {
+                    "+50 room".into()
+                } else {
+                    format!("{:.1} fit", candidate.fit)
+                };
+                for click_name in [false, true] {
+                    let ctx = egui::Context::default();
+                    let state = BestXiState {
+                        growth,
+                        ..Default::default()
+                    };
+                    let mut target = egui::Pos2::ZERO;
+                    let mut clicked = None;
+                    for frame in 0..3 {
+                        let events = match frame {
+                            1 => vec![
+                                egui::Event::PointerMoved(target),
+                                egui::Event::PointerButton {
+                                    pos: target,
+                                    button: egui::PointerButton::Primary,
+                                    pressed: true,
+                                    modifiers: Default::default(),
+                                },
+                            ],
+                            2 => vec![egui::Event::PointerButton {
+                                pos: target,
+                                button: egui::PointerButton::Primary,
+                                pressed: false,
+                                modifiers: Default::default(),
+                            }],
+                            _ => vec![],
+                        };
+                        let output = ctx.run(
+                            egui::RawInput {
+                                screen_rect: Some(egui::Rect::from_min_size(
+                                    egui::Pos2::ZERO,
+                                    egui::vec2(width, 800.0),
+                                )),
+                                events,
+                                ..Default::default()
+                            },
+                            |ctx| {
+                                egui::CentralPanel::default().show(ctx, |ui| {
+                                    let field = egui::Rect::from_min_size(
+                                        ui.cursor().min,
+                                        egui::vec2(ui.available_width().min(1000.0), 600.0),
+                                    )
+                                    .shrink(14.0);
+                                    let slot = FORMATIONS[0].slots[selected];
+                                    target = crate::ui::pitch::point(field, slot.x, slot.y)
+                                        + egui::vec2(0.0, if click_name { 24.0 } else { -20.0 });
+                                    pitch(ui, &cache, &lineup, &state, &mut clicked);
+                                });
+                            },
+                        );
+                        let mut texts = Vec::new();
+                        for shape in output.shapes {
+                            text_contents(&shape.shape, &mut texts);
+                        }
+                        assert!(texts.iter().any(|text| text == &expected_score));
+                        assert!(texts.iter().any(|text| text == name));
+                    }
+                    assert_eq!(
+                        clicked,
+                        Some(0),
+                        "navigate using cache index, not process index"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn narrow_best_xi_uses_stacked_depth_instead_of_pitch() {
+        let ctx = egui::Context::default();
+        let cache = Arc::new(EntityCache {
+            my_clubs: Some(crate::cache::MyClubs {
+                club_ids: Default::default(),
+                label: "Test club".into(),
+            }),
+            players: vec![],
+            staff: vec![],
+            clubs: vec![],
+            club_names: Default::default(),
+        });
+        let mut state = BestXiState::default();
+        for width in [316.0, 600.0] {
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(width, 1000.0),
+                    )),
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        assert!(
+                            show(
+                                ui,
+                                &mut state,
+                                crate::game_version::GameBuild::Fm27Steam.schemas(),
+                                Some(&cache)
+                            )
+                            .is_none()
+                        );
+                    });
+                },
+            );
+            let mut texts = Vec::new();
+            for shape in output.shapes {
+                text_contents(&shape.shape, &mut texts);
+            }
+            assert!(texts.iter().any(|text| text == "Position depth"));
+            assert!(texts.iter().any(|text| text == "No eligible player"));
+            assert!(!texts.iter().any(|text| text == "Unfilled"));
+        }
     }
 }

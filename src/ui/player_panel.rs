@@ -5,7 +5,7 @@ use eframe::egui;
 use crate::fields::{self, Category, Entity};
 use crate::player::{self, Absence, GameDate, Injury, ListState, PlayerRecord};
 use crate::ratings;
-use crate::settings::{format_wage, WagePeriod};
+use crate::settings::{WagePeriod, format_wage};
 use crate::ui::field_widget::{self, FieldEdit};
 
 #[derive(PartialEq)]
@@ -359,15 +359,7 @@ fn show_positions_traits(
     }
 }
 
-/// Render the 15 position familiarities in a football-formation layout.
-/// Layout (3 columns per row):
-///   row 0: .   ST  .
-///   row 1: AML AMC AMR
-///   row 2: ML  MC  MR
-///   row 3: WBL DM  WBR
-///   row 4: DL  DC  DR
-///   row 5: .   SW  .
-///   row 6: .   GK  .
+/// Position familiarities on a responsive pitch, attacking towards the top.
 fn show_positions_formation(
     schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
@@ -386,18 +378,31 @@ fn show_positions_formation(
         (None, Some("pos_gk"), None),
     ];
 
-    egui::Grid::new("pos_formation")
-        .num_columns(3)
-        .spacing([14.0, 6.0])
-        .min_col_width(56.0)
-        .show(ui, |ui| {
-            for (left, center, right) in rows {
-                pos_cell(schemas, ui, *left, player, addr, edits);
-                pos_cell(schemas, ui, *center, player, addr, edits);
-                pos_cell(schemas, ui, *right, player, addr, edits);
-                ui.end_row();
-            }
-        });
+    let width = ui.available_width().min(560.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 630.0), egui::Sense::hover());
+    let field = crate::ui::pitch::paint(ui.painter(), rect);
+    for (row, keys) in rows.iter().enumerate() {
+        for (column, key) in [keys.0, keys.1, keys.2].into_iter().enumerate() {
+            let Some(key) = key else { continue };
+            let center = crate::ui::pitch::point(
+                field,
+                0.15 + column as f32 * 0.35,
+                0.065 + row as f32 * 0.145,
+            );
+            let cell = egui::Rect::from_center_size(center, egui::vec2(60.0, 70.0));
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .max_rect(cell)
+                    .layout(egui::Layout::top_down(egui::Align::Center)),
+                |ui| {
+                    ui.push_id(key, |ui| {
+                        pos_cell(schemas, ui, Some(key), player, addr, edits)
+                    });
+                },
+            );
+        }
+    }
+    ui.advance_cursor_after_rect(rect);
 }
 
 fn pos_cell(
@@ -411,6 +416,15 @@ fn pos_cell(
     match key {
         Some(k) => {
             if let Some(f) = schemas.field(k) {
+                let (kit, _) = ui.allocate_exact_size(egui::vec2(46.0, 30.0), egui::Sense::hover());
+                let color = if k == "pos_gk" {
+                    crate::ui::pitch::KEEPER
+                } else {
+                    crate::ui::pitch::OUTFIELD
+                };
+                crate::ui::pitch::shirt(ui.painter(), kit, f.label, color);
+                // Keep the schema-driven numeric editor, including invalid/raw and
+                // acknowledgement guards, unchanged. The shirt repeats its label.
                 if let Some(edit) = field_widget::attr_cell_compact(ui, &f, &mut player.raw, addr) {
                     edits.push(edit);
                 }
@@ -1381,7 +1395,7 @@ mod tests {
         })
     }
     #[test]
-    fn formation_stays_compact_and_rendering_preserves_values() {
+    fn formation_fits_desktop_and_narrow_and_rendering_preserves_values() {
         fn text_centers(
             shape: &egui::Shape,
             centers: &mut std::collections::HashMap<String, egui::Pos2>,
@@ -1437,8 +1451,7 @@ mod tests {
                 }
                 let original = player.raw.clone();
                 let mut centers = std::collections::HashMap::new();
-                // Grid column sizes are retained across frames; check both the
-                // first layout and subsequent layouts with cached geometry.
+                // Check first and retained layouts, including an invalid raw value.
                 for _ in 0..3 {
                     let mut edits = Vec::new();
                     let output = ctx.run(
@@ -1473,12 +1486,14 @@ mod tests {
                     // Text origins are pixel-rounded independently, so their
                     // painted centers can differ by one pixel.
                     let close = |a: f32, b: f32| assert!((a - b).abs() <= 1.0, "{a} != {b}");
-                    close(amc.x - aml.x, 70.0);
-                    close(amr.x - amc.x, 70.0);
+                    let pitch_width = (width - 16.0_f32).min(560.0);
+                    let column_gap = (pitch_width - 28.0) * 0.35;
+                    close(amc.x - aml.x, column_gap);
+                    close(amr.x - amc.x, column_gap);
                     close(aml.y, amc.y);
                     close(amc.y, amr.y);
-                    assert!(aml.x < 50.0, "formation must stay near the left edge");
-                    assert!(amr.x < 200.0, "formation must not stretch to page width");
+                    assert!(aml.x > 28.0, "left position must fit inside pitch");
+                    assert!(amr.x + 28.0 < width, "right control must fit narrow panels");
                     let dc = centers["DC"];
                     let sw = centers["SW"];
                     let gk = centers["GK"];

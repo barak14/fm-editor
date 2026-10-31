@@ -65,8 +65,13 @@ Each slot shows its selection and the next three eligible alternatives. By
 default alternatives exclude all starters; uncheck **Alternatives outside XI**
 to include players starting elsewhere, explicitly labeled with their slot.
 Alternatives are independent lists, not a unique substitute bench. Click any
-name to open that player's profile; Back returns to the lineup. The pitch is
-replaced by the same slot information in stacked cards on narrow windows.
+name or shirt to open that player's profile; Back returns to the lineup. The
+striped green pitch includes boundary, halfway and centre-circle markings,
+penalty and goal areas, goals and penalty spots. Vector shirt icons carry the
+position abbreviation; goalkeepers wear yellow and unfilled slots grey. Fit
+or growth headroom and player names remain below each shirt (hover a shortened
+name to read it in full). Below 620px of content width, the same slot information
+is presented in stacked depth cards instead of squeezing the pitch.
 
 Results use the current cache: **Reload Save** refreshes membership and attributes.
 Injuries, fitness, suspensions and competition registration are not checked.
@@ -92,7 +97,13 @@ Read-only sections/tabs are labelled. Attributes use four columns on wide views 
 
 Shared profile field rows, including reputation, use a fixed-width, left-aligned label column so value boxes line up regardless of label length. Long labels truncate with their full text available on hover. Compact CA/PA pairs, position cells and date controls retain their specialized layouts.
 
-The player **Positions & Traits** formation uses a compact, left-aligned grid with equally spaced left/centre/right columns. Sweeper is in the centre column below DC and above GK, using the same compact label/value cell as the other positions.
+The player **Positions & Traits** formation uses the same marked pitch and shirt
+icons, with all 15 positions arranged from ST at the top to GK at the bottom.
+Sweeper remains between DC and GK in the centre. The pitch adapts to narrow
+panels; numeric familiarity controls remain beneath each shirt, using the same
+schema-backed editing and Undo behaviour as other attributes. Invalid raw values
+remain visible and are not corrected by rendering. The yellow keeper shirt is
+distinct from the blue outfield shirts; familiarity is always shown numerically.
 
 ## FM27 player data
 

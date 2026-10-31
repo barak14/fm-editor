@@ -5,6 +5,7 @@
 ### Features
 
 - FM27 Steam player data: editable morale and transfer value; injuries with **Heal**; suspensions and holidays with **Lift ban**; other nationalities and favoured clubs; **Transfer listed** / **Loan listed** with the listing date; editable bonus and fee clauses. See the UI guide's "FM27 player data".
+- Replace the Best XI and player-position grids with a shared striped, fully marked football pitch and vector shirt icons, readable position abbreviations and a distinct goalkeeper kit. Player familiarity retains its numeric edit controls; Best XI retains player links, fit/growth scores and narrow-window stacked depth cards.
 
 ### Safety
 
