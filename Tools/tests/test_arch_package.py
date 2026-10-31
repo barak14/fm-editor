@@ -40,7 +40,7 @@ class ArchStagingTests(unittest.TestCase):
         self.archive = self.directory / "local-release.tar"
         self.checksums = self.directory / "SHA256SUMS"
         self.output = self.directory / "staged"
-        self.info = {"version": "0.1.0", "target": "x86_64-unknown-linux-gnu", "commit": COMMIT, "profile": "release"}
+        self.info = {"version": "0.2.0", "target": "x86_64-unknown-linux-gnu", "commit": COMMIT, "profile": "release"}
         self.files = {name: f"Fixture {name}\n".encode() for name in (
             "README.md", "LICENSE", "CHANGELOG.md", "AGENTS.md", "ROADMAP.md")}
         self.files.update({
@@ -75,7 +75,7 @@ class ArchStagingTests(unittest.TestCase):
 
     def stage(self, **kwargs):
         args = dict(archive=self.archive, checksums=self.checksums, commit=COMMIT,
-                    version="0.1.0", output_dir=self.output)
+                    version="0.2.0", output_dir=self.output)
         args.update(kwargs)
         return arch.stage(**args)
 
@@ -101,12 +101,12 @@ class ArchStagingTests(unittest.TestCase):
                 self.assert_rejected(self.stage_fixture, "checksum|SHA-256")
 
     def test_version_must_match_static_recipe(self):
-        for version in ("0.1.1", "../0.1.0", "0.1.0-rc1"):
+        for version in ("0.1.0", "../0.2.0", "0.2.0-rc1"):
             with self.subTest(version=version):
                 self.assert_rejected(lambda: self.stage_fixture(version=version), "only supports")
 
     def test_build_identity_and_release_profile(self):
-        for field, value in (("profile", "debug"), ("version", "0.2.0"),
+        for field, value in (("profile", "debug"), ("version", "0.1.0"),
                              ("commit", "b" * 40), ("target", "x86_64-pc-windows-msvc")):
             with self.subTest(field=field):
                 original = self.info[field]
@@ -183,7 +183,7 @@ class ArchRecipeTests(unittest.TestCase):
         return re.findall(r"'([^']*)'", re.search(rf"^{name}=\((.*?)\)$", self.recipe, re.M | re.S)[1])
 
     def test_identity_dependencies_and_prebuilt_options(self):
-        for assignment in ("pkgname=fm-editor-bin", "pkgver=0.1.0", "pkgrel=1"):
+        for assignment in ("pkgname=fm-editor-bin", "pkgver=0.2.0", "pkgrel=1"):
             self.assertIn(assignment, self.recipe)
         self.assertEqual(self.array("arch"), ["x86_64"])
         self.assertEqual(self.array("depends"), ["glibc", "gcc-libs", "libglvnd", "libx11", "libxcursor",

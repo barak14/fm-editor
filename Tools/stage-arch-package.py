@@ -16,10 +16,10 @@ import tempfile
 from native_package_common import extract_portable, verify_checksum
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.1.0"
-ARCHIVE_NAME = "fm-editor-0.1.0-linux-input.tar"
-ARCHIVE_ROOT = "fm-editor-0.1.0-linux-x64"
-ARCHIVE_SHA256 = "186a0ab076084c7baaf70e0a5e17080f5e314b9a8900008540f1f2621446d594"
+VERSION = "0.2.0"
+ARCHIVE_NAME = "fm-editor-0.2.0-linux-input.tar"
+ARCHIVE_ROOT = "fm-editor-0.2.0-linux-x64"
+ARCHIVE_SHA256 = "d6dd6a85e48f8db13351864b42cf43888b13ec6e448640809045de9a9c079bdb"
 DESKTOP_SHA256 = "d54a0fd346af7814c55176bcb0754d38ac1fbf957ac7243ab211a9f5cf5864a5"
 ICON_SHA256 = "205ab5d2560312caeb1cda6b33b2e92baa4b4ab54e00a79a54b8b538cae348a8"
 

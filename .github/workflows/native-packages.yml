@@ -18,7 +18,7 @@ on:
       release_tag:
         description: Existing release tag whose portable assets should be packaged
         required: true
-        default: v0.1.0
+        default: v0.2.0
         type: string
 
 permissions:
@@ -26,11 +26,11 @@ permissions:
   actions: read
 
 concurrency:
-  group: native-${{ github.ref }}-${{ inputs.release_tag || 'v0.1.0' }}
+  group: native-${{ github.ref }}-${{ inputs.release_tag || 'v0.2.0' }}
   cancel-in-progress: true
 
 env:
-  RELEASE_TAG: ${{ inputs.release_tag || 'v0.1.0' }}
+  RELEASE_TAG: ${{ inputs.release_tag || 'v0.2.0' }}
 
 jobs:
   inputs:

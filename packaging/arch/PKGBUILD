@@ -1,6 +1,6 @@
 # Prebuilt release package; no compilation or privilege changes.
 pkgname=fm-editor-bin
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc='Real-time memory editor for Football Manager'
 arch=('x86_64')
@@ -14,7 +14,7 @@ options=('!strip' '!debug')
 source=("fm-editor-${pkgver}-linux-input.tar"
         'fm-editor.desktop'
         'fm-editor.svg')
-sha256sums=('186a0ab076084c7baaf70e0a5e17080f5e314b9a8900008540f1f2621446d594'
+sha256sums=('d6dd6a85e48f8db13351864b42cf43888b13ec6e448640809045de9a9c079bdb'
             'd54a0fd346af7814c55176bcb0754d38ac1fbf957ac7243ab211a9f5cf5864a5'
             '205ab5d2560312caeb1cda6b33b2e92baa4b4ab54e00a79a54b8b538cae348a8')
 
