@@ -483,8 +483,9 @@ Live feature UI: manual current Club ID 1751 returned 24 players; My clubs retur
 
 ## Live write verification (2026-10-31, Steam, Spurs save)
 
-FM27 Steam under Proton, run in the headless session (`Tools/fm-headless.sh`),
-with a debug editor on the same display. Game date Mon 13 Jul 2026, 09:00. Each
+FM27 Steam under Proton on a test save, run in the headless session
+(`Tools/fm-headless.sh`, not visible to the user) with a debug editor on the
+same display. Game date Mon 13 Jul 2026, 09:00. Each
 write went through the editor's UI and acknowledged-write path, was read back
 through fm-debug, compared with FM's own screens, then undone. No test value is
 left in memory.

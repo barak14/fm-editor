@@ -71,6 +71,23 @@ replace checking against FM's own values. Verified with FM27 (Steam, Proton)
 only: render, `grim` capture, `xdotool` clicks and typing. FM24 and FM26 use the
 same launch option but have not been run headless yet.
 
+**Nobody watches the headless screen.** The user cannot see the headless
+display, so they cannot confirm what happened in FM or the editor there. Take a
+`shot` after each step and report what FM showed in words: the screen, the
+value and the game date. Do not ask the user to check it on their own monitor.
+Only one session should drive the shared display at a time. Another editor
+launched on it can take focus and swallow clicks. Before typing, run
+`xdotool windowfocus` on the target window, because `windowactivate` alone
+does not move keyboard focus to the editor.
+
+**The live save is a test save.** The FM27 save used for headless checks (Spurs,
+July 2026) exists for testing. Controlled test writes are acceptable there, and
+a test value that cannot be restored is recorded as a finding rather than
+treated as damage. Restore what you can and document the rest. This does not
+relax the write rules for real use: writes still go through the
+acknowledged-write/undo path, and you should not assume any other save is a
+test save.
+
 
 ## Field research and verification
 
