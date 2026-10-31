@@ -37,21 +37,29 @@ desktop. It needs `labwc`, `wlr-randr`, `grim` and `xdotool`.
 Set this Steam launch option once per FM version (use the main worktree's path):
 
 ```
-DISPLAY=$(bash /path/to/fm-editor/Tools/fm-headless.sh display 2>/dev/null || echo "$DISPLAY") %command%
+env $(bash /path/to/fm-editor/Tools/fm-headless.sh launch-env 2>/dev/null) %command%
 ```
 
-`display` prints the headless X display only while the compositor is alive, so
-FM opens on the normal desktop whenever the harness is stopped.
+`launch-env` prints `DISPLAY` and a frame cap (`DXVK_FRAME_RATE`,
+`VKD3D_FRAME_RATE`) only while the compositor is alive, and nothing otherwise,
+so FM opens normally on the desktop whenever the harness is stopped. Measured
+on the FM27 3D main menu (7900 XTX shared with the desktop): FM added about 22
+percentage points of GPU load with a 60 Hz output and about 10 at 15 Hz, so
+the output rate alone does not throttle it; the DXVK cap does that.
 
 ```bash
-bash Tools/fm-headless.sh start           # optional size, default 1920x1080
+bash Tools/fm-headless.sh start           # optional WxH, default 1920x1080
 bash Tools/fm-headless.sh launch fm27     # fm24 | fm26 | fm27 | <appid>
 bash Tools/fm-headless.sh status          # shows whether FM is on it
 bash Tools/fm-headless.sh shot            # grim capture; prints the PNG path
-eval "$(bash Tools/fm-headless.sh env)"   # DISPLAY/WAYLAND_DISPLAY for clients
-xdotool mousemove 400 280 click 1         # input, after the eval above
+(eval "$(bash Tools/fm-headless.sh env)"; xdotool mousemove 400 280 click 1)
 bash Tools/fm-headless.sh stop            # refuses while FM is on it
 ```
+
+`FMH_FPS` (default 30, `0` uncapped) and `FMH_REFRESH` (output Hz, default 30)
+are read by `start`, and the cap applies to the next FM launch. Run `env`
+clients in a subshell as above: exporting the headless `DISPLAY` into a
+long-lived shell makes later commands open there instead of on the desktop.
 
 The compositor is detached from the shell that starts it, because FM loses its
 display and will likely crash if the compositor stops. Save and quit FM before

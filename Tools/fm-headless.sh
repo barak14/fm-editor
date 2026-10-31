@@ -8,15 +8,19 @@
 # access is unaffected: the editor attaches to fm.exe as usual.
 #
 # Steam launch option (per FM version, set once):
+#   env $(bash <repo>/Tools/fm-headless.sh launch-env 2>/dev/null) %command%
+# `launch-env` prints DISPLAY plus frame-rate caps only while this compositor
+# is alive, and nothing otherwise, so FM falls back to the normal desktop when
+# the harness is stopped or has died. The older form still works but has no
+# frame cap:
 #   DISPLAY=$(bash <repo>/Tools/fm-headless.sh display 2>/dev/null || echo "$DISPLAY") %command%
-# `display` prints the X display only while this compositor is alive, so FM
-# falls back to the normal desktop when the harness is stopped or has died.
 #
 # Usage: bash Tools/fm-headless.sh <command>
 #   start [WxH]        start the compositor (default size 1920x1080)
 #   stop [--force]     stop it; refuses while FM is still using it
 #   status             show displays, pid and FM processes on it
-#   display            print the X display if running (for the launch option)
+#   launch-env         print env assignments for the Steam launch option
+#   display            print the X display if running
 #   env                print `export` lines for running clients inside it
 #   launch <version>   start FM via Steam: fm24 | fm26 | fm27 | <steam appid>
 #   shot [file.png]    screenshot the headless output, print the file path
@@ -24,6 +28,14 @@
 # Environment:
 #   FMH_DIR          state directory (default /tmp/fmh)
 #   FMH_RENDER_NODE  render node (default: first discrete GPU, else renderD128)
+#   FMH_REFRESH      headless output refresh in Hz (default 30)
+#   FMH_FPS          FM frame cap via DXVK/VKD3D (default 30; 0 = uncapped).
+#                    Recorded by `start` (Steam's shell does not see the
+#                    caller's environment); applies to the next FM launch.
+#
+# The frame cap matters because FM keeps rendering its 3D menus at full speed
+# when nothing throttles it; an idle game otherwise costs a large share of the
+# GPU the desktop is also using.
 #
 # Stopping the compositor while FM runs on it takes FM's display away and will
 # likely crash the game, losing unsaved progress. Save and quit FM first.
@@ -77,6 +89,8 @@ pick_render_node() {
 cmd_start() {
   local size="${1:-1920x1080}" pid node disp way i
   [[ "$size" =~ ^[0-9]+x[0-9]+$ ]] || die "size must be WxH, got '$size'"
+  [[ "${FMH_FPS:-30}" =~ ^[0-9]+$ ]] || die "FMH_FPS must be a number"
+  [[ "${FMH_REFRESH:-30}" =~ ^[0-9]+$ ]] || die "FMH_REFRESH must be a number"
   if pid=$(running_pid); then
     echo "already running (pid $pid, DISPLAY=$(cat "$DISPLAY_FILE" 2>/dev/null))"
     return 0
@@ -122,11 +136,13 @@ EOF
   [ -s "$DIR/display.pending" ] || die "timed out waiting for XWayland; see $DIR/labwc.log"
   disp=$(cat "$DIR/display.pending")
   way=$(cat "$DIR/wayland.pending")
-  WAYLAND_DISPLAY="$way" wlr-randr --output HEADLESS-1 --custom-mode "$size" \
+  WAYLAND_DISPLAY="$way" wlr-randr --output HEADLESS-1 \
+    --custom-mode "${size}@${FMH_REFRESH:-30}Hz" \
     || die "could not set output size $size"
+  echo "${FMH_FPS:-30}" > "$DIR/fps"
   mv "$DIR/wayland.pending" "$WAYLAND_FILE"
   mv "$DIR/display.pending" "$DISPLAY_FILE"
-  echo "started: DISPLAY=$disp WAYLAND_DISPLAY=$way size=$size render=$node pid=$(cat "$PIDFILE")"
+  echo "started: DISPLAY=$disp WAYLAND_DISPLAY=$way size=$size@${FMH_REFRESH:-30}Hz fps-cap=${FMH_FPS:-30} render=$node pid=$(cat "$PIDFILE")"
 }
 
 cmd_stop() {
@@ -168,6 +184,20 @@ cmd_display() {
   cat "$DISPLAY_FILE"
 }
 
+# Empty output (exit 0) when not running: `env $(...) %command%` then runs the
+# game unchanged on the desktop.
+cmd_launch_env() {
+  local fps
+  running_pid >/dev/null && [ -s "$DISPLAY_FILE" ] || return 0
+  fps=$(cat "$DIR/fps" 2>/dev/null || echo 30)
+  [[ "$fps" =~ ^[0-9]+$ ]] || fps=30
+  printf 'DISPLAY=%s' "$(cat "$DISPLAY_FILE")"
+  if [ "$fps" -gt 0 ]; then
+    printf ' DXVK_FRAME_RATE=%s VKD3D_FRAME_RATE=%s' "$fps" "$fps"
+  fi
+  printf '\n'
+}
+
 cmd_env() {
   running_pid >/dev/null || die "not running"
   echo "export DISPLAY=$(cat "$DISPLAY_FILE") WAYLAND_DISPLAY=$(cat "$WAYLAND_FILE")"
@@ -206,8 +236,9 @@ case "${1:-}" in
   stop)    shift; cmd_stop "$@" ;;
   status)  cmd_status ;;
   display) cmd_display ;;
+  launch-env) cmd_launch_env ;;
   env)     cmd_env ;;
   launch)  shift; cmd_launch "$@" ;;
   shot)    shift; cmd_shot "$@" ;;
-  *) sed -n '2,31p' "$0" >&2; exit 1 ;;
+  *) awk 'NR>1 && /^set -euo/ {exit} NR>1 {print}' "$0" >&2; exit 1 ;;
 esac
