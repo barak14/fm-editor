@@ -368,6 +368,12 @@ impl FmEditorApp {
                     self.cache_load_state = CacheLoadState::Ready;
                 }
                 BridgeResult::PingOk(game_date) => self.game_date = game_date,
+                BridgeResult::CountsChanged(counts, game_date) => {
+                    // Same save: keep entity state and Undo. The entity
+                    // cache predates the new records; Reload Save adds them.
+                    self.game_date = game_date;
+                    self.entity_counts = Some(counts);
+                }
                 BridgeResult::PingFail => {
                     self.game_date = None;
                     self.conn = ConnState::Disconnected;

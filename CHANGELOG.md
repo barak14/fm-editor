@@ -17,6 +17,7 @@
 - FM27: the club finance value previously shown as an editable "Spending Wage Budget" is FM's current wage total (incl. bonuses). It is now shown read-only as **Current Wage Total**, beside the read-only **Wage Budget**.
 - Club search matches the full name as well as the short name ("Tottenham" finds Spurs).
 - FM27: club headers show the club's nation (Spurs England, Swansea Wales) instead of "Unknown".
+- Undo history survives FM adding or removing records while the game advances (FM27 added a staff member during one game day, which previously cleared Undo). The editor now treats a save as replaced only when its club objects move or the entity arrays become unreadable, so reloading a save still clears Undo.
 
 ## 0.2.0 (prerelease)
 

@@ -1,7 +1,8 @@
 //! Worker thread loop — the heart of the bridge. Owns the `FmProcess` and
 //! the `ArrayCache`, dispatches each `BridgeCmd` to the appropriate handler,
-//! and implements the Attach/Ping state machine with count-stability
-//! save-ready detection.
+//! and implements the Attach/Ping state machine: count-stability promotes a
+//! save to ready, and the save identity (see `SAVE_IDENTITY_SAMPLE`) decides
+//! whether it is still the same save.
 //!
 //! Adding a new command: drop a handler module (e.g. `bridge/my_thing.rs`)
 //! with a `pub(super) fn handle(...)` and add one match arm below. The arm
@@ -30,7 +31,20 @@ pub(super) struct ArrayCache {
     pub(super) staff_count: usize,
     pub(super) clubs_data: u64,
     pub(super) clubs_count: usize,
+    /// Club object addresses at the start of the club array (see
+    /// `SAVE_IDENTITY_SAMPLE`). Empty when they could not be read.
+    pub(super) save_identity: Vec<u64>,
 }
+
+/// Number of club objects whose addresses identify the loaded save.
+///
+/// FM allocates new entity objects whenever it loads a save, so the same
+/// addresses mean the same loaded save, while counts can change without a
+/// new save. FM27 Steam (2026-10-31): one game day added a staff record
+/// (49,197 → 49,198); across a later game day every sampled club, player
+/// and staff address stayed put; reloading the same save replaced all of
+/// them, and the counts then differed by one from before the reload.
+const SAVE_IDENTITY_SAMPLE: usize = 8;
 
 pub(super) fn build_cache(fm: &FmProcess) -> ArrayCache {
     let (hd, _, hc) = player::humans_array(fm).unwrap_or((0, 0, 0));
@@ -43,13 +57,28 @@ pub(super) fn build_cache(fm: &FmProcess) -> ArrayCache {
         staff_count: sc,
         clubs_data: cd,
         clubs_count: cc,
+        save_identity: read_save_identity(fm, cd, cc),
     }
 }
 
-/// Cheap plausibility check on an ArrayCache. Non-null userspace pointers
-/// and counts in realistic FM26 ranges. Does NOT guarantee save-ready —
-/// must be paired with count-stability tracking to reject save-creation
-/// mid-populate.
+fn read_save_identity(fm: &FmProcess, clubs_data: u64, clubs_count: usize) -> Vec<u64> {
+    let n = clubs_count.min(SAVE_IDENTITY_SAMPLE);
+    if n == 0 || !player::is_valid_ptr(clubs_data) {
+        return Vec::new();
+    }
+    match fm.read_bytes(clubs_data, n * 8) {
+        Ok(bytes) if bytes.len() == n * 8 => bytes
+            .chunks_exact(8)
+            .map(|c| u64::from_le_bytes(c.try_into().expect("8-byte chunk")))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Cheap plausibility check on an ArrayCache: non-null userspace pointers,
+/// counts in realistic ranges and a readable save identity. Does NOT
+/// guarantee save-ready — must be paired with count-stability tracking to
+/// reject save-creation mid-populate.
 fn counts_are_plausible(ac: &ArrayCache) -> bool {
     if ac.humans_data < 0x10000 || ac.humans_data > 0x7FFFFFFFFFFF {
         return false;
@@ -60,6 +89,9 @@ fn counts_are_plausible(ac: &ArrayCache) -> bool {
     if ac.clubs_data < 0x10000 || ac.clubs_data > 0x7FFFFFFFFFFF {
         return false;
     }
+    if ac.save_identity.is_empty() || !ac.save_identity.iter().all(|&p| player::is_valid_ptr(p)) {
+        return false;
+    }
     (1000..=2_000_000).contains(&ac.humans_count)
         && (1000..=2_000_000).contains(&ac.staff_count)
         && (100..=200_000).contains(&ac.clubs_count)
@@ -67,6 +99,49 @@ fn counts_are_plausible(ac: &ArrayCache) -> bool {
 
 fn counts_tuple(ac: &ArrayCache) -> (usize, usize, usize) {
     (ac.humans_count, ac.staff_count, ac.clubs_count)
+}
+
+fn entity_counts(ac: &ArrayCache) -> EntityCounts {
+    EntityCounts {
+        players: ac.humans_count,
+        staff: ac.staff_count,
+        clubs: ac.clubs_count,
+    }
+}
+
+/// What one status probe means for the attached game's save.
+#[derive(Debug, PartialEq)]
+enum PingTransition {
+    /// No save is loaded yet, or its counts are not yet stable.
+    Waiting,
+    /// Plausible counts were seen twice in a row: the save is ready.
+    SaveReady,
+    /// The loaded save is gone or was replaced. Undo addresses must not be
+    /// reused, so the app discards entity state.
+    SaveUnloaded,
+    /// The same save is still loaded. FM can add or remove records while the
+    /// game advances; that changes the counts but not the save.
+    SameSave { counts_changed: bool },
+}
+
+fn ping_transition(
+    loaded: Option<&ArrayCache>,
+    current: &ArrayCache,
+    last_counts: Option<(usize, usize, usize)>,
+) -> PingTransition {
+    let plausible = counts_are_plausible(current);
+    match loaded {
+        None if plausible && last_counts == Some(counts_tuple(current)) => {
+            PingTransition::SaveReady
+        }
+        None => PingTransition::Waiting,
+        Some(loaded) if plausible && loaded.save_identity == current.save_identity => {
+            PingTransition::SameSave {
+                counts_changed: counts_tuple(loaded) != counts_tuple(current),
+            }
+        }
+        Some(_) => PingTransition::SaveUnloaded,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -238,20 +313,15 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                         let current = build_cache(f);
                         let plausible = counts_are_plausible(&current);
                         let current_tuple = counts_tuple(&current);
-                        let stable = plausible && last_counts == Some(current_tuple);
-                        let was_ready = cache.is_some();
 
-                        match (was_ready, stable) {
-                            (false, true) => {
+                        match ping_transition(cache.as_ref(), &current, last_counts) {
+                            PingTransition::SaveReady => {
                                 // Two consecutive stable probes → save ready.
                                 // Auto-trigger human manager + entity cache load.
-                                let counts = EntityCounts {
-                                    players: current.humans_count,
-                                    staff: current.staff_count,
-                                    clubs: current.clubs_count,
-                                };
+                                let counts = entity_counts(&current);
                                 cache = Some(current);
-                                let _ = tx.send(BridgeResult::Connected(pid, counts, f.game_date()));
+                                let _ =
+                                    tx.send(BridgeResult::Connected(pid, counts, f.game_date()));
                                 // Human manager (fast, goes first)
                                 if let (Some(f2), Some(_)) = (&fm, &cache) {
                                     match entity_load::load_human_manager(f2) {
@@ -275,13 +345,25 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                                     }
                                 }
                             }
-                            (true, false) => {
-                                // Was Ready; counts drifted or became
-                                // implausible → save unloaded
+                            PingTransition::SaveUnloaded => {
+                                // The save identity changed or the arrays became
+                                // implausible → a different save, or none.
                                 cache = None;
                                 let _ = tx.send(BridgeResult::SaveUnloaded(pid));
                             }
-                            _ => {
+                            PingTransition::SameSave {
+                                counts_changed: true,
+                            } => {
+                                // Same save, records added or removed. The arrays
+                                // may have been reallocated, so keep the new bounds.
+                                let counts = entity_counts(&current);
+                                cache = Some(current);
+                                let _ = tx.send(BridgeResult::CountsChanged(counts, f.game_date()));
+                            }
+                            PingTransition::SameSave {
+                                counts_changed: false,
+                            }
+                            | PingTransition::Waiting => {
                                 let _ = tx.send(BridgeResult::PingOk(f.game_date()));
                             }
                         }
@@ -326,6 +408,91 @@ fn checked_write(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn arrays(counts: (usize, usize, usize), identity: &[u64]) -> ArrayCache {
+        ArrayCache {
+            humans_data: 0x1_0000_0000,
+            humans_count: counts.0,
+            staff_data: 0x2_0000_0000,
+            staff_count: counts.1,
+            clubs_data: 0x3_0000_0000,
+            clubs_count: counts.2,
+            save_identity: identity.to_vec(),
+        }
+    }
+
+    const SAVE_A: [u64; 3] = [0x2_56F3_0040, 0x2_56F3_01B0, 0x2_56F3_0320];
+    const SAVE_B: [u64; 3] = [0x2_57CB_0930, 0x2_57CB_07C0, 0x2_57CB_0650];
+    const COUNTS: (usize, usize, usize) = (103_516, 49_197, 33_471);
+
+    #[test]
+    fn records_added_to_the_same_save_keep_it_loaded() {
+        // FM27: one game day added a staff record to the loaded save.
+        let loaded = arrays(COUNTS, &SAVE_A);
+        let grown = arrays((103_516, 49_198, 33_471), &SAVE_A);
+        assert_eq!(
+            ping_transition(Some(&loaded), &grown, Some(COUNTS)),
+            PingTransition::SameSave {
+                counts_changed: true
+            }
+        );
+        assert_eq!(
+            ping_transition(Some(&loaded), &arrays(COUNTS, &SAVE_A), Some(COUNTS)),
+            PingTransition::SameSave {
+                counts_changed: false
+            }
+        );
+    }
+
+    #[test]
+    fn a_replaced_save_is_unloaded_even_with_unchanged_counts() {
+        let loaded = arrays(COUNTS, &SAVE_A);
+        for counts in [COUNTS, (103_517, 49_197, 33_471)] {
+            assert_eq!(
+                ping_transition(Some(&loaded), &arrays(counts, &SAVE_B), Some(COUNTS)),
+                PingTransition::SaveUnloaded
+            );
+        }
+    }
+
+    #[test]
+    fn empty_unreadable_or_implausible_arrays_unload_the_save() {
+        let loaded = arrays(COUNTS, &SAVE_A);
+        for current in [
+            arrays((0, 0, 0), &[]),
+            arrays(COUNTS, &[]),
+            arrays(COUNTS, &[SAVE_A[0], 0, SAVE_A[2]]),
+            arrays((10, 49_197, 33_471), &SAVE_A),
+        ] {
+            assert_eq!(
+                ping_transition(Some(&loaded), &current, Some(COUNTS)),
+                PingTransition::SaveUnloaded
+            );
+        }
+    }
+
+    #[test]
+    fn a_save_becomes_ready_only_after_two_matching_plausible_probes() {
+        let current = arrays(COUNTS, &SAVE_A);
+        assert_eq!(
+            ping_transition(None, &current, None),
+            PingTransition::Waiting
+        );
+        assert_eq!(
+            ping_transition(None, &current, Some((103_516, 49_196, 33_471))),
+            PingTransition::Waiting
+        );
+        assert_eq!(
+            ping_transition(None, &current, Some(COUNTS)),
+            PingTransition::SaveReady
+        );
+        // An unreadable identity never promotes, so Undo is never tied to a
+        // save the bridge cannot recognise later.
+        assert_eq!(
+            ping_transition(None, &arrays(COUNTS, &[]), Some(COUNTS)),
+            PingTransition::Waiting
+        );
+    }
     #[test]
     fn checked_write_matches_snapshot_before_writing() {
         use std::cell::RefCell;
