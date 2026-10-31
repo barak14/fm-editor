@@ -3,7 +3,7 @@
 use eframe::egui;
 
 use crate::fields::{Category, Encoding, Entity, Field};
-use crate::settings::{Theme, theme_data_id};
+use crate::settings::{theme_data_id, Theme};
 
 use super::navigation;
 
@@ -1103,49 +1103,64 @@ pub fn optional_money_edit(
     base_addr: u64,
 ) -> Option<FieldEdit> {
     let offset = usize::try_from(field.offset.as_ref()?.offset()).ok()?;
-    let old_bytes: [u8; 4] = raw.get(offset..offset + 4)?.try_into().ok()?;
-    let old = i32::from_le_bytes(old_bytes);
-    if old < -1 {
+    let end = offset.checked_add(4)?;
+    let old = i32::from_le_bytes(raw.get(offset..end)?.try_into().ok()?);
+    let edit = money_edit_at(ui, label, old, base_addr.checked_add(offset as u64)?, true)?;
+    raw[offset..end].copy_from_slice(&edit.new_raw);
+    Some(edit)
+}
+
+/// Edit a decoded money amount at its verified absolute address. The caller
+/// decides whether to retain proposed bytes or wait for the write acknowledgement.
+pub fn money_edit_at(
+    ui: &mut egui::Ui,
+    label: &str,
+    old: i32,
+    addr: u64,
+    allow_unset: bool,
+) -> Option<FieldEdit> {
+    let min = if allow_unset { -1 } else { 0 };
+    if old < min {
         info_label(ui, label, format!("raw={old}"));
         return None;
     }
     let mut val = old as i64;
     let mut changed = false;
-    ui.horizontal(|ui| {
-        profile_label(ui, label);
-        changed = number_edit(
-            ui,
-            egui::DragValue::new(&mut val)
-                .update_while_editing(false)
-                .range(-1..=i32::MAX as i64)
-                .speed(10_000.0)
-                .custom_formatter(|n, _| {
-                    if n < 0.0 {
-                        "Not set".into()
-                    } else {
-                        format!("£{n:.0}")
-                    }
-                })
-                .custom_parser(|s| {
-                    let t = s.trim().trim_start_matches('£').replace(',', "");
-                    if t.is_empty() || t.eq_ignore_ascii_case("not set") {
-                        Some(-1.0)
-                    } else {
-                        t.parse().ok()
-                    }
-                }),
-            90.0,
-        );
+    ui.push_id(("money", addr), |ui| {
+        ui.horizontal(|ui| {
+            profile_label(ui, label);
+            changed = number_edit(
+                ui,
+                egui::DragValue::new(&mut val)
+                    .update_while_editing(false)
+                    .range(min as i64..=i32::MAX as i64)
+                    .speed(10_000.0)
+                    .custom_formatter(|n, _| {
+                        if n < 0.0 {
+                            "Not set".into()
+                        } else {
+                            format!("£{n:.0}")
+                        }
+                    })
+                    .custom_parser(move |s| {
+                        let t = s.trim().trim_start_matches('£').replace(',', "");
+                        if allow_unset && (t.is_empty() || t.eq_ignore_ascii_case("not set")) {
+                            Some(-1.0)
+                        } else {
+                            t.parse().ok()
+                        }
+                    }),
+                90.0,
+            );
+        });
     });
     if !changed {
         return None;
     }
-    let new = val.clamp(-1, i32::MAX as i64) as i32;
+    let new = val.clamp(min as i64, i32::MAX as i64) as i32;
     if new == old {
         return None;
     }
-    let new_bytes = new.to_le_bytes();
-    raw[offset..offset + 4].copy_from_slice(&new_bytes);
     let show = |v: i32| {
         if v < 0 {
             "Not set".to_string()
@@ -1154,9 +1169,9 @@ pub fn optional_money_edit(
         }
     };
     Some(FieldEdit {
-        addr: base_addr + offset as u64,
-        old_raw: old_bytes.to_vec(),
-        new_raw: new_bytes.to_vec(),
+        addr,
+        old_raw: old.to_le_bytes().to_vec(),
+        new_raw: new.to_le_bytes().to_vec(),
         description: format!("{label}: {} \u{2192} {}", show(old), show(new)),
     })
 }
@@ -1310,11 +1325,9 @@ mod tests {
         let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
         date_frame(&ctx, &mut raw, 100, true, click_text(&output, "Calendar"));
         let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
-        assert!(
-            text_shapes(&output.shapes)
-                .iter()
-                .any(|s| s.galley.text() == "[1]")
-        );
+        assert!(text_shapes(&output.shapes)
+            .iter()
+            .any(|s| s.galley.text() == "[1]"));
         let (_, edits) = date_frame(&ctx, &mut raw, 100, true, click_text(&output, "2"));
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].addr, 100);
@@ -1347,10 +1360,9 @@ mod tests {
             let (_, edits) = date_frame(&ctx, &mut raw, 200, ancestor, vec![]);
             assert!(edits.is_empty());
             assert_eq!(raw, original);
-            assert!(
-                ctx.data_mut(|d| d.get_temp::<CalendarDraft>(calendar_id(200, 0)))
-                    .is_none()
-            );
+            assert!(ctx
+                .data_mut(|d| d.get_temp::<CalendarDraft>(calendar_id(200, 0)))
+                .is_none());
             let (_, edits) = date_frame(&ctx, &mut raw, 100, ancestor, vec![]);
             assert!(edits.is_empty());
             if !editing || !ancestor {
@@ -1367,11 +1379,9 @@ mod tests {
             let (output, edits) = date_frame(&ctx, &mut raw, 100, true, vec![]);
             assert!(edits.is_empty());
             assert_eq!(raw, original);
-            assert!(
-                !text_shapes(&output.shapes)
-                    .iter()
-                    .any(|s| s.galley.text() == "Calendar")
-            );
+            assert!(!text_shapes(&output.shapes)
+                .iter()
+                .any(|s| s.galley.text() == "Calendar"));
         }
     }
 
@@ -1538,10 +1548,14 @@ mod tests {
                         assert!(
                             raw_u32_edit(ui, &field(Encoding::RawU32, 0), &mut raw, 0).is_none()
                         );
-                        assert!(
-                            ca_pa_edit(ui, &mut raw, &attribute, &field(Encoding::Direct, 1), 0)
-                                .is_empty()
-                        );
+                        assert!(ca_pa_edit(
+                            ui,
+                            &mut raw,
+                            &attribute,
+                            &field(Encoding::Direct, 1),
+                            0
+                        )
+                        .is_empty());
                         assert!(
                             dob_edit(ui, &mut dob, &field(Encoding::DateDayYear, 0), 0).is_empty()
                         );

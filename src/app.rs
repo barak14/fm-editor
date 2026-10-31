@@ -11,7 +11,7 @@ use crate::cache::{CachedClub, CachedPlayer, CachedStaff, EntityCache};
 use crate::game_version::GameBuild;
 use crate::player::PlayerRecord;
 use crate::process::RunningGame;
-use crate::settings::{AppSettings, Scale, Theme, WagePeriod, theme_data_id};
+use crate::settings::{theme_data_id, AppSettings, Scale, Theme, WagePeriod};
 use crate::staff::StaffRecord;
 use crate::ui::navigation::{self, BrowserHistory};
 use crate::ui::pages::{
@@ -494,6 +494,7 @@ impl FmEditorApp {
             if let (Some(raw), Some(base)) = (&mut p.contract_raw, p.contract_addr) {
                 patch_buffer(raw, base, entry.addr, bytes);
             }
+            patch_player_list_buffers(p, entry.addr, bytes);
         }
         // A human manager's identity edits land `identity_shift` bytes past
         // the schema offset; map them back before patching the buffer.
@@ -572,6 +573,22 @@ impl FmEditorApp {
         let Some(completion) = self.writes.complete(id, success) else {
             return;
         };
+        // Keep the edited player's list membership fresh even if the user
+        // navigated to another entity while this acknowledgement was pending.
+        let list_players: std::collections::BTreeSet<_> = if completion.success
+            && self.conn.is_ready()
+        {
+            self.player_snapshots
+                .values()
+                .chain(self.selected_player.iter())
+                .filter(|p| {
+                    is_player_list_write(p, completion.entry.addr, completion.entry.new_raw.len())
+                })
+                .map(|p| (p.addr, p.index))
+                .collect()
+        } else {
+            Default::default()
+        };
         self.reconcile_write_buffers(&completion.entry, completion.was_undo, completion.success);
         if completion.success {
             if completion.was_undo {
@@ -587,6 +604,13 @@ impl FmEditorApp {
             self.write_error = Some(message);
             if completion.was_undo {
                 self.undo_stack.push(completion.entry);
+            }
+        }
+        for (addr, index) in list_players {
+            // The ordinary final-ack reload below already refreshes the active
+            // player. All other owners get an identity-bound background reload.
+            if self.writes.is_pending() || !self.is_active_entity(EntityTabType::Player, addr) {
+                self.bridge.send(BridgeCmd::LoadPlayer(addr, index));
             }
         }
         if !self.writes.is_pending() {
@@ -1741,9 +1765,122 @@ fn patch_player_buffer(
     }
 }
 
+fn is_player_list_write(player: &PlayerRecord, addr: u64, len: usize) -> bool {
+    use crate::player::ListState;
+    matches!(&player.injuries, ListState::Items(items) if len == 4 && items.iter().any(|item| item.days_addr == addr))
+        || matches!(&player.absences, ListState::Items(items) if len == 2 && items.iter().any(|item| item.days_addr == addr))
+        || matches!(&player.clauses, ListState::Items(items) if len == 4 && items.iter().any(|item| item.amount_addr == addr))
+}
+
+/// List edits are not speculative: update every retained snapshot by the exact
+/// acknowledged address, using the same chosen bytes for success, failure and Undo.
+fn patch_player_list_buffers(player: &mut PlayerRecord, addr: u64, bytes: &[u8]) {
+    use crate::player::ListState;
+    if let ListState::Items(items) = &mut player.injuries {
+        for injury in items {
+            let mut raw = [
+                injury.full_days.to_le_bytes(),
+                injury.light_days.to_le_bytes(),
+            ]
+            .concat();
+            patch_buffer(&mut raw, injury.days_addr, addr, bytes);
+            injury.full_days = u16::from_le_bytes([raw[0], raw[1]]);
+            injury.light_days = u16::from_le_bytes([raw[2], raw[3]]);
+        }
+    }
+    if let ListState::Items(items) = &mut player.absences {
+        for absence in items {
+            let mut raw = absence.days.to_le_bytes();
+            patch_buffer(&mut raw, absence.days_addr, addr, bytes);
+            absence.days = u16::from_le_bytes(raw);
+        }
+    }
+    if let ListState::Items(items) = &mut player.clauses {
+        for clause in items {
+            let mut raw = clause.amount.to_le_bytes();
+            patch_buffer(&mut raw, clause.amount_addr, addr, bytes);
+            clause.amount = i32::from_le_bytes(raw);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn list_acknowledgements_and_undo_patch_only_matching_addresses() {
+        use crate::player::{Absence, Clause, GameDate, Injury, ListState};
+        let date = GameDate::from_raw((2026u32 << 16) | 194).unwrap();
+        let mut record = PlayerRecord {
+            build: GameBuild::Fm27Steam,
+            addr: 0x20000,
+            index: 0,
+            name: None,
+            raw: vec![],
+            person_shift: 0,
+            contract_raw: None,
+            contract_addr: None,
+            club_name: None,
+            club_addr: None,
+            nationality: None,
+            birthplace: None,
+            game_date: Some(date),
+            relations: ListState::Unmapped,
+            injuries: ListState::Items(vec![Injury {
+                addr: 0x30000,
+                name: "a ruptured quad".into(),
+                start: date,
+                full_days: 236,
+                light_days: 206,
+                days_addr: 0x30028,
+            }]),
+            absences: ListState::Items(vec![Absence {
+                addr: 0x40000,
+                kind: 0x19,
+                start: date,
+                days: 595,
+                days_addr: 0x40016,
+            }]),
+            clauses: ListState::Items(vec![Clause {
+                addr: 0x50000,
+                amount_addr: 0x50000,
+                amount: 35_000,
+                value: -1,
+                clause_type: 0x20,
+            }]),
+        };
+        assert!(is_player_list_write(&record, 0x30028, 4));
+        assert!(is_player_list_write(&record, 0x40016, 2));
+        assert!(is_player_list_write(&record, 0x50000, 4));
+        assert!(!is_player_list_write(&record, 0x20000, 4));
+        assert!(!is_player_list_write(&record, 0x40016, 4));
+        assert!(!is_player_list_write(&record, 0x30029, 4));
+        patch_player_list_buffers(&mut record, 0x30028, &[194, 0, 194, 0]);
+        let ListState::Items(items) = &record.injuries else {
+            panic!()
+        };
+        assert_eq!((items[0].full_days, items[0].light_days), (194, 194));
+        // The old bytes selected for Undo restore both durations.
+        patch_player_list_buffers(&mut record, 0x30028, &[236, 0, 206, 0]);
+        patch_player_list_buffers(&mut record, 0x40016, &428u16.to_le_bytes());
+        patch_player_list_buffers(&mut record, 0x50000, &50_000i32.to_le_bytes());
+        // Invalid/unrelated/overlong addresses must not change an item.
+        patch_player_list_buffers(&mut record, u64::MAX, &[0; 4]);
+        patch_player_list_buffers(&mut record, 0x40016, &[0; 4]);
+        let ListState::Items(items) = &record.injuries else {
+            panic!()
+        };
+        assert_eq!((items[0].full_days, items[0].light_days), (236, 206));
+        let ListState::Items(items) = &record.absences else {
+            panic!()
+        };
+        assert_eq!(items[0].days, 428);
+        let ListState::Items(items) = &record.clauses else {
+            panic!()
+        };
+        assert_eq!(items[0].amount, 50_000);
+    }
+
     #[test]
     fn acknowledgement_patches_only_complete_address_ranges() {
         let mut raw = [1, 2, 3, 4];
@@ -1782,6 +1919,11 @@ fn cached_player_record(cached: &CachedPlayer, build: GameBuild) -> PlayerRecord
         club_addr: None,
         nationality: None,
         birthplace: None,
+        game_date: None,
+        injuries: crate::player::ListState::Unmapped,
+        absences: crate::player::ListState::Unmapped,
+        relations: crate::player::ListState::Unmapped,
+        clauses: crate::player::ListState::Unmapped,
     }
 }
 

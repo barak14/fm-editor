@@ -26,15 +26,22 @@ Version gate: `known_dll_hash` is 0 (not calibrated); attach reports the hash.
 
 ## Current game date
 
-`game_plugin.dll+0x56F1A18` holds a pointer to a game object (vtable
-+0x4C8C858). Its DateDayYear at **+0x7F4** is today's date: a 1-based day of
-the year, then the year (FM stores 8 Jul 1991 as 189). Found 2026-10-31 by
-scanning every writable mapping for 194/2026 while FM showed Mon 13/7/2026
-(49,446 matches). After one day of holiday FM showed Tue 14/7/2026, and only
-this address read 195/2026. The next four bytes read 244/2026 (1 Sep 2026)
-and are unmapped. The editor reads the date on attach and on each two-second
-status poll, and calculates ages from it (`game_date` in the schema). Game
-Pass has no mapping.
+The editor reads today's date from **`game_plugin.dll+0x56AD378`**
+(`rva_current_date`), a static DateDayYear: a 1-based day of the year with
+flag bits above bit 8, then the year (FM stores 8 Jul 1991 as 189). It read
+raw 0x07EA1AC2 (day 194) on Mon 13/7/2026, and 195/2026 after one day of
+holiday on Tue 14/7/2026 (2026-10-31).
+
+A pointer path holds the same date: `game_plugin.dll+0x56F1A18` points at a
+game object (vtable +0x4C8C858) with the date at **+0x7F4**. A scan of
+writable mappings for 194/2026 on 13/7 (49,446 matches) left only this heap
+copy reading 195/2026 after the holiday. The scan did not report the static,
+although it reads the same date. The four bytes after the heap copy read
+244/2026 (1 Sep 2026) and are unmapped.
+
+The editor reads the date on attach and on each two-second status poll. It
+calculates ages from it and uses it for Heal, Lift ban and transfer listing.
+Game Pass has no mapping (`rva_current_date` 0).
 
 ## Entity arrays (RVA relative to game_plugin.dll)
 
@@ -220,7 +227,10 @@ player base + 0x288, staff base + 0x100.
 | Squad number (u8, 255 = none) | contract+0x5D | 9 / 10 / 10 / 7 / 255 |
 | Listing flags | contract+0x57 (bit 0 transfer, bit 1 loan) | all five unlisted; Mikel Merino (Arsenal, 67211760) reads 1 and FM shows Transfer status "Listed", Loan status "Not set" (2026-10-31) |
 | Job code | contract+0x26 (FM26 "contract type") | 1 = Player for all five |
-| Asking price (i32, -1 unset) | +0x238 | -1 for all five, and also -1 for Merino, whom FM lists with a £45M transfer value; that £45M is not stored as an i32 in his first 0x800 bytes or his contract. Mapping unconfirmed |
+| Asking price (i32, -1 unset) | +0x238 | -1 for all five, and also -1 for the listed Merino. Mapping unconfirmed |
+| Transfer value (i32 £) | +0x234 | Bentancur 37,620,000 = "£38M"; Tonali 183,492,624 in "£183M - £200M"; Davies 8,878,733 in "£8.8M - £10.5M". 2026-10-31: Merino 45,315,000 = "£45M", Van Dijk 8,408,400 in "£8.4M - £10M", Rice 145,800,016 in "£117M - £146M" |
+| Listed since (date) | contract+0x50 | packed 1 Jan 1900 (0x076C0001) = not listed |
+| Listing code (u8) | contract+0x58 | 5 for club-listed Bentancur and Brandon Austin; 0 for loan-listed Aaron Maguire and unlisted players |
 | Club name | team (+0x130) → club (team+0x30) → +0xC0 | Manchester City / Barcelona / R. Madrid |
 | Nationality | nation (+0x2F0) → +0x18 | Norway / Spain / France / England / Portugal |
 | Place of birth | city (+0x308) → +0x18 | Leeds / Esplugues de Llobregat / Bondy / London / Funchal |
@@ -297,6 +307,37 @@ set. Edits are not yet confirmed in a match.
 A date's u16 day-of-year word keeps flags above bit 8: Saka's contract-signed
 date stores 7019 = 0x1A00 | 363 (29 Dec 2025). Readers mask the low 9 bits and
 the date editor keeps the flag bits when it writes.
+
+### Player status, medical, ties and clauses (FM27 Steam, 13 Jul 2026 save)
+
+Code: `fields::fm27::player` (`FM27_PLAYER_LISTS`, `MORALE_LABELS`). Game
+Pass inherits these struct offsets (unverified); FM24/FM26 have none.
+
+- **Morale** level byte at +0x26C, range 1-20 across the database. Labels
+  shown only for witnessed levels: 2 Extremely Poor, 3 Very Poor, 5 Quite
+  Poor, 6 Fairly Poor, 7 Slightly Poor, 9 Fairly Okay, 10 Okay, 11 Fairly
+  Good, 12 Quite Good, 13 Good, 14 Really Good. Other levels show "Level N".
+  2026-10-31: Declan Rice reads 20 and FM's squad view shows "Perfect" (not
+  yet a label).
+- **Medical** object: pointer at player+0xF8 (shifted for player-coaches). Injuries vector at +0x00 (0x38-byte
+  entries: type pointer +0x08 with name at type+0x20, start date +0x20, full
+  and light training days u16 +0x28 / +0x2A). Absences vector at +0x18
+  (0x20-byte entries: kind +0x05, 0x19 suspension/ban, 0x1F holiday; start
+  +0x10, days u16 +0x16). Witnesses: Kudus, van de Ven, Kulusevski, Xavi
+  Simons, Odobert (injuries); Mudryk (ban); Porro, Bentancur (holiday).
+- **Ties**: pointer at player+0x300 (shifted for player-coaches); 16-byte entries (target +0x00, kind +0x0A with 1 club
+  and 8 nation, type +0x0B with 9 other nationality and 3 favoured club,
+  strength +0x0C, reason +0x0D with 0x4F as a player and 0x4E as a supporter).
+  Witnesses: Senesi, Gray (nationalities); Bentancur, van Hecke, Gray
+  (favoured clubs).
+- **Clauses** vector at contract+0x68: 8-byte entries (amount +0x00, value
+  +0x04, type +0x06). Types 0x20 appearance fee, 0x21 goal, 0x22 clean sheet,
+  0x26 unused substitute, 0x27 assist (pound amounts); 0x05 relegation wage
+  drop (percent); 0x16 club extension option (years). Witnesses: Kudus, van
+  Hecke.
+
+The write actions (Heal, Lift ban, morale, transfer listing, clause amounts)
+have no recorded live write/undo verification yet.
 
 ### Player-coaches
 

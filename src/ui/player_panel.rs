@@ -3,9 +3,9 @@
 use eframe::egui;
 
 use crate::fields::{self, Category, Entity};
-use crate::player::{self, PlayerRecord};
+use crate::player::{self, Absence, GameDate, Injury, ListState, PlayerRecord};
 use crate::ratings;
-use crate::settings::{WagePeriod, format_wage};
+use crate::settings::{format_wage, WagePeriod};
 use crate::ui::field_widget::{self, FieldEdit};
 
 #[derive(PartialEq)]
@@ -233,6 +233,9 @@ fn show_overview(
             }
         });
     });
+
+    show_player_status(schemas, ui, player, addr, edits);
+    show_nationality_ties(schemas, ui, player);
 
     ui.separator();
 
@@ -589,18 +592,7 @@ fn show_contract(
                 255,
             ));
         }
-        if let Some(flags) = schemas
-            .offset_of("p_list_flags")
-            .and_then(|o| cr.get(o).copied())
-        {
-            let status = match (flags & 1 != 0, flags & 2 != 0) {
-                (true, true) => "Transfer and loan listed",
-                (true, false) => "Transfer listed",
-                (false, true) => "Loan listed",
-                (false, false) => "Not listed",
-            };
-            field_widget::info_label(ui, "Listing (read-only)", status);
-        }
+        show_listing(schemas, ui, cr, caddr, player.game_date, edits);
         if let Some(s) = schemas
             .offset_of("p_contract_signed")
             .and_then(|o| fmt_date_at(cr, o))
@@ -634,6 +626,422 @@ fn show_contract(
     ] {
         if let Some(s) = fmt_date_field(schemas, &player.raw, key) {
             field_widget::info_label(ui, label, s);
+        }
+    }
+    show_clauses(schemas, ui, player, edits);
+}
+
+/// Medical/list data is loaded by the bridge, never inferred from a cached search row.
+fn show_player_status(
+    schemas: &'static fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    player: &mut PlayerRecord,
+    addr: u64,
+    edits: &mut Vec<FieldEdit>,
+) {
+    let Some(layout) = schemas.player_lists else {
+        return;
+    };
+    ui.separator();
+    ui.strong("Status");
+    if let Some(field) = schemas.field("p_morale").filter(|f| f.offset.is_some()) {
+        let labels: Vec<_> = (1..=20).map(|n| (n, schemas.morale_label(n))).collect();
+        let options: Vec<_> = labels
+            .iter()
+            .map(|(n, label)| (*n, label.as_str()))
+            .collect();
+        edits.extend(field_widget::choice_u8_edit(
+            ui,
+            "Morale",
+            &mut player.raw,
+            field,
+            addr,
+            &options,
+        ));
+    }
+    if let Some(off) = schemas.offset_of("p_value") {
+        if let Some(bytes) = player.raw.get(off..off.saturating_add(4)) {
+            if let (Ok(bytes), Some(at)) = (bytes.try_into(), addr.checked_add(off as u64)) {
+                if let Some(edit) = field_widget::money_edit_at(
+                    ui,
+                    "Transfer Value",
+                    i32::from_le_bytes(bytes),
+                    at,
+                    false,
+                ) {
+                    player.raw[off..off + 4].copy_from_slice(&edit.new_raw);
+                    edits.push(edit);
+                }
+            }
+        }
+    }
+    ui.strong("Injuries");
+    match &player.injuries {
+        ListState::Unmapped => {
+            ui.label("Not loaded.");
+        }
+        ListState::Unreadable => {
+            ui.label("Injury data unavailable (read-only).");
+        }
+        ListState::Items(items) if items.is_empty() => {
+            ui.label("None");
+        }
+        ListState::Items(items) => {
+            for injury in items {
+                ui.push_id(("injury", injury.addr), |ui| {
+                    ui.label(&injury.name);
+                    field_widget::info_label(ui, "Injured on", injury.start.display());
+                    field_widget::info_label(
+                        ui,
+                        "Back in light training",
+                        injury.start.add_days(injury.light_days).display(),
+                    );
+                    field_widget::info_label(
+                        ui,
+                        "Back in full training",
+                        injury.start.add_days(injury.full_days).display(),
+                    );
+                    let edit = heal_edit(injury, player.game_date);
+                    if ui
+                        .add_enabled(can_edit(ui) && edit.is_some(), egui::Button::new("Heal"))
+                        .clicked()
+                    {
+                        edits.extend(edit);
+                    }
+                });
+            }
+        }
+    }
+    ui.strong("Unavailability");
+    match &player.absences {
+        ListState::Unmapped => {
+            ui.label("Not loaded.");
+        }
+        ListState::Unreadable => {
+            ui.label("Unavailability data unavailable (read-only).");
+        }
+        ListState::Items(items) if items.is_empty() => {
+            ui.label("None");
+        }
+        ListState::Items(items) => {
+            for absence in items {
+                ui.push_id(("absence", absence.addr), |ui| {
+                    let until = (absence.days != u16::MAX)
+                        .then(|| absence.start.add_days(absence.days).display());
+                    if absence.kind == layout.absence_ban {
+                        ui.label(until.map_or_else(
+                            || "Suspended (not date-based)".into(),
+                            |end| format!("Suspended from {} until {end}", absence.start.display()),
+                        ));
+                        let edit = lift_ban_edit(absence, player.game_date);
+                        if ui
+                            .add_enabled(
+                                can_edit(ui) && edit.is_some(),
+                                egui::Button::new("Lift ban"),
+                            )
+                            .clicked()
+                        {
+                            edits.extend(edit);
+                        }
+                    } else if absence.kind == layout.absence_holiday {
+                        ui.label(until.map_or_else(
+                            || "On holiday (not date-based)".into(),
+                            |end| format!("On holiday until {end}"),
+                        ));
+                    } else {
+                        let label = layout
+                            .absence_kinds
+                            .iter()
+                            .find(|(kind, _)| *kind == absence.kind)
+                            .map_or_else(
+                                || format!("Unavailable (code {})", absence.kind),
+                                |(_, name)| name.to_string(),
+                            );
+                        ui.label(until.map_or_else(
+                            || format!("{label} (not date-based)"),
+                            |end| format!("{label} from {} until {end}", absence.start.display()),
+                        ));
+                    }
+                });
+            }
+        }
+    }
+}
+
+fn can_edit(ui: &egui::Ui) -> bool {
+    ui.is_enabled() && crate::ui::navigation::editing_enabled(ui)
+}
+
+fn heal_edit(injury: &Injury, date: Option<GameDate>) -> Option<FieldEdit> {
+    let elapsed = date?.elapsed_since(injury.start);
+    if elapsed >= injury.full_days {
+        return None;
+    }
+    Some(FieldEdit {
+        addr: injury.days_addr,
+        old_raw: [
+            injury.full_days.to_le_bytes(),
+            injury.light_days.to_le_bytes(),
+        ]
+        .concat(),
+        new_raw: [
+            elapsed.to_le_bytes(),
+            injury.light_days.min(elapsed).to_le_bytes(),
+        ]
+        .concat(),
+        description: format!("Heal injury: {}", injury.name),
+    })
+}
+
+fn lift_ban_edit(absence: &Absence, date: Option<GameDate>) -> Option<FieldEdit> {
+    if absence.days == u16::MAX {
+        return None;
+    }
+    let elapsed = date?.elapsed_since(absence.start);
+    if elapsed >= absence.days {
+        return None;
+    }
+    Some(FieldEdit {
+        addr: absence.days_addr,
+        old_raw: absence.days.to_le_bytes().to_vec(),
+        new_raw: elapsed.to_le_bytes().to_vec(),
+        description: "Lift ban".into(),
+    })
+}
+
+fn show_nationality_ties(
+    schemas: &'static fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    player: &PlayerRecord,
+) {
+    let Some(layout) = schemas.player_lists else {
+        return;
+    };
+    ui.separator();
+    ui.strong("Nationality & ties");
+    match &player.relations {
+        ListState::Unmapped => {
+            ui.label("Not loaded.");
+        }
+        ListState::Unreadable => {
+            ui.label("Relations unavailable (read-only).");
+        }
+        ListState::Items(items) => {
+            let nations: Vec<_> = items
+                .iter()
+                .filter(|r| {
+                    r.kind == layout.kind_nation && r.relation_type == layout.type_other_nationality
+                })
+                .map(|r| r.name.as_str())
+                .collect();
+            field_widget::info_label(
+                ui,
+                "Other nationalities",
+                if nations.is_empty() {
+                    "None".into()
+                } else {
+                    nations.join(", ")
+                },
+            );
+            let clubs: Vec<_> = items
+                .iter()
+                .filter(|r| {
+                    r.kind == layout.kind_club && r.relation_type == layout.type_favoured_club
+                })
+                .collect();
+            if clubs.is_empty() {
+                field_widget::info_label(ui, "Favoured clubs", "None");
+            } else {
+                ui.label("Favoured clubs:");
+                for club in clubs {
+                    let reason = layout
+                        .favoured_club_reasons
+                        .iter()
+                        .find(|(code, _)| *code == club.reason)
+                        .map_or_else(
+                            || format!("Reason {}", club.reason),
+                            |(_, name)| name.to_string(),
+                        );
+                    ui.push_id(("favoured_club", club.addr), |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            crate::ui::navigation::club_link(
+                                ui,
+                                Some(&club.name),
+                                Some(club.target_addr),
+                            );
+                            ui.label(format!("({reason})"))
+                                .on_hover_text(format!("Strength: {}", club.strength));
+                        });
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn contract_offset(schemas: &'static fields::VersionedSchemas, key: &str) -> Option<usize> {
+    match schemas.field(key)?.offset? {
+        fields::FieldLocation::SubRecord {
+            container: "contract",
+            offset,
+            ..
+        } => usize::try_from(offset).ok(),
+        _ => None,
+    }
+}
+
+fn transfer_listing_edit(
+    schemas: &'static fields::VersionedSchemas,
+    raw: &[u8],
+    base: u64,
+    listed: bool,
+    date: Option<GameDate>,
+) -> Option<FieldEdit> {
+    let date = date?;
+    let start = contract_offset(schemas, "p_list_date")?;
+    let flags = contract_offset(schemas, "p_list_flags")?;
+    let code = contract_offset(schemas, "p_list_code")?;
+    let end = code.checked_add(1)?;
+    if flags < start.checked_add(4)? || flags >= code {
+        return None;
+    }
+    let old = raw.get(start..end)?;
+    if (raw[flags] & 1 != 0) == listed {
+        return None;
+    }
+    let mut new = old.to_vec();
+    new[..4].copy_from_slice(&if listed { date.raw } else { 0x076C0001u32 }.to_le_bytes());
+    new[flags - start] = if listed {
+        raw[flags] | 1
+    } else {
+        raw[flags] & !1
+    };
+    new[code - start] = if listed { 5 } else { 0 };
+    Some(FieldEdit {
+        addr: base.checked_add(start as u64)?,
+        old_raw: old.to_vec(),
+        new_raw: new,
+        description: format!("Transfer listed: {listed}"),
+    })
+}
+
+fn show_listing(
+    schemas: &'static fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    raw: &mut [u8],
+    base: u64,
+    date: Option<GameDate>,
+    edits: &mut Vec<FieldEdit>,
+) {
+    let Some(flags_off) = contract_offset(schemas, "p_list_flags") else {
+        return;
+    };
+    let Some(&flags) = raw.get(flags_off) else {
+        return;
+    };
+    // The additional date/code fields distinguish verified editable listings
+    // from older schemas whose flag meanings have not been verified.
+    if contract_offset(schemas, "p_list_date").is_none()
+        || contract_offset(schemas, "p_list_code").is_none()
+    {
+        return;
+    }
+    let mut transfer = flags & 1 != 0;
+    if ui
+        .add_enabled(
+            can_edit(ui) && date.is_some(),
+            egui::Checkbox::new(&mut transfer, "Transfer listed"),
+        )
+        .changed()
+    {
+        if let Some(edit) = transfer_listing_edit(schemas, raw, base, transfer, date) {
+            let start = (edit.addr - base) as usize;
+            raw[start..start + edit.new_raw.len()].copy_from_slice(&edit.new_raw);
+            edits.push(edit);
+        }
+    }
+    let flags = raw[flags_off];
+    let mut loan = flags & 2 != 0;
+    if ui
+        .add_enabled(can_edit(ui), egui::Checkbox::new(&mut loan, "Loan listed"))
+        .changed()
+    {
+        let new = if loan { flags | 2 } else { flags & !2 };
+        if let Some(addr) = base.checked_add(flags_off as u64) {
+            raw[flags_off] = new;
+            edits.push(FieldEdit {
+                addr,
+                old_raw: vec![flags],
+                new_raw: vec![new],
+                description: format!("Loan listed: {loan}"),
+            });
+        }
+    }
+    if raw[flags_off] & 1 != 0 {
+        if let Some(date) =
+            contract_offset(schemas, "p_list_date").and_then(|off| fmt_date_at(raw, off))
+        {
+            field_widget::info_label(ui, "Listed since", date);
+        }
+    }
+}
+
+fn show_clauses(
+    schemas: &'static fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    player: &PlayerRecord,
+    edits: &mut Vec<FieldEdit>,
+) {
+    let Some(layout) = schemas.player_lists else {
+        return;
+    };
+    ui.separator();
+    ui.strong("Bonuses & clauses");
+    match &player.clauses {
+        ListState::Unmapped => {
+            ui.label("Not loaded.");
+        }
+        ListState::Unreadable => {
+            ui.label("Clause data unavailable (read-only).");
+        }
+        ListState::Items(items) if items.is_empty() => {
+            ui.label("None");
+        }
+        ListState::Items(items) => {
+            for clause in items {
+                let label = layout
+                    .clause_types
+                    .iter()
+                    .find(|(code, _)| *code == clause.clause_type)
+                    .map_or_else(
+                        || format!("Clause type 0x{:02X}", clause.clause_type),
+                        |(_, name)| name.to_string(),
+                    );
+                if layout.clause_amount_types.contains(&clause.clause_type) {
+                    ui.push_id(("clause", clause.addr), |ui| {
+                        edits.extend(field_widget::money_edit_at(
+                            ui,
+                            &label,
+                            clause.amount,
+                            clause.amount_addr,
+                            false,
+                        ));
+                    });
+                } else {
+                    let value = if layout.clause_percent_types.contains(&clause.clause_type) {
+                        format!("{}%", clause.value)
+                    } else if layout.clause_year_types.contains(&clause.clause_type) {
+                        format!(
+                            "{} {}",
+                            clause.value,
+                            if clause.value == 1 { "year" } else { "years" }
+                        )
+                    } else {
+                        format!("amount={}, value={}", clause.amount, clause.value)
+                    };
+                    field_widget::info_label(ui, &label, value);
+                }
+            }
         }
     }
 }
@@ -759,6 +1167,213 @@ fn trait_value(raw: &[u8], location: Option<fields::FieldLocation>) -> Option<(u
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn fixture_player(build: crate::game_version::GameBuild) -> PlayerRecord {
+        PlayerRecord {
+            build,
+            addr: 0x20000,
+            index: 0,
+            name: None,
+            raw: vec![0; build.schemas().player_struct_size],
+            person_shift: 0,
+            contract_raw: None,
+            contract_addr: None,
+            club_name: None,
+            club_addr: None,
+            nationality: None,
+            birthplace: None,
+            game_date: None,
+            injuries: ListState::Unmapped,
+            absences: ListState::Unmapped,
+            relations: ListState::Unmapped,
+            clauses: ListState::Unmapped,
+        }
+    }
+
+    #[test]
+    fn heal_and_lift_ban_only_shorten_durations() {
+        let start = GameDate::from_raw((2025u32 << 16) | 131).unwrap(); // 11 May
+        let now = GameDate::from_raw(0x07EA1AC2).unwrap(); // 13 Jul 2026, flags retained
+        let mut injury = Injury {
+            addr: 0x30000,
+            name: "a patella dislocation".into(),
+            start,
+            full_days: 498,
+            light_days: 468,
+            days_addr: 0x30028,
+        };
+        let edit = heal_edit(&injury, Some(now)).unwrap();
+        assert_eq!(edit.addr, injury.days_addr);
+        assert_eq!(
+            edit.old_raw,
+            [498u16.to_le_bytes(), 468u16.to_le_bytes()].concat()
+        );
+        assert_eq!(
+            edit.new_raw,
+            [428u16.to_le_bytes(), 428u16.to_le_bytes()].concat()
+        );
+        injury.light_days = 200;
+        assert_eq!(
+            heal_edit(&injury, Some(now)).unwrap().new_raw,
+            [428u16.to_le_bytes(), 200u16.to_le_bytes()].concat()
+        );
+        assert!(heal_edit(&injury, None).is_none());
+        injury.full_days = 428;
+        assert!(heal_edit(&injury, Some(now)).is_none());
+        injury.full_days = 498;
+        assert_eq!(
+            heal_edit(
+                &injury,
+                Some(GameDate::from_raw((2024u32 << 16) | 366).unwrap())
+            )
+            .unwrap()
+            .new_raw,
+            [0; 4]
+        );
+        let mut absence = Absence {
+            addr: 0x40000,
+            kind: 0x19,
+            start,
+            days: 595,
+            days_addr: 0x40016,
+        };
+        assert_eq!(
+            lift_ban_edit(&absence, Some(now)).unwrap().new_raw,
+            428u16.to_le_bytes()
+        );
+        assert!(lift_ban_edit(&absence, None).is_none());
+        absence.days = 428;
+        assert!(lift_ban_edit(&absence, Some(now)).is_none());
+        absence.days = u16::MAX;
+        assert!(lift_ban_edit(&absence, Some(now)).is_none());
+    }
+
+    #[test]
+    fn transfer_listing_bytes_preserve_flags_padding_and_raw_game_date() {
+        let schemas = crate::game_version::GameBuild::Fm27Steam.schemas();
+        let now = GameDate::from_raw(0x07EA1AC2).unwrap();
+        let date = schemas.offset_of("p_list_date").unwrap();
+        let flags = schemas.offset_of("p_list_flags").unwrap();
+        let code = schemas.offset_of("p_list_code").unwrap();
+        let mut raw = vec![0xA5; 0xC4];
+        raw[flags] = 0xA2;
+        let edit = transfer_listing_edit(schemas, &raw, 0x50000, true, Some(now)).unwrap();
+        assert_eq!(edit.addr, 0x50000 + date as u64);
+        assert_eq!(edit.new_raw.len(), code + 1 - date);
+        assert_eq!(&edit.new_raw[..4], &now.raw.to_le_bytes());
+        assert_eq!(&edit.new_raw[4..flags - date], &raw[date + 4..flags]);
+        assert_eq!(edit.new_raw[flags - date], 0xA3);
+        assert_eq!(edit.new_raw[code - date], 5);
+        raw[date..code + 1].copy_from_slice(&edit.new_raw);
+        assert!(transfer_listing_edit(schemas, &raw, 0x50000, true, Some(now)).is_none());
+        let off = transfer_listing_edit(schemas, &raw, 0x50000, false, Some(now)).unwrap();
+        assert_eq!(&off.new_raw[..4], &0x076C0001u32.to_le_bytes());
+        assert_eq!(off.new_raw[flags - date], 0xA2);
+        assert_eq!(off.new_raw[code - date], 0);
+        assert!(transfer_listing_edit(schemas, &raw, 0x50000, false, None).is_none());
+        assert!(transfer_listing_edit(schemas, &raw[..code], 0x50000, false, Some(now)).is_none());
+        assert!(transfer_listing_edit(schemas, &raw, u64::MAX, false, Some(now)).is_none());
+    }
+
+    fn collect_text(shape: &egui::Shape, text: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Text(t) => text.push(t.galley.text().to_owned()),
+            egui::Shape::Vec(shapes) => {
+                for s in shapes {
+                    collect_text(s, text);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn fm24_fm26_new_player_sections_render_nothing() {
+        use crate::game_version::GameBuild;
+        for build in [GameBuild::Fm24Steam, GameBuild::Fm26Steam] {
+            let ctx = egui::Context::default();
+            let mut player = fixture_player(build);
+            let mut edits = vec![];
+            let mut raw = vec![0; 0xC4];
+            let output = ctx.run(Default::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    show_player_status(build.schemas(), ui, &mut player, 0x20000, &mut edits);
+                    show_nationality_ties(build.schemas(), ui, &player);
+                    show_clauses(build.schemas(), ui, &player, &mut edits);
+                    show_listing(build.schemas(), ui, &mut raw, 0x30000, None, &mut edits);
+                });
+            });
+            let mut text = vec![];
+            for s in output.shapes {
+                collect_text(&s.shape, &mut text);
+            }
+            assert!(text.is_empty(), "{build:?}: {text:?}");
+            assert!(edits.is_empty());
+        }
+    }
+
+    #[test]
+    fn fm27_player_sections_distinguish_unloaded_unreadable_and_empty_without_writes() {
+        use crate::game_version::GameBuild;
+        for width in [1200.0, 280.0] {
+            for enabled in [false, true] {
+                for state in [0, 1, 2] {
+                    let ctx = egui::Context::default();
+                    crate::ui::navigation::set_editing_enabled(&ctx, enabled);
+                    let mut player = fixture_player(GameBuild::Fm27Steam);
+                    player.raw[player.build.schemas().offset_of("p_morale").unwrap()] = 15;
+                    player.injuries = match state {
+                        0 => ListState::Unmapped,
+                        1 => ListState::Unreadable,
+                        _ => ListState::Items(vec![]),
+                    };
+                    player.absences = match state {
+                        0 => ListState::Unmapped,
+                        1 => ListState::Unreadable,
+                        _ => ListState::Items(vec![]),
+                    };
+                    let original = player.raw.clone();
+                    let mut edits = vec![];
+                    let output = ctx.run(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(width, 700.0),
+                            )),
+                            ..Default::default()
+                        },
+                        |ctx| {
+                            egui::CentralPanel::default().show(ctx, |ui| {
+                                show_player_status(
+                                    player.build.schemas(),
+                                    ui,
+                                    &mut player,
+                                    0x20000,
+                                    &mut edits,
+                                );
+                            });
+                        },
+                    );
+                    let mut text = vec![];
+                    for s in output.shapes {
+                        collect_text(&s.shape, &mut text);
+                    }
+                    let text = text.join(" ");
+                    assert!(text.contains("Level 15"), "{text}");
+                    assert!(
+                        text.contains(match state {
+                            0 => "Not loaded",
+                            1 => "unavailable",
+                            _ => "None",
+                        }),
+                        "{text}"
+                    );
+                    assert!(edits.is_empty());
+                    assert_eq!(player.raw, original);
+                }
+            }
+        }
+    }
+
     fn direct(offset: u64) -> Option<fields::FieldLocation> {
         Some(fields::FieldLocation::Direct {
             offset,
@@ -806,6 +1421,11 @@ mod tests {
                     club_addr: None,
                     nationality: None,
                     birthplace: None,
+                    game_date: None,
+                    injuries: ListState::Unmapped,
+                    absences: ListState::Unmapped,
+                    relations: ListState::Unmapped,
+                    clauses: ListState::Unmapped,
                 };
                 for field in schemas.fields_for_category(Entity::Player, Category::Positions) {
                     let loc = field.offset.as_ref().unwrap();

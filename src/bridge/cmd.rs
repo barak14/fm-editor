@@ -2,7 +2,7 @@
 //! the `BridgeResult` responses it receives, and the `ProcessBridge` handle
 //! that wraps the mpsc channel pair.
 
-use std::sync::{Arc, mpsc};
+use std::sync::{mpsc, Arc};
 use std::thread;
 
 use crate::cache::EntityCache;
@@ -116,7 +116,13 @@ pub enum BridgeCmd {
     LoadStaff(u64, usize),
     LoadClub(u64, usize),
     LoadHumanManager,
-    WriteBytes { id: u64, addr: u64, data: Vec<u8> },
+    /// Refuse a write when memory no longer matches the UI/Undo snapshot.
+    WriteBytes {
+        id: u64,
+        addr: u64,
+        expected: Vec<u8>,
+        data: Vec<u8>,
+    },
     Ping,
     Shutdown,
 }

@@ -6,17 +6,17 @@
 //!
 //! FM24 gets its own parallel module at `fields::fm24`.
 
-mod player;
-pub mod staff;
 mod club;
+mod player;
 mod stadium;
+pub mod staff;
 
+pub(crate) use club::CLUB_SUB_RECORDS;
+pub(crate) use club::FIELDS as CLUB_FIELDS;
 pub(crate) use player::FIELDS as PLAYER_FIELDS;
 pub(crate) use player::PLAYER_SUB_RECORDS;
-pub(crate) use staff::FIELDS as STAFF_FIELDS;
-pub(crate) use club::FIELDS as CLUB_FIELDS;
-pub(crate) use club::CLUB_SUB_RECORDS;
 pub(crate) use stadium::FIELDS as STADIUM_FIELDS;
+pub(crate) use staff::FIELDS as STAFF_FIELDS;
 
 use crate::fields::VersionedSchemas;
 
@@ -55,8 +55,10 @@ pub static FM26: VersionedSchemas = VersionedSchemas {
     staff_sub_records: &[],
     club_sub_records: CLUB_SUB_RECORDS,
     stadium_sub_records: &[],
+    player_lists: None,
+    morale_labels: &[],
 
-    player_struct_size: 992,   // 0x3E0 — covers block-2 name sub-records at 0x3D0/0x3D8
+    player_struct_size: 992, // 0x3E0 — covers block-2 name sub-records at 0x3D0/0x3D8
     staff_struct_size: 576,
     club_read_size: 0x2000,
     stadium_entity_stride: 0xC0, // 192 bytes, flat inline array (was 0x170 before the 2026-10 patch)
@@ -72,6 +74,7 @@ pub static FM26: VersionedSchemas = VersionedSchemas {
     rva_clubs_data: 0x4E49830,
     rva_clubs_end: 0x4E49838,
     rva_stadium_base: 0x4E495F8,
+    rva_current_date: 0,
 
     // FMRTE's reference counts for FM26 (used by scan_arrays.rs to
     // validate RVA candidates).
@@ -89,6 +92,5 @@ pub static FM26: VersionedSchemas = VersionedSchemas {
     player_person_offset: 0,
     player_coach_shift: 0,
     human_manager_vtable_rva: 0,
-    game_date: None,
     age_reference_year: 2026,
 };

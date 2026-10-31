@@ -14,8 +14,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::LazyLock;
 
-pub mod fm26;
 pub mod fm24;
+pub mod fm26;
 pub mod fm27;
 
 /// A field definition: key, display label, entity type, category, and optional offset.
@@ -91,10 +91,7 @@ pub type SubRecordId = &'static str;
 #[derive(Debug, Clone, Copy)]
 pub enum FieldLocation {
     /// Field lives at `offset` inside the entity's top-level raw buffer.
-    Direct {
-        offset: u64,
-        encoding: Encoding,
-    },
+    Direct { offset: u64, encoding: Encoding },
     /// Field lives at `offset` inside a named sub-record buffer.
     SubRecord {
         container: SubRecordId,
@@ -139,16 +136,16 @@ impl FieldLocation {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Encoding {
-    Direct,      // stored = displayed (u8 1-20, or raw value)
-    Encoded,     // displayed = (raw + 2) / 5
+    Direct,         // stored = displayed (u8 1-20, or raw value)
+    Encoded,        // displayed = (raw + 2) / 5
     Raw,            // u16 little-endian, no transformation (reputation, CA, PA)
     RawCapped(u16), // u16 little-endian with an explicit max (e.g. CA/PA → 200, rep → 10000)
     RawU32,         // u32 little-endian, no transformation (wages, budgets)
-    DateDayYear, // [u16 day_of_year][u16 year]
-    Pointer,     // u64 pointer to sub-object
-    FmString,    // u64 pointer to [u32 len][UTF-8]
-    F32Raw,      // f32 little-endian
-    RoleIndex,   // index into [u8; 15] staff-role sub-record (offset field = byte index)
+    DateDayYear,    // [u16 day_of_year][u16 year]
+    Pointer,        // u64 pointer to sub-object
+    FmString,       // u64 pointer to [u32 len][UTF-8]
+    F32Raw,         // f32 little-endian
+    RoleIndex,      // index into [u8; 15] staff-role sub-record (offset field = byte index)
 }
 
 /// A sub-record — a block of data reached via pointer chase from the
@@ -192,55 +189,106 @@ impl HasSubRecords for () {
 // ============================================================
 
 pub(crate) const fn direct(offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::Direct { offset, encoding: Encoding::Direct })
+    Some(FieldLocation::Direct {
+        offset,
+        encoding: Encoding::Direct,
+    })
 }
 pub(crate) const fn encoded(offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::Direct { offset, encoding: Encoding::Encoded })
+    Some(FieldLocation::Direct {
+        offset,
+        encoding: Encoding::Encoded,
+    })
 }
 pub(crate) const fn raw(offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::Direct { offset, encoding: Encoding::Raw })
+    Some(FieldLocation::Direct {
+        offset,
+        encoding: Encoding::Raw,
+    })
 }
 pub(crate) const fn raw_capped(offset: u64, max: u16) -> Option<FieldLocation> {
-    Some(FieldLocation::Direct { offset, encoding: Encoding::RawCapped(max) })
+    Some(FieldLocation::Direct {
+        offset,
+        encoding: Encoding::RawCapped(max),
+    })
 }
 pub(crate) const fn raw_u32(offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::Direct { offset, encoding: Encoding::RawU32 })
+    Some(FieldLocation::Direct {
+        offset,
+        encoding: Encoding::RawU32,
+    })
 }
 pub(crate) const fn date(offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::Direct { offset, encoding: Encoding::DateDayYear })
+    Some(FieldLocation::Direct {
+        offset,
+        encoding: Encoding::DateDayYear,
+    })
 }
 pub(crate) const fn pointer(offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::Direct { offset, encoding: Encoding::Pointer })
+    Some(FieldLocation::Direct {
+        offset,
+        encoding: Encoding::Pointer,
+    })
 }
 pub(crate) const fn fm_string(offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::Direct { offset, encoding: Encoding::FmString })
+    Some(FieldLocation::Direct {
+        offset,
+        encoding: Encoding::FmString,
+    })
 }
 
 /// Index into the 15-byte staff-role sub-record buffer.
 /// The `offset` field on the produced `FieldLocation` carries the byte index (0–14),
 /// not a memory offset into `record.raw`. Rendered by `roles_column` only.
 pub(crate) const fn role_index(idx: u8) -> Option<FieldLocation> {
-    Some(FieldLocation::Direct { offset: idx as u64, encoding: Encoding::RoleIndex })
+    Some(FieldLocation::Direct {
+        offset: idx as u64,
+        encoding: Encoding::RoleIndex,
+    })
 }
 
 // Sub-record shorthand constructors:
 pub(crate) const fn sub_direct(container: SubRecordId, offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::SubRecord { container, offset, encoding: Encoding::Direct })
+    Some(FieldLocation::SubRecord {
+        container,
+        offset,
+        encoding: Encoding::Direct,
+    })
 }
 pub(crate) const fn sub_raw(container: SubRecordId, offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::SubRecord { container, offset, encoding: Encoding::Raw })
+    Some(FieldLocation::SubRecord {
+        container,
+        offset,
+        encoding: Encoding::Raw,
+    })
 }
 pub(crate) const fn sub_raw_u32(container: SubRecordId, offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::SubRecord { container, offset, encoding: Encoding::RawU32 })
+    Some(FieldLocation::SubRecord {
+        container,
+        offset,
+        encoding: Encoding::RawU32,
+    })
 }
 pub(crate) const fn sub_date(container: SubRecordId, offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::SubRecord { container, offset, encoding: Encoding::DateDayYear })
+    Some(FieldLocation::SubRecord {
+        container,
+        offset,
+        encoding: Encoding::DateDayYear,
+    })
 }
 pub(crate) const fn sub_f32(container: SubRecordId, offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::SubRecord { container, offset, encoding: Encoding::F32Raw })
+    Some(FieldLocation::SubRecord {
+        container,
+        offset,
+        encoding: Encoding::F32Raw,
+    })
 }
 pub(crate) const fn sub_fm_string(container: SubRecordId, offset: u64) -> Option<FieldLocation> {
-    Some(FieldLocation::SubRecord { container, offset, encoding: Encoding::FmString })
+    Some(FieldLocation::SubRecord {
+        container,
+        offset,
+        encoding: Encoding::FmString,
+    })
 }
 
 fn key_map(s: &'static VersionedSchemas) -> HashMap<&'static str, &'static Field> {
@@ -316,8 +364,11 @@ pub fn read_sub_fm_string(
     sub_records: &[SubRecord],
     phys: &dyn Fn(u64) -> u64,
 ) -> Option<String> {
-    let FieldLocation::SubRecord { container, offset, encoding: Encoding::FmString } =
-        fm.schemas().field(key)?.offset?
+    let FieldLocation::SubRecord {
+        container,
+        offset,
+        encoding: Encoding::FmString,
+    } = fm.schemas().field(key)?.offset?
     else {
         return None;
     };
@@ -332,7 +383,11 @@ pub fn read_field_u8<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Optio
         FieldLocation::Direct { offset, encoding } => {
             Some(decode_u8_enc(*raw.get(*offset as usize)?, *encoding))
         }
-        FieldLocation::SubRecord { container, offset, encoding } => {
+        FieldLocation::SubRecord {
+            container,
+            offset,
+            encoding,
+        } => {
             let sub = view.sub_record(container)?;
             Some(decode_u8_enc(*sub.get(*offset as usize)?, *encoding))
         }
@@ -357,13 +412,19 @@ pub fn read_field_u16<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Opti
     match f.offset.as_ref()? {
         FieldLocation::Direct { offset, .. } => {
             let off = *offset as usize;
-            if off + 2 > raw.len() { return None; }
+            if off + 2 > raw.len() {
+                return None;
+            }
             Some(u16::from_le_bytes(raw[off..off + 2].try_into().unwrap()))
         }
-        FieldLocation::SubRecord { container, offset, .. } => {
+        FieldLocation::SubRecord {
+            container, offset, ..
+        } => {
             let sub = view.sub_record(container)?;
             let off = *offset as usize;
-            if off + 2 > sub.len() { return None; }
+            if off + 2 > sub.len() {
+                return None;
+            }
             Some(u16::from_le_bytes(sub[off..off + 2].try_into().unwrap()))
         }
     }
@@ -374,13 +435,19 @@ pub fn read_field_u32<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Opti
     match f.offset.as_ref()? {
         FieldLocation::Direct { offset, .. } => {
             let off = *offset as usize;
-            if off + 4 > raw.len() { return None; }
+            if off + 4 > raw.len() {
+                return None;
+            }
             Some(u32::from_le_bytes(raw[off..off + 4].try_into().unwrap()))
         }
-        FieldLocation::SubRecord { container, offset, .. } => {
+        FieldLocation::SubRecord {
+            container, offset, ..
+        } => {
             let sub = view.sub_record(container)?;
             let off = *offset as usize;
-            if off + 4 > sub.len() { return None; }
+            if off + 4 > sub.len() {
+                return None;
+            }
             Some(u32::from_le_bytes(sub[off..off + 4].try_into().unwrap()))
         }
     }
@@ -391,13 +458,19 @@ pub fn read_field_u64<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Opti
     match f.offset.as_ref()? {
         FieldLocation::Direct { offset, .. } => {
             let off = *offset as usize;
-            if off + 8 > raw.len() { return None; }
+            if off + 8 > raw.len() {
+                return None;
+            }
             Some(u64::from_le_bytes(raw[off..off + 8].try_into().unwrap()))
         }
-        FieldLocation::SubRecord { container, offset, .. } => {
+        FieldLocation::SubRecord {
+            container, offset, ..
+        } => {
             let sub = view.sub_record(container)?;
             let off = *offset as usize;
-            if off + 8 > sub.len() { return None; }
+            if off + 8 > sub.len() {
+                return None;
+            }
             Some(u64::from_le_bytes(sub[off..off + 8].try_into().unwrap()))
         }
     }
@@ -408,13 +481,19 @@ pub fn read_field_f32<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Opti
     match f.offset.as_ref()? {
         FieldLocation::Direct { offset, .. } => {
             let off = *offset as usize;
-            if off + 4 > raw.len() { return None; }
+            if off + 4 > raw.len() {
+                return None;
+            }
             Some(f32::from_le_bytes(raw[off..off + 4].try_into().unwrap()))
         }
-        FieldLocation::SubRecord { container, offset, .. } => {
+        FieldLocation::SubRecord {
+            container, offset, ..
+        } => {
             let sub = view.sub_record(container)?;
             let off = *offset as usize;
-            if off + 4 > sub.len() { return None; }
+            if off + 4 > sub.len() {
+                return None;
+            }
             Some(f32::from_le_bytes(sub[off..off + 4].try_into().unwrap()))
         }
     }
@@ -424,13 +503,49 @@ pub fn read_field_f32<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Opti
 // VersionedSchemas — one static per supported game version
 // =========================================================================
 
-/// Location of the current DateDayYear in this build's game object.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GameDateLocation {
-    /// Module-relative address of the pointer to the game object.
-    pub ptr_rva: u64,
-    /// Byte offset of the date within the pointed-to game object.
-    pub offset: u64,
+/// Build-specific offsets and labels for player medical, relations and clause lists.
+#[derive(Debug)]
+pub struct PlayerListLayout {
+    pub medical_ptr: u64,
+    pub injuries_vec: usize,
+    pub injury_size: usize,
+    pub injury_type_ptr: usize,
+    pub injury_type_name: usize,
+    pub injury_start: usize,
+    pub injury_full_days: usize,
+    pub injury_light_days: usize,
+    pub absences_vec: usize,
+    pub absence_size: usize,
+    pub absence_kind: usize,
+    pub absence_start: usize,
+    pub absence_days: usize,
+    pub absence_ban: u8,
+    pub absence_holiday: u8,
+    pub absence_kinds: &'static [(u8, &'static str)],
+    pub relations_ptr: u64,
+    pub relations_vec: usize,
+    pub relation_size: usize,
+    pub relation_target: usize,
+    pub relation_kind: usize,
+    pub relation_type: usize,
+    pub relation_strength: usize,
+    pub relation_reason: usize,
+    pub kind_club: u8,
+    pub kind_nation: u8,
+    pub type_other_nationality: u8,
+    pub type_favoured_club: u8,
+    pub nation_name: usize,
+    pub club_name: usize,
+    pub favoured_club_reasons: &'static [(u8, &'static str)],
+    pub clauses_vec: usize,
+    pub clause_size: usize,
+    pub clause_amount: usize,
+    pub clause_value: usize,
+    pub clause_type: usize,
+    pub clause_types: &'static [(u8, &'static str)],
+    pub clause_amount_types: &'static [u8],
+    pub clause_percent_types: &'static [u8],
+    pub clause_year_types: &'static [u8],
 }
 
 /// Complete field / layout / RVA schema for one game build.
@@ -455,6 +570,11 @@ pub struct VersionedSchemas {
     pub staff_sub_records: &'static [SubRecord],
     pub club_sub_records: &'static [SubRecord],
     pub stadium_sub_records: &'static [SubRecord],
+
+    /// None when this build's player lists have not been mapped.
+    pub player_lists: Option<&'static PlayerListLayout>,
+    /// Only independently witnessed morale levels have labels.
+    pub morale_labels: &'static [(u8, &'static str)],
 
     // Struct sizes / read sizes.
     pub player_struct_size: usize,
@@ -481,6 +601,9 @@ pub struct VersionedSchemas {
     ///   entity[i] = data_ptr + i * stadium_entity_stride
     /// This RVA points to the container object (first hop), not directly to the array.
     pub rva_stadium_base: u64,
+
+    /// Packed DateDayYear at this module-relative RVA; 0 means unknown.
+    pub rva_current_date: u64,
 
     // FMRTE reference counts — used by `src/bin/scan_arrays.rs` to
     // validate candidate RVA pairs. Per-version because FMRTE's own
@@ -527,15 +650,21 @@ pub struct VersionedSchemas {
     /// `find_human_manager` is treated as shifted.
     pub human_manager_vtable_rva: u64,
 
-    /// Current in-game date location, only when verified for this build.
-    pub game_date: Option<GameDateLocation>,
-
     /// Year ages are computed against (game start season). FM26 keeps the
     /// editor's historical 2026; FM24 saves start in July 2023.
     pub age_reference_year: u16,
 }
 
 impl VersionedSchemas {
+    /// Build-specific morale label, falling back for unwitnessed levels.
+    pub fn morale_label(&self, level: u8) -> String {
+        self.morale_labels
+            .iter()
+            .find(|&&(known, _)| known == level)
+            .map(|&(_, label)| label.to_owned())
+            .unwrap_or_else(|| format!("Level {level}"))
+    }
+
     /// Look up a single field by key across all entities of this build.
     ///
     /// The per-build schemas are backed by a lazily-built `HashMap` so
@@ -604,20 +733,10 @@ mod schema_lookup_tests {
     use super::*;
 
     #[test]
-    fn game_date_location_is_specific_to_the_verified_build() {
-        assert_eq!(
-            GameBuild::Fm27Steam.schemas().game_date,
-            Some(GameDateLocation {
-                ptr_rva: 0x56F1A18,
-                offset: 0x7F4
-            })
-        );
-        for build in [
-            GameBuild::Fm27GamePass,
-            GameBuild::Fm24Steam,
-            GameBuild::Fm26Steam,
-        ] {
-            assert_eq!(build.schemas().game_date, None, "{build:?}");
+    fn current_date_rva_is_specific_to_the_verified_build() {
+        assert_eq!(GameBuild::Fm27Steam.schemas().rva_current_date, 0x56AD378);
+        for build in [GameBuild::Fm27GamePass, GameBuild::Fm24Steam, GameBuild::Fm26Steam] {
+            assert_eq!(build.schemas().rva_current_date, 0, "{build:?}");
         }
     }
 
@@ -626,14 +745,21 @@ mod schema_lookup_tests {
         for build in GameBuild::ALL {
             let schemas = build.schemas();
             let hashed = schemas.field("p_ca").unwrap();
-            let scanned = schemas.player_fields.iter().find(|f| f.key == "p_ca").unwrap();
+            let scanned = schemas
+                .player_fields
+                .iter()
+                .find(|f| f.key == "p_ca")
+                .unwrap();
             assert!(std::ptr::eq(hashed, scanned), "{build:?}");
             assert_eq!(
                 schemas.offset_of("p_ca"),
                 Some(scanned.offset.unwrap().offset() as usize)
             );
         }
-        assert!(GameBuild::Fm26Steam.schemas().field("no_such_key").is_none());
+        assert!(GameBuild::Fm26Steam
+            .schemas()
+            .field("no_such_key")
+            .is_none());
     }
 
     #[test]
@@ -645,24 +771,216 @@ mod schema_lookup_tests {
         let mut raw = vec![0u8; off + 4];
         raw[off] = 84;
         raw[off + 1] = 14;
-        assert_eq!(read_field_int(&(), &raw, fm24.field("p_intl_caps").unwrap()), Some(84));
+        assert_eq!(
+            read_field_int(&(), &raw, fm24.field("p_intl_caps").unwrap()),
+            Some(84)
+        );
 
         let fm27 = GameBuild::Fm27Steam.schemas();
         let off = fm27.offset_of("p_intl_caps").unwrap();
         let mut raw = vec![0u8; off + 2];
         raw[off..off + 2].copy_from_slice(&300u16.to_le_bytes());
-        assert_eq!(read_field_int(&(), &raw, fm27.field("p_intl_caps").unwrap()), Some(300));
+        assert_eq!(
+            read_field_int(&(), &raw, fm27.field("p_intl_caps").unwrap()),
+            Some(300)
+        );
     }
 
     #[test]
     fn category_lookup_keeps_only_mapped_fields_of_that_category() {
         for build in GameBuild::ALL {
-            let fields =
-                build.schemas().fields_for_category(Entity::Player, Category::Technical);
+            let fields = build
+                .schemas()
+                .fields_for_category(Entity::Player, Category::Technical);
             assert!(!fields.is_empty(), "{build:?}");
             assert!(fields.iter().all(|f| f.entity == Entity::Player
                 && f.category == Category::Technical
                 && f.offset.is_some()));
+        }
+    }
+}
+
+#[cfg(test)]
+mod player_schema_tests {
+    use super::*;
+
+    #[test]
+    fn morale_labels_only_name_witnessed_levels() {
+        let schemas = &fm27::FM27;
+        for &(level, label) in &[
+            (2, "Extremely Poor"),
+            (3, "Very Poor"),
+            (5, "Quite Poor"),
+            (6, "Fairly Poor"),
+            (7, "Slightly Poor"),
+            (9, "Fairly Okay"),
+            (10, "Okay"),
+            (11, "Fairly Good"),
+            (12, "Quite Good"),
+            (13, "Good"),
+            (14, "Really Good"),
+        ] {
+            assert_eq!(schemas.morale_label(level), label);
+        }
+        for level in [0, 1, 4, 8, 15, 16, 17, 18, 19, 20, 255] {
+            assert_eq!(schemas.morale_label(level), format!("Level {level}"));
+        }
+        assert_eq!(
+            schemas.field("p_morale").unwrap().category,
+            Category::Condition
+        );
+    }
+
+    #[test]
+    fn fm27_clause_labels_and_value_kinds_match_witnesses() {
+        let layout = fm27::FM27.player_lists.unwrap();
+        assert_eq!(
+            layout.clause_types,
+            &[
+                (0x20, "Appearance Fee"),
+                (0x21, "Goal Bonus"),
+                (0x22, "Clean Sheet Bonus"),
+                (0x26, "Unused Substitute Fee"),
+                (0x27, "Assist Bonus"),
+                (0x05, "Relegation Wage Drop"),
+                (0x16, "Optional Contract Extension By Club"),
+            ]
+        );
+        assert_eq!(layout.clause_amount_types, &[0x20, 0x21, 0x22, 0x26, 0x27]);
+        assert_eq!(layout.clause_percent_types, &[0x05]);
+        assert_eq!(layout.clause_year_types, &[0x16]);
+        assert_eq!(
+            (
+                layout.clauses_vec,
+                layout.clause_size,
+                layout.clause_amount,
+                layout.clause_value,
+                layout.clause_type
+            ),
+            (0x68, 8, 0, 4, 6)
+        );
+        for &(code, _) in layout.clause_types {
+            let classifications = [
+                layout.clause_amount_types,
+                layout.clause_percent_types,
+                layout.clause_year_types,
+            ];
+            assert_eq!(
+                classifications
+                    .iter()
+                    .filter(|types| types.contains(&code))
+                    .count(),
+                1
+            );
+        }
+        assert!(!layout.clause_types.iter().any(|&(code, _)| code == 0xFF));
+    }
+
+    #[test]
+    fn fm27_player_list_layout_and_listing_fields_are_build_data() {
+        let schemas = &fm27::FM27;
+        let layout = schemas.player_lists.unwrap();
+        assert_eq!(schemas.rva_current_date, 0x56AD378);
+        assert_eq!((layout.medical_ptr, layout.relations_ptr), (0xF8, 0x300));
+        assert_eq!(
+            (
+                layout.injuries_vec,
+                layout.absences_vec,
+                layout.relations_vec
+            ),
+            (0, 0x18, 0)
+        );
+        assert_eq!(
+            (
+                layout.injury_size,
+                layout.injury_type_ptr,
+                layout.injury_type_name
+            ),
+            (0x38, 8, 0x20)
+        );
+        assert_eq!(
+            (
+                layout.injury_start,
+                layout.injury_full_days,
+                layout.injury_light_days
+            ),
+            (0x20, 0x28, 0x2A)
+        );
+        assert_eq!(
+            (
+                layout.absence_size,
+                layout.absence_kind,
+                layout.absence_start,
+                layout.absence_days
+            ),
+            (0x20, 5, 0x10, 0x16)
+        );
+        assert_eq!((layout.absence_ban, layout.absence_holiday), (0x19, 0x1F));
+        assert_eq!(
+            layout.absence_kinds,
+            &[(0x19, "Suspension/ban"), (0x1F, "Holiday")]
+        );
+        assert_eq!(
+            (
+                layout.relation_size,
+                layout.relation_target,
+                layout.relation_kind,
+                layout.relation_type,
+                layout.relation_strength,
+                layout.relation_reason
+            ),
+            (16, 0, 0x0A, 0x0B, 0x0C, 0x0D)
+        );
+        assert_eq!(
+            (
+                layout.kind_club,
+                layout.kind_nation,
+                layout.type_other_nationality,
+                layout.type_favoured_club
+            ),
+            (1, 8, 9, 3)
+        );
+        assert_eq!((layout.nation_name, layout.club_name), (0x18, 0xC0));
+        assert_eq!(
+            layout.favoured_club_reasons,
+            &[(0x4F, "As a player"), (0x4E, "As a supporter")]
+        );
+        for (key, expected_offset, expected_encoding) in [
+            ("p_list_date", 0x50, Encoding::DateDayYear),
+            ("p_list_flags", 0x57, Encoding::Direct),
+            ("p_list_code", 0x58, Encoding::Direct),
+        ] {
+            match schemas.field(key).unwrap().offset.unwrap() {
+                FieldLocation::SubRecord {
+                    container,
+                    offset,
+                    encoding,
+                } => {
+                    assert_eq!(container, "contract");
+                    assert_eq!(offset, expected_offset);
+                    assert_eq!(encoding, expected_encoding);
+                }
+                _ => panic!("{key} must live in the contract"),
+            }
+        }
+        let gamepass = &fm27::FM27_GAMEPASS;
+        assert!(std::ptr::eq(layout, gamepass.player_lists.unwrap()));
+        assert_eq!(schemas.morale_labels, gamepass.morale_labels);
+        // Game Pass RVAs differ: the Steam date address is never inherited.
+        assert_eq!(gamepass.rva_current_date, 0);
+    }
+
+    #[test]
+    fn fm24_and_fm26_leave_new_player_paths_unmapped() {
+        for schemas in [&fm24::FM24, &fm26::FM26] {
+            assert!(schemas.player_lists.is_none());
+            assert!(schemas.morale_labels.is_empty());
+            assert_eq!(schemas.morale_label(10), "Level 10");
+            assert_eq!(schemas.rva_current_date, 0);
+            for key in ["p_list_date", "p_list_flags", "p_list_code"] {
+                assert!(schemas.field(key).unwrap().offset.is_none(), "{key}");
+                assert_eq!(schemas.offset_of(key), None);
+            }
         }
     }
 }

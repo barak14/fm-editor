@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Features
+
+- FM27 Steam player data: editable morale and transfer value; injuries with **Heal**; suspensions and holidays with **Lift ban**; other nationalities and favoured clubs; **Transfer listed** / **Loan listed** with the listing date; editable bonus and fee clauses. See the UI guide's "FM27 player data".
+
+### Safety
+
+- Before every edit or Undo, the worker re-reads memory and refuses the write if it no longer matches what was read.
+
 ### Fixes
 
 - FM27 Steam: ages use the in-game date instead of a fixed year, so a player born 8 Jul 1991 is 35 on 14 Jul 2026, not 36. Headers, search columns, age filters and sorting all use it. Other builds keep the previous year-based estimate.

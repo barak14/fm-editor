@@ -58,6 +58,11 @@ impl WriteTracker {
         let cmd = BridgeCmd::WriteBytes {
             id,
             addr: entry.addr,
+            expected: if was_undo {
+                entry.new_raw.clone()
+            } else {
+                entry.old_raw.clone()
+            },
             data: if was_undo {
                 entry.old_raw.clone()
             } else {
@@ -100,9 +105,26 @@ mod tests {
 
     fn write(cmd: BridgeCmd) -> (u64, u64, Vec<u8>) {
         match cmd {
-            BridgeCmd::WriteBytes { id, addr, data } => (id, addr, data),
+            BridgeCmd::WriteBytes { id, addr, data, .. } => (id, addr, data),
             _ => panic!("expected a write command"),
         }
+    }
+
+    #[test]
+    fn writes_expect_old_bytes_and_undo_expects_new_bytes() {
+        let mut tracker = WriteTracker::new();
+        let BridgeCmd::WriteBytes { expected, data, .. } =
+            tracker.submit(vec![entry(100)]).remove(0)
+        else {
+            panic!()
+        };
+        assert_eq!(expected, vec![1, 2]);
+        assert_eq!(data, vec![3, 4]);
+        let BridgeCmd::WriteBytes { expected, data, .. } = tracker.submit_undo(entry(100)) else {
+            panic!()
+        };
+        assert_eq!(expected, vec![3, 4]);
+        assert_eq!(data, vec![1, 2]);
     }
 
     #[test]

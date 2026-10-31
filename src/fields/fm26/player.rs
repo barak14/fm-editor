@@ -183,4 +183,8 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "p_uid",          label: "UID",              entity: Player, category: General,     offset: raw(0x0294) },
         Field { key: "p_current_club", label: "Current Club",     entity: Player, category: General,     offset: None },
         Field { key: "p_traits",       label: "Traits (PPMs)",    entity: Player, category: Traits,      offset: raw(0x0348) }, // 64-bit bitmask, bit = PPM_ID - 1
+        // FM27 listing metadata has not been mapped on FM26.
+        Field { key: "p_list_flags",   label: "Listing Flags",    entity: Player, category: Contract,    offset: None },
+        Field { key: "p_list_date",    label: "Listed Since",     entity: Player, category: Contract,    offset: None },
+        Field { key: "p_list_code",    label: "Listing Code",     entity: Player, category: Contract,    offset: None },
 ];

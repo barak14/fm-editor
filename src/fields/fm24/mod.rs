@@ -6,17 +6,17 @@
 //! live in `fm.exe` itself (image base 0x140000000), so `gp_base` is the
 //! fm.exe base on this version (see `GameVersion::module_name`).
 
-mod player;
-pub mod staff;
 mod club;
+mod player;
 mod stadium;
+pub mod staff;
 
+pub(crate) use club::CLUB_SUB_RECORDS;
+pub(crate) use club::FIELDS as CLUB_FIELDS;
 pub(crate) use player::FIELDS as PLAYER_FIELDS;
 pub(crate) use player::PLAYER_SUB_RECORDS;
-pub(crate) use staff::FIELDS as STAFF_FIELDS;
-pub(crate) use club::FIELDS as CLUB_FIELDS;
-pub(crate) use club::CLUB_SUB_RECORDS;
 pub(crate) use stadium::FIELDS as STADIUM_FIELDS;
+pub(crate) use staff::FIELDS as STAFF_FIELDS;
 
 use crate::fields::VersionedSchemas;
 
@@ -45,6 +45,8 @@ pub static FM24: VersionedSchemas = VersionedSchemas {
     staff_sub_records: &[],
     club_sub_records: CLUB_SUB_RECORDS,
     stadium_sub_records: &[],
+    player_lists: None,
+    morale_labels: &[],
 
     player_struct_size: 0x3E8, // pool stride
     staff_struct_size: 0x268,  // pool stride
@@ -61,6 +63,7 @@ pub static FM24: VersionedSchemas = VersionedSchemas {
     rva_clubs_data: 0x642EF58,
     rva_clubs_end: 0x642EF60,
     rva_stadium_base: 0,
+    rva_current_date: 0,
 
     // Counts observed in the mapping save (used by scan_arrays.rs labels).
     fmrte_players: 83426,
@@ -76,6 +79,5 @@ pub static FM24: VersionedSchemas = VersionedSchemas {
     player_person_offset: 0,
     player_coach_shift: 0,
     human_manager_vtable_rva: 0,
-    game_date: None,
     age_reference_year: 2023,
 };

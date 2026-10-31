@@ -166,4 +166,8 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "p_contract_signed",  label: "Contract Signed",  entity: Player, category: Contract,   offset: None    },
     Field { key: "p_morale",       label: "Morale",           entity: Player, category: Condition,   offset: None },
     Field { key: "p_traits",       label: "Traits (PPMs)",    entity: Player, category: Traits,      offset: None },
+    // FM27 listing metadata has not been mapped on FM24.
+    Field { key: "p_list_flags",   label: "Listing Flags",    entity: Player, category: Contract,    offset: None },
+    Field { key: "p_list_date",    label: "Listed Since",     entity: Player, category: Contract,    offset: None },
+    Field { key: "p_list_code",    label: "Listing Code",     entity: Player, category: Contract,    offset: None },
 ];

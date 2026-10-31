@@ -69,7 +69,6 @@ fn counts_tuple(ac: &ArrayCache) -> (usize, usize, usize) {
     (ac.humans_count, ac.staff_count, ac.clubs_count)
 }
 
-
 // ---------------------------------------------------------------------------
 // Worker loop
 // ---------------------------------------------------------------------------
@@ -195,9 +194,20 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                 }
             }
 
-            BridgeCmd::WriteBytes { id, addr, data } => {
+            BridgeCmd::WriteBytes {
+                id,
+                addr,
+                expected,
+                data,
+            } => {
                 let result = match &fm {
-                    Some(f) => f.write_bytes(addr, &data),
+                    Some(f) => checked_write(
+                        addr,
+                        &expected,
+                        &data,
+                        |at, len| f.read_bytes(at, len),
+                        |at, bytes| f.write_bytes(at, bytes),
+                    ),
                     None => Err("Cannot write: no process attached".to_owned()),
                 };
                 let response = match result {
@@ -287,9 +297,91 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
     }
 }
 
+/// A best-effort compare-before-write check, not an atomic operation across
+/// processes: FM can still update memory between the read and the write.
+fn checked_write(
+    addr: u64,
+    expected: &[u8],
+    data: &[u8],
+    read: impl FnOnce(u64, usize) -> Result<Vec<u8>, String>,
+    write: impl FnOnce(u64, &[u8]) -> Result<(), String>,
+) -> Result<(), String> {
+    if expected.len() != data.len() || data.is_empty() {
+        return Err(
+            "Cannot write: expected bytes and data must have the same non-zero length".into(),
+        );
+    }
+    let last = addr.checked_add(data.len() as u64 - 1);
+    if !crate::player::is_valid_ptr(addr) || !last.is_some_and(crate::player::is_valid_ptr) {
+        return Err("Cannot write: invalid memory range; reload the player and retry".into());
+    }
+    let changed = "Memory changed since it was read (FM updated it or the record moved); reload the player and retry";
+    let current = read(addr, data.len()).map_err(|error| format!("{changed}: {error}"))?;
+    if current != expected {
+        return Err(changed.into());
+    }
+    write(addr, data)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn checked_write_matches_snapshot_before_writing() {
+        use std::cell::RefCell;
+        let memory = RefCell::new(vec![1, 2]);
+        let result = checked_write(
+            0x20000,
+            &[1, 2],
+            &[3, 4],
+            |at, len| {
+                assert_eq!((at, len), (0x20000, 2));
+                Ok(memory.borrow().clone())
+            },
+            |at, data| {
+                assert_eq!(at, 0x20000);
+                *memory.borrow_mut() = data.to_vec();
+                Ok(())
+            },
+        );
+        assert!(result.is_ok());
+        assert_eq!(*memory.borrow(), vec![3, 4]);
+    }
+
+    #[test]
+    fn checked_write_refuses_changed_unreadable_or_invalid_memory_without_writing() {
+        let refuse_write = |_, _: &[u8]| -> Result<(), String> { panic!("must not write") };
+        for actual in [vec![9, 2], vec![1]] {
+            let error = checked_write(0x20000, &[1, 2], &[3, 4], |_, _| Ok(actual), refuse_write)
+                .unwrap_err();
+            assert!(error.contains("Memory changed since it was read"));
+        }
+        let error = checked_write(
+            0x20000,
+            &[1, 2],
+            &[3, 4],
+            |_, _| Err("unmapped".into()),
+            refuse_write,
+        )
+        .unwrap_err();
+        assert!(error.contains("reload the player and retry"));
+        for (addr, expected, data) in [
+            (0x20000, vec![1], vec![3, 4]),
+            (0x20000, vec![], vec![]),
+            (u64::MAX, vec![1], vec![3]),
+            (0x10000, vec![1], vec![3]),
+            (0x7FFF_FFFF_FFFE, vec![1, 2], vec![3, 4]),
+        ] {
+            assert!(checked_write(
+                addr,
+                &expected,
+                &data,
+                |_, _| panic!("must not read"),
+                refuse_write
+            )
+            .is_err());
+        }
+    }
 
     #[test]
     fn write_without_attached_process_is_acknowledged_as_failure() {
@@ -300,6 +392,7 @@ mod tests {
                 id: 42,
                 addr: 100,
                 data: vec![1],
+                expected: vec![0],
             })
             .unwrap();
         cmd_tx.send(BridgeCmd::Shutdown).unwrap();

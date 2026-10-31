@@ -1,12 +1,71 @@
 //! Player field definitions for FM27. Aggregated into `fields::all_fields`
 //! via `fields::fm27::PLAYER_FIELDS`.
 //!
-//! UNVERIFIED: copied from the FM26 schema as the FM27 starting point.
-//! Every offset below must be re-verified against FM27 witnesses.
+//! Verified mappings carry witness notes below; other inherited FM26
+//! offsets remain unverified on FM27 (see docs/fm27/memory-layout.md).
 
 use crate::fields::{direct, date, encoded, fm_string, pointer, raw, raw_u32, sub_date, sub_direct, sub_fm_string, sub_raw_u32, Field, SubRecord, SubRecordParent};
 use crate::fields::Category::*;
 use crate::fields::Entity::Player;
+
+/// Independently witnessed FM27 morale labels; other levels must stay numeric.
+pub(crate) const MORALE_LABELS: &[(u8, &str)] = &[
+    (2, "Extremely Poor"), (3, "Very Poor"), (5, "Quite Poor"),
+    (6, "Fairly Poor"), (7, "Slightly Poor"), (9, "Fairly Okay"),
+    (10, "Okay"), (11, "Fairly Good"), (12, "Quite Good"),
+    (13, "Good"), (14, "Really Good"),
+];
+
+/// FM27 Steam, 13 Jul 2026 witness save. Medical: Kudus, van de Ven,
+/// Kulusevski, Xavi Simons, Odobert (injuries); Mudryk (ban), Porro and
+/// Bentancur (holiday). Relations: Senesi / Gray (nationalities),
+/// Bentancur / van Hecke / Gray (favoured clubs). Clauses: Kudus / van Hecke.
+pub(crate) const FM27_PLAYER_LISTS: crate::fields::PlayerListLayout = crate::fields::PlayerListLayout {
+    medical_ptr: 0xF8,
+    injuries_vec: 0x00,
+    injury_size: 0x38,
+    injury_type_ptr: 0x08,
+    injury_type_name: 0x20,
+    injury_start: 0x20,
+    injury_full_days: 0x28,
+    injury_light_days: 0x2A,
+    absences_vec: 0x18,
+    absence_size: 0x20,
+    absence_kind: 0x05,
+    absence_start: 0x10,
+    absence_days: 0x16,
+    absence_ban: 0x19,
+    absence_holiday: 0x1F,
+    absence_kinds: &[(0x19, "Suspension/ban"), (0x1F, "Holiday")],
+    relations_ptr: 0x300,
+    relations_vec: 0x00,
+    relation_size: 16,
+    relation_target: 0x00,
+    relation_kind: 0x0A,
+    relation_type: 0x0B,
+    relation_strength: 0x0C,
+    relation_reason: 0x0D,
+    kind_club: 1,
+    kind_nation: 8,
+    type_other_nationality: 9,
+    type_favoured_club: 3,
+    nation_name: 0x18,
+    club_name: 0xC0,
+    favoured_club_reasons: &[(0x4F, "As a player"), (0x4E, "As a supporter")],
+    clauses_vec: 0x68,
+    clause_size: 8,
+    clause_amount: 0x00,
+    clause_value: 0x04,
+    clause_type: 0x06,
+    clause_types: &[
+        (0x20, "Appearance Fee"), (0x21, "Goal Bonus"), (0x22, "Clean Sheet Bonus"),
+        (0x26, "Unused Substitute Fee"), (0x27, "Assist Bonus"),
+        (0x05, "Relegation Wage Drop"), (0x16, "Optional Contract Extension By Club"),
+    ],
+    clause_amount_types: &[0x20, 0x21, 0x22, 0x26, 0x27],
+    clause_percent_types: &[0x05],
+    clause_year_types: &[0x16],
+};
 
 /// Player sub-records, resolved by `player::read_player_at`.
 pub(crate) const PLAYER_SUB_RECORDS: &[SubRecord] = &[
@@ -133,6 +192,8 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "p_name2_first_sub",  label: "Name2 First Sub",   entity: Player, category: Internal, offset: None },
         Field { key: "p_name2_last_sub",   label: "Name2 Last Sub",    entity: Player, category: Internal, offset: None },
         Field { key: "p_height",       label: "Height",           entity: Player, category: General,     offset: raw(0x022E) },
+        // Verified transfer value: Bentancur 37,620,000 → "£38M";
+        // Tonali 183,492,624 in "£183M - £200M"; Davies 8,878,733 in "£8.8M - £10.5M".
         Field { key: "p_value",        label: "Market Value",     entity: Player, category: General,     offset: raw_u32(0x0234) },
         // FM26's weekly wage (+0x248) reads 13748 for Haaland on FM27; the real
         // wage is the contract's (`p_contract_wage`). Unmapped.
@@ -189,10 +250,13 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "p_contract_signed",  label: "Contract Signed",  entity: Player, category: Contract,   offset: sub_date("contract", 0x44)    },
         Field { key: "p_contract_expiry",  label: "Contract Expiry",  entity: Player, category: Contract,   offset: sub_date("contract", 0x48)    },
         Field { key: "p_squad_number",     label: "Squad Number",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x5D)  },
-        // Transfer-list flags: bit 0 transfer listed, bit 1 loan listed (other
-        // bits are FM's own — Yamal has 0x40). Lead from FM27€0; not yet
-        // checked against a listed player.
+        // Verified: Bentancur / Brandon Austin bit 0 = Listed; Aaron Maguire
+        // bit 1 = Loa. Preserve FM's other flag bits (e.g. Yamal 0x40).
         Field { key: "p_list_flags",       label: "Listing Flags",    entity: Player, category: Contract,   offset: sub_direct("contract", 0x57)  },
+        // Listed date; packed 1 Jan 1900 (0x076C0001) means not listed.
+        Field { key: "p_list_date",        label: "Listed Since",     entity: Player, category: Contract,   offset: sub_date("contract", 0x50)    },
+        // Bentancur / Austin 5 (club listed); Maguire and unlisted players 0.
+        Field { key: "p_list_code",        label: "Listing Code",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x58)  },
         // Asking price, i32 pounds; -1 = not set (all five witnesses).
         Field { key: "p_asking_price",     label: "Asking Price",     entity: Player, category: Contract,   offset: raw_u32(0x0238) },
 
@@ -218,6 +282,8 @@ pub(crate) const FIELDS: &[Field] = &[
         // Person base struct (embedded at +0x258)
         Field { key: "p_ca",           label: "Current Ability",  entity: Player, category: Ability,     offset: raw(0x0264) },
         Field { key: "p_pa",           label: "Potential Ability", entity: Player, category: Ability,     offset: raw(0x0266) },
+        // Verified morale LEVEL byte: whole-database range 1..20.
+        // Only witnessed labels appear in MORALE_LABELS; other levels stay numeric.
         Field { key: "p_morale",       label: "Morale",           entity: Player, category: Condition,   offset: direct(0x026C) },
         Field { key: "p_home_rep",     label: "Home Rep",         entity: Player, category: Reputation,  offset: raw(0x025E) },
         Field { key: "p_current_rep",  label: "Current Rep",      entity: Player, category: Reputation,  offset: raw(0x0260) },

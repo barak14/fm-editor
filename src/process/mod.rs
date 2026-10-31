@@ -210,18 +210,12 @@ impl FmProcess {
     /// Read the current in-game date through this attachment's verified schema.
     /// Unmapped builds, invalid pointers/dates, and failed reads return None.
     pub fn game_date(&self) -> Option<GameDate> {
-        let location = self.schemas().game_date?;
+        let rva = self.schemas().rva_current_date;
+        if rva == 0 {
+            return None;
+        }
         let valid = |address: u64| address > 0x10000 && address < 0x7FFF_FFFF_FFFF;
-        let slot = self.gp_base.checked_add(location.ptr_rva)?;
-        if !valid(slot) || !valid(slot.checked_add(7)?) {
-            return None;
-        }
-        let bytes = self.read_bytes(slot, 8).ok()?;
-        let ptr = u64::from_le_bytes(bytes.as_slice().try_into().ok()?);
-        if !valid(ptr) {
-            return None;
-        }
-        let address = ptr.checked_add(location.offset)?;
+        let address = self.gp_base.checked_add(rva)?;
         if !valid(address) || !valid(address.checked_add(3)?) {
             return None;
         }

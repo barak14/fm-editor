@@ -1,21 +1,20 @@
 //! FM27 per-version field tables, same layout as `fields::fm26`.
 //!
-//! UNVERIFIED: every offset and RVA here is the FM26 (2026-10 patch) value,
-//! copied as the starting point for the FM27 bring-up. Nothing in this
-//! module has been checked against FM27 witnesses yet.
+//! Fields not listed as verified in docs/fm27/memory-layout.md remain
+//! inherited leads from FM26, not verified FM27 mappings.
 
-mod player;
-pub mod staff;
 mod club;
+mod player;
 mod stadium;
+pub mod staff;
 
+pub(crate) use club::CLUB_SUB_RECORDS;
+pub(crate) use club::FIELDS as CLUB_FIELDS;
 pub(crate) use player::FIELDS as PLAYER_FIELDS;
 pub(crate) use player::PLAYER_SUB_RECORDS;
+pub(crate) use stadium::FIELDS as STADIUM_FIELDS;
 pub(crate) use staff::FIELDS as STAFF_FIELDS;
 pub(crate) use staff::STAFF_SUB_RECORDS;
-pub(crate) use club::FIELDS as CLUB_FIELDS;
-pub(crate) use club::CLUB_SUB_RECORDS;
-pub(crate) use stadium::FIELDS as STADIUM_FIELDS;
 
 use crate::fields::VersionedSchemas;
 
@@ -33,8 +32,10 @@ const STEAM: VersionedSchemas = VersionedSchemas {
     staff_sub_records: STAFF_SUB_RECORDS,
     club_sub_records: CLUB_SUB_RECORDS,
     stadium_sub_records: &[],
+    player_lists: Some(&player::FM27_PLAYER_LISTS),
+    morale_labels: player::MORALE_LABELS,
 
-    player_struct_size: 992,   // 0x3E0 — covers block-2 name sub-records at 0x3D0/0x3D8
+    player_struct_size: 992, // 0x3E0 — covers block-2 name sub-records at 0x3D0/0x3D8
     staff_struct_size: 576,
     club_read_size: 0x2000,
     stadium_entity_stride: 0xC0, // 192 bytes, flat inline array (was 0x170 before the 2026-10 patch)
@@ -54,6 +55,11 @@ const STEAM: VersionedSchemas = VersionedSchemas {
     rva_clubs_data: 0x5703988,
     rva_clubs_end: 0x5703990,
     rva_stadium_base: 0x5703750,
+    // Current game date (DateDayYear, flags above bit 8). Witnesses: raw
+    // 0x07EA1AC2 (day 194) on Mon 13 Jul 2026; 195/2026 after one day of
+    // holiday, Tue 14 Jul 2026 (2026-10-31). A pointer path reads the same
+    // date: +0x56F1A18 -> game object (vtable +0x4C8C858) + 0x7F4.
+    rva_current_date: 0x56AD378,
 
     // No FMRTE reference counts exist for FM27 yet. These are the counts
     // observed in a fresh FM27 save (day 1 of the first season); they
@@ -80,14 +86,6 @@ const STEAM: VersionedSchemas = VersionedSchemas {
     // name>)", staff id 2002106548, no club, CA/PA 100/200). Both showed as
     // nameless ID-0 rows in the staff list.
     human_manager_vtable_rva: 0x4CC086C,
-    // Current date: game_plugin+0x56F1A18 points at a game object (vtable
-    // +0x4C8C858) holding a DateDayYear at +0x7F4. Witnesses 2026-10-31:
-    // day 194/2026 while FM showed Mon 13/7/2026, 195/2026 after one day of
-    // holiday (Tue 14/7/2026); the only address of 49,446 matching both.
-    game_date: Some(crate::fields::GameDateLocation {
-        ptr_rva: 0x56F1A18,
-        offset: 0x7F4,
-    }),
     age_reference_year: 2027,
 };
 
@@ -104,7 +102,7 @@ pub static FM27: VersionedSchemas = STEAM;
 pub static FM27_GAMEPASS: VersionedSchemas = VersionedSchemas {
     // Not calibrated: attach reports the running game_plugin.dll hash.
     known_dll_hash: 0,
-    // Game Pass RVAs differ: never inherit the Steam date mapping.
-    game_date: None,
+    // Game Pass RVAs differ: never inherit the Steam date address.
+    rva_current_date: 0,
     ..STEAM
 };

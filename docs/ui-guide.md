@@ -14,7 +14,7 @@ When a game's version is known, the window title and sidebar heading identify it
 - **Results** returns to the current search's results. Open entities remain in the tab strip until closed.
 - Previously loaded detail snapshots remain available for read-only browsing if the game exits. Player/staff records not previously opened can still show their cached basic attributes; club details require a loaded snapshot.
 
-Nation names are informational, not links: there is no mapped nation detail/list model yet. Club squads, club managers, training-ground pages and relations also require additional verified data support. Unsupported controls/tabs are not presented as working features.
+Nation names are informational, not links: there is no mapped nation detail/list model yet. Club squads, club managers, training-ground pages and relations beyond the FM27 player ties described below require additional verified data support. Unsupported controls/tabs are not presented as working features.
 
 ## Search
 
@@ -85,6 +85,7 @@ The banner distinguishes **Editing live**, **Applying changes**, and **Read-only
 - **Undo** (Ctrl+Z when not editing text) applies to confirmed writes only. Its tooltip names the next entity/field change.
 - Failed writes produce a persistent, dismissible error, restore the unsuccessful edit's local bytes, and refresh the active view when connected. Failed undo remains available to retry.
 - Undo history is cleared when changing/reconnecting saves because previous memory addresses cannot safely be reused.
+- Immediately before each edit or Undo, the worker checks that memory still matches the bytes that were read. Changed or unreadable memory refuses the write with a reload/retry message; failed Undo stays available. This is a read-before-write guard, not an atomic lock on FM's memory.
 - Unsupported trait fields, incomplete buffers and invalid stored ticket prices are not editable. Rendering them must not clamp and write game memory without input.
 
 Read-only sections/tabs are labelled. Attributes use four columns on wide views and two or one on narrower views; labels use proportional text and numeric hit targets are consistent.
@@ -92,3 +93,16 @@ Read-only sections/tabs are labelled. Attributes use four columns on wide views 
 Shared profile field rows, including reputation, use a fixed-width, left-aligned label column so value boxes line up regardless of label length. Long labels truncate with their full text available on hover. Compact CA/PA pairs, position cells and date controls retain their specialized layouts.
 
 The player **Positions & Traits** formation uses a compact, left-aligned grid with equally spaced left/centre/right columns. Sweeper is in the centre column below DC and above GK, using the same compact label/value cell as the other positions.
+
+## FM27 player data
+
+These player rows and actions are mapped for **FM27 Steam only**. FM27 Game Pass inherits the Steam schema but remains unverified; FM24/FM26 do not show these new controls.
+
+- **Status** shows editable morale (levels 1–20) and transfer value in pounds. Only witnessed morale levels have descriptive labels; other valid levels show **Level N** rather than a guessed description.
+- **Injuries** lists the injury name, injured-on date, and dates for returning to light and full training. **Heal** shortens the remaining durations to the elapsed time since the injury began; it never lengthens an injury. Both training durations are one undoable edit.
+- **Unavailability** shows suspensions/bans, holidays and unknown codes with available dates. **Lift ban** shortens a date-based suspension to the elapsed time since it began. Holidays and unknown kinds are read-only. Heal/Lift ban require a readable list and a known current game date, and are disabled when no shortening is possible.
+- **Nationality & ties** shows other nationalities and favoured clubs with the known reason (**As a player** / **As a supporter**, or **Reason N**). A favoured club is navigable only when its object address matches a club in the loaded cache; names alone do not create these links.
+- The **Contract** tab provides **Transfer listed** and **Loan listed** checkboxes. Transfer listing records the current game date and club-listing code together with the flag; removing it clears those listing values. Loan listing changes only its own flag. Other contract bits/bytes are preserved, and an active transfer listing shows **Listed since**. Changing transfer listing requires the current game date to be known.
+- **Bonuses & clauses** shows appearance fees, goal/clean-sheet/assist bonuses and unused-substitute fees as editable pound amounts. Wage-drop percentages and club-extension years are read-only. Unknown clause types retain their raw amount/value display.
+
+Unloaded lists say **Not loaded** and unreadable lists are explicitly unavailable/read-only, not misrepresented as empty. All editable controls remain visible but disabled while disconnected or awaiting an acknowledgement. List-item values update only after the write is acknowledged; the player is then re-read to refresh list membership, even if another entity is now active. Confirmed changes support **Undo**, just like other player edits.
