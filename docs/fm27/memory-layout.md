@@ -376,6 +376,14 @@ session). Edits made Thu 16/7/2026 through the editor's UI; one day of holiday
   undo stack. The four reversible values above were restored by editing them
   back through the editor; fm-debug confirmed transfer value 8,840,353 and
   both listings off, and the editor showed the appearance fee at £30,000.
+- **Undo across game days, after the save-identity fix** (same save, later
+  session): the editor recognises the save by the first club objects'
+  addresses instead of exact counts. Spurs balance 173,975,262 → 180,000,000,
+  then four game days (13 → 17 Jul). FM removed a player on 16 Jul (103,517 →
+  103,516) and added a staff record on 17 Jul (49,197 → 49,198). The editor
+  kept Undo (1) and the open tab, showed the new counts, and Undo restored
+  173,975,262 (fm-debug read 0x0A5EA6DE). Reloading the save from FM's menu
+  replaced every sampled club, player and staff address and cleared Undo.
 
 ### Player-coaches
 
@@ -447,8 +455,6 @@ Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
 - Staff role sub-record pointer (0x1D0).
 - Stadium array root (`rva_stadium_base`) and stride.
 - Asking price (+0x238) for a listed player (see the player table).
-- Undo across a game day: count drift clears the editor's undo stack (see
-  "Second write pass" above).
 
 ### Club search membership (2026-10-30, Steam Huelva save)
 
