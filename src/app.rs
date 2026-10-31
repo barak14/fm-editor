@@ -124,6 +124,8 @@ pub struct FmEditorApp {
     bridge: ProcessBridge,
     conn: ConnState,
     attached_build: Option<GameBuild>,
+    /// Current in-game date for this attachment; unavailable builds use reference ages.
+    pub game_date: Option<crate::game_date::GameDate>,
     window_branch: Option<String>,
     /// Games offered by the last `ChooseGame` (several `fm.exe` running and
     /// none chosen yet). Cleared once a game is attached.
@@ -207,6 +209,7 @@ impl FmEditorApp {
             bridge: ProcessBridge::new(),
             conn: ConnState::Disconnected,
             attached_build: None,
+            game_date: None,
             window_branch: None,
             game_choices: Vec::new(),
             auto_connect: true,
@@ -298,7 +301,8 @@ impl FmEditorApp {
     fn process_results(&mut self) {
         while let Some(result) = self.bridge.try_recv() {
             match result {
-                BridgeResult::Connected(pid, counts) => {
+                BridgeResult::Connected(pid, counts, game_date) => {
+                    self.game_date = game_date;
                     self.clear_entity_state();
                     self.clear_cache();
                     self.conn = ConnState::Ready(pid);
@@ -311,7 +315,8 @@ impl FmEditorApp {
                     let game = self.game_label(pid);
                     self.set_status(format!("Connected to {game}"));
                 }
-                BridgeResult::Attached(pid, build) => {
+                BridgeResult::Attached(pid, build, game_date) => {
+                    self.game_date = game_date;
                     self.conn = ConnState::WaitingForSave(pid);
                     self.clear_entity_state();
                     self.clear_cache();
@@ -334,12 +339,14 @@ impl FmEditorApp {
                     self.game_choices = games;
                 }
                 BridgeResult::SaveUnloaded(pid) => {
+                    self.game_date = None;
                     self.conn = ConnState::WaitingForSave(pid);
                     self.clear_entity_state();
                     self.clear_cache();
                     self.set_status("Save unloaded \u{2014} waiting for next save".into());
                 }
                 BridgeResult::GameClosed => {
+                    self.game_date = None;
                     // Game exited while save was loaded — enter read-only.
                     // Cache is preserved; entity_counts stays for the header.
                     if let ConnState::Ready(pid) = self.conn {
@@ -360,8 +367,9 @@ impl FmEditorApp {
                     self.entity_cache = Some(arc);
                     self.cache_load_state = CacheLoadState::Ready;
                 }
-                BridgeResult::PingOk => {}
+                BridgeResult::PingOk(game_date) => self.game_date = game_date,
                 BridgeResult::PingFail => {
+                    self.game_date = None;
                     self.conn = ConnState::Disconnected;
                     self.clear_entity_state();
                     self.clear_cache();
@@ -441,6 +449,7 @@ impl FmEditorApp {
             && matches!(self.conn, ConnState::Disconnected | ConnState::ReadOnly(_))
             && self.last_auto_connect.elapsed().as_secs() >= 3
         {
+            self.game_date = None;
             self.bridge.send(BridgeCmd::Attach(None));
             self.last_auto_connect = Instant::now();
         }
@@ -850,7 +859,11 @@ impl eframe::App for FmEditorApp {
         let player_filtered: Vec<&CachedPlayer> = if self.active_page == Page::PlayerSearch {
             if let (Some(c), Some(schemas)) = (&cache_arc, schemas) {
                 pages::player_search::filter_with_clubs(
-                    schemas, &c.players, &self.player_search, c.my_clubs.as_ref(),
+                    schemas,
+                    self.game_date,
+                    &c.players,
+                    &self.player_search,
+                    c.my_clubs.as_ref(),
                 )
             } else {
                 Vec::new()
@@ -860,7 +873,7 @@ impl eframe::App for FmEditorApp {
         };
         let staff_filtered: Vec<&CachedStaff> = if self.active_page == Page::StaffSearch {
             if let (Some(c), Some(schemas)) = (&cache_arc, schemas) {
-                pages::staff_search::filter(schemas, &c.staff, &self.staff_search)
+                pages::staff_search::filter(schemas, self.game_date, &c.staff, &self.staff_search)
             } else {
                 Vec::new()
             }
@@ -1335,7 +1348,7 @@ impl eframe::App for FmEditorApp {
                                 if let Some(p) = self.selected_player.as_mut().filter(|p| p.addr == tab_addr) {
                                     let addr = p.addr;
                                     let e = player_panel::show(
-                                        schemas, ui, p, &mut self.player_tab, addr,
+                                        schemas, self.game_date, ui, p, &mut self.player_tab, addr,
                                         wage_period, face_pack_path.as_deref(),
                                     );
                                     edits.extend(e);
@@ -1345,7 +1358,7 @@ impl eframe::App for FmEditorApp {
                             }
                             EntityTabType::Staff => {
                                 if let Some(s) = self.selected_staff.as_mut().filter(|s| s.record.addr == tab_addr) {
-                                    let e = staff_panel::show(schemas, ui, s, &mut self.staff_tab);
+                                    let e = staff_panel::show(schemas, self.game_date, ui, s, &mut self.staff_tab);
                                     edits.extend(e);
                                 } else {
                                     ui.label("Staff details unavailable. Reload while the game is connected.");
@@ -1365,6 +1378,7 @@ impl eframe::App for FmEditorApp {
                             Page::PlayerSearch => {
                                 clicked_player = pages::player_search::results_grid(
                                     schemas,
+                                    self.game_date,
                                     ui,
                                     &mut self.player_search,
                                     &player_filtered,
@@ -1373,6 +1387,7 @@ impl eframe::App for FmEditorApp {
                             Page::StaffSearch => {
                                 clicked_staff = pages::staff_search::results_grid(
                                     schemas,
+                                    self.game_date,
                                     ui,
                                     &mut self.staff_search,
                                     &staff_filtered,
@@ -1404,7 +1419,7 @@ impl eframe::App for FmEditorApp {
                             if self.manager_loading {
                                 ui.spinner();
                             } else if let Some(ref mut mgr) = self.manager_view {
-                                let e = staff_panel::show_manager(schemas, ui, mgr);
+                                let e = staff_panel::show_manager(schemas, self.game_date, ui, mgr);
                                 if self.conn.is_writable() {
                                     edits.extend(e);
                                 }
@@ -1458,9 +1473,11 @@ impl eframe::App for FmEditorApp {
         // =================================================================
 
         if attach_requested {
+            self.game_date = None;
             self.bridge.send(BridgeCmd::Attach(None));
         }
         if let Some(pid) = attach_pid_requested {
+            self.game_date = None;
             self.bridge.send(BridgeCmd::Attach(Some(pid)));
         }
 
@@ -1499,6 +1516,7 @@ impl eframe::App for FmEditorApp {
 
         // Handle reload_save — clear stale cache and re-trigger bulk load.
         if reload_save_clicked {
+            self.game_date = None;
             self.best_xi.clear();
             self.entity_cache = None;
             self.cache_load_state = CacheLoadState::Loading { done: 0, total: 0 };

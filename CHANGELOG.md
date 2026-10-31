@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- FM27 Steam: ages use the in-game date instead of a fixed year, so a player born 8 Jul 1991 is 35 on 14 Jul 2026, not 36. Headers, search columns, age filters and sorting all use it. Other builds keep the previous year-based estimate.
+- FM27: the club finance value previously shown as an editable "Spending Wage Budget" is FM's current wage total (incl. bonuses). It is now shown read-only as **Current Wage Total**, beside the read-only **Wage Budget**.
+- Club search matches the full name as well as the short name ("Tottenham" finds Spurs).
+- FM27: club headers show the club's nation (Spurs England, Swansea Wales) instead of "Unknown".
+
 ## 0.2.0 (prerelease)
 
 ### Features

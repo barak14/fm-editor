@@ -80,6 +80,14 @@ const STEAM: VersionedSchemas = VersionedSchemas {
     // name>)", staff id 2002106548, no club, CA/PA 100/200). Both showed as
     // nameless ID-0 rows in the staff list.
     human_manager_vtable_rva: 0x4CC086C,
+    // Current date: game_plugin+0x56F1A18 points at a game object (vtable
+    // +0x4C8C858) holding a DateDayYear at +0x7F4. Witnesses 2026-10-31:
+    // day 194/2026 while FM showed Mon 13/7/2026, 195/2026 after one day of
+    // holiday (Tue 14/7/2026); the only address of 49,446 matching both.
+    game_date: Some(crate::fields::GameDateLocation {
+        ptr_rva: 0x56F1A18,
+        offset: 0x7F4,
+    }),
     age_reference_year: 2027,
 };
 
@@ -96,5 +104,7 @@ pub static FM27: VersionedSchemas = STEAM;
 pub static FM27_GAMEPASS: VersionedSchemas = VersionedSchemas {
     // Not calibrated: attach reports the running game_plugin.dll hash.
     known_dll_hash: 0,
+    // Game Pass RVAs differ: never inherit the Steam date mapping.
+    game_date: None,
     ..STEAM
 };

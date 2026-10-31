@@ -44,24 +44,29 @@ pub fn show(
     ui.add_space(8.0);
 }
 
-/// Approximate age, using the schema's reference year, only for a valid mapped DOB.
-pub fn age(schemas: &'static crate::fields::VersionedSchemas, raw: &[u8], key: &str) -> Option<u8> {
+/// Age on the attached game's date, or the schema reference year if unavailable.
+pub fn age(
+    schemas: &'static crate::fields::VersionedSchemas,
+    today: Option<crate::game_date::GameDate>,
+    raw: &[u8],
+    key: &str,
+) -> Option<u8> {
     let FieldLocation::Direct { offset, .. } = schemas.field(key)?.offset? else {
         return None;
     };
-    age_at(raw, offset as usize, schemas.age_reference_year)
+    age_at(raw, offset as usize, today, schemas.age_reference_year)
 }
 
-fn age_at(raw: &[u8], offset: usize, reference_year: u16) -> Option<u8> {
+fn age_at(
+    raw: &[u8],
+    offset: usize,
+    today: Option<crate::game_date::GameDate>,
+    reference_year: u16,
+) -> Option<u8> {
     let bytes = raw.get(offset..offset.checked_add(4)?)?;
     let day = u16::from_le_bytes([bytes[0], bytes[1]]);
     let year = u16::from_le_bytes([bytes[2], bytes[3]]);
-    if !(1..=366).contains(&day) || year < 1900 || year > reference_year {
-        return None;
-    }
-    u8::try_from(reference_year.checked_sub(year)?)
-        .ok()
-        .filter(|age| *age <= 120)
+    crate::game_date::age_with_reference((day, year), today, reference_year)
 }
 
 /// Keep desktop density without asking egui for negative-width columns.
@@ -112,10 +117,30 @@ mod tests {
     }
     #[test]
     fn age_requires_complete_valid_dob() {
-        assert_eq!(age_at(&[], 0, 2026), None);
-        assert_eq!(age_at(&[1, 0, 208, 7], usize::MAX, 2026), None);
-        assert_eq!(age_at(&[1, 0, 208, 7], 0, 2026), Some(26));
-        assert_eq!(age_at(&[0, 0, 208, 7], 0, 2026), None);
-        assert_eq!(age_at(&[1, 0, 255, 255], 0, 2026), None);
+        assert_eq!(age_at(&[], 0, None, 2026), None);
+        assert_eq!(age_at(&[1, 0, 208, 7], usize::MAX, None, 2026), None);
+        assert_eq!(age_at(&[1, 0, 208, 7], 0, None, 2026), Some(26));
+        assert_eq!(age_at(&[0, 0, 208, 7], 0, None, 2026), None);
+        assert_eq!(age_at(&[1, 0, 255, 255], 0, None, 2026), None);
+    }
+}
+
+#[cfg(test)]
+mod game_date_tests {
+    use super::*;
+    use crate::game_date::GameDate;
+
+    #[test]
+    fn header_uses_full_flagged_dob_and_current_date() {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&(189u16 | 0x8000).to_le_bytes());
+        raw.extend_from_slice(&1991u16.to_le_bytes());
+        assert_eq!(age_at(&raw, 0, None, 2027), Some(36));
+        for (day, expected) in [(188, 34), (189, 35), (195, 35)] {
+            assert_eq!(
+                age_at(&raw, 0, Some(GameDate { day, year: 2026 }), 2027),
+                Some(expected)
+            );
+        }
     }
 }

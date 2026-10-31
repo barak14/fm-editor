@@ -246,10 +246,9 @@ pub(super) fn load_entity_cache(
 
         let short_ptr = fm.read_u64(ptr + c_name_off).unwrap_or(0);
         let full_ptr = fm.read_u64(ptr + c_full_name_off).unwrap_or(0);
-        let name = fm
-            .read_fm_name(short_ptr)
-            .or_else(|_| fm.read_fm_name(full_ptr))
-            .unwrap_or_default();
+        let short_name = fm.read_fm_name(short_ptr).unwrap_or_default();
+        let full_name = fm.read_fm_name(full_ptr).unwrap_or_default();
+        let name = if short_name.is_empty() { full_name.clone() } else { short_name };
 
         // A club with neither name is not a real club: FM27 keeps three
         // nameless placeholder objects of their own class (UIDs 2000000000,
@@ -267,6 +266,7 @@ pub(super) fn load_entity_cache(
             index: i,
             uid,
             name,
+            full_name,
             gender,
             transfer_budget,
             nation_id: None,
@@ -436,6 +436,7 @@ mod membership_tests {
             uid,
             index: 0,
             name: uid.to_string(),
+            full_name: String::new(),
             gender: 0,
             transfer_budget: None,
             nation_id: None,

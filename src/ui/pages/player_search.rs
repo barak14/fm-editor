@@ -175,14 +175,16 @@ pub fn advanced_filter_count(state: &PlayerSearchState) -> usize {
 /// Runs every frame — all comparisons are on already-decoded cache fields.
 pub fn filter<'a>(
     schemas: &'static crate::fields::VersionedSchemas,
+    today: Option<crate::game_date::GameDate>,
     cache: &'a [CachedPlayer],
     state: &PlayerSearchState,
 ) -> Vec<&'a CachedPlayer> {
-    filter_with_clubs(schemas, cache, state, None)
+    filter_with_clubs(schemas, today, cache, state, None)
 }
 
 pub fn filter_with_clubs<'a>(
     schemas: &'static crate::fields::VersionedSchemas,
+    today: Option<crate::game_date::GameDate>,
     cache: &'a [CachedPlayer],
     state: &PlayerSearchState,
     my_clubs: Option<&crate::cache::MyClubs>,
@@ -251,7 +253,7 @@ pub fn filter_with_clubs<'a>(
                     return false;
                 }
             }
-            if let Some(age) = player_age(schemas, p) {
+            if let Some(age) = player_age(schemas, today, p) {
                 if let Some(m) = age_min {
                     if age < m {
                         return false;
@@ -373,6 +375,7 @@ pub fn filter_row(
 /// (pre-sort) index of a clicked row, if any.
 pub fn results_grid(
     schemas: &'static crate::fields::VersionedSchemas,
+    today: Option<crate::game_date::GameDate>,
     ui: &mut egui::Ui,
     state: &mut PlayerSearchState,
     results: &[&CachedPlayer],
@@ -481,6 +484,7 @@ pub fn results_grid(
     order.sort_by(|&a, &b| {
         compare_players(
             schemas,
+            today,
             results[a],
             results[b],
             state.sort_col,
@@ -529,7 +533,7 @@ pub fn results_grid(
         for visual_i in row_range {
             let orig_i = order[visual_i];
             let p = results[orig_i];
-            let age = player_age(schemas, p)
+            let age = player_age(schemas, today, p)
                 .map(|age| age.to_string())
                 .unwrap_or_else(|| "-".into());
             let ca_color = field_widget::ca_pa_color(p.ca);
@@ -585,6 +589,7 @@ pub fn results_grid(
 
 fn compare_players(
     schemas: &'static crate::fields::VersionedSchemas,
+    today: Option<crate::game_date::GameDate>,
     a: &CachedPlayer,
     b: &CachedPlayer,
     col: SortColumn,
@@ -592,8 +597,8 @@ fn compare_players(
 ) -> std::cmp::Ordering {
     if col == SortColumn::Age {
         match (
-            player_age(schemas, a).is_none(),
-            player_age(schemas, b).is_none(),
+            player_age(schemas, today, a).is_none(),
+            player_age(schemas, today, b).is_none(),
         ) {
             (true, false) => return std::cmp::Ordering::Greater,
             (false, true) => return std::cmp::Ordering::Less,
@@ -605,7 +610,7 @@ fn compare_players(
         SortColumn::Uid => a.uid.cmp(&b.uid),
         SortColumn::Ca => a.ca.cmp(&b.ca),
         SortColumn::Pa => a.pa.cmp(&b.pa),
-        SortColumn::Age => b.dob_year.cmp(&a.dob_year),
+        SortColumn::Age => player_age(schemas, today, a).cmp(&player_age(schemas, today, b)),
     };
     let order = if dir == SortDir::Desc {
         order.reverse()
@@ -646,6 +651,7 @@ mod tests {
             assert!(
                 filter(
                     crate::game_version::GameBuild::Fm26Steam.schemas(),
+                    None,
                     &[player(1, 2000)],
                     &state
                 )
@@ -660,6 +666,7 @@ mod tests {
         assert_eq!(
             filter(
                 crate::game_version::GameBuild::Fm26Steam.schemas(),
+                None,
                 &[player(1, 2000)],
                 &state
             )
@@ -705,6 +712,7 @@ mod tests {
             assert_eq!(
                 compare_players(
                     crate::game_version::GameBuild::Fm26Steam.schemas(),
+                    None,
                     &player(1, 0),
                     &player(2, 2000),
                     SortColumn::Age,
@@ -718,8 +726,12 @@ mod tests {
 
 fn player_age(
     schemas: &'static crate::fields::VersionedSchemas,
+    today: Option<crate::game_date::GameDate>,
     player: &CachedPlayer,
 ) -> Option<u16> {
+    if today.is_some() {
+        return crate::ui::entity_header::age(schemas, today, &player.raw, "p_dob").map(u16::from);
+    }
     let year = schemas.age_reference_year;
     (player.dob_year > 0 && player.dob_year <= year).then(|| year - player.dob_year)
 }
@@ -751,6 +763,7 @@ mod search_tests {
             assert_eq!(
                 filter(
                     crate::game_version::GameBuild::Fm26Steam.schemas(),
+                    None,
                     &cache,
                     &state
                 )
@@ -763,6 +776,7 @@ mod search_tests {
             assert!(
                 filter(
                     crate::game_version::GameBuild::Fm26Steam.schemas(),
+                    None,
                     &cache,
                     &state
                 )
@@ -774,6 +788,7 @@ mod search_tests {
         assert!(
             filter(
                 crate::game_version::GameBuild::Fm26Steam.schemas(),
+                None,
                 &cache,
                 &state
             )
@@ -815,20 +830,20 @@ mod position_tests {
         let cache = [witness(&[(0, 1), (1, 20)]), witness(&[(0, 10), (1, 19)])];
         let mut state = PlayerSearchState::default();
         assert_eq!(state.position_minimums, [2; 15]);
-        assert_eq!(filter(schemas, &cache, &state).len(), 2);
+        assert_eq!(filter(schemas, None, &cache, &state).len(), 2);
         state.position_minimums = [20; 15];
-        assert_eq!(filter(schemas, &cache, &state).len(), 2);
+        assert_eq!(filter(schemas, None, &cache, &state).len(), 2);
         assert_eq!(advanced_filter_count(&state), 0);
         state.position_minimums = [2; 15];
         state.positions = 1;
-        assert_eq!(filter(schemas, &cache, &state).len(), 1);
+        assert_eq!(filter(schemas, None, &cache, &state).len(), 1);
         state.position_minimums[0] = 1;
-        assert_eq!(filter(schemas, &cache, &state).len(), 2);
+        assert_eq!(filter(schemas, None, &cache, &state).len(), 2);
         state.position_minimums[0] = 11;
-        assert!(filter(schemas, &cache, &state).is_empty());
+        assert!(filter(schemas, None, &cache, &state).is_empty());
         state.positions |= 1 << 1;
         state.position_minimums[1] = 20;
-        let matches = filter(schemas, &cache, &state);
+        let matches = filter(schemas, None, &cache, &state);
         assert_eq!(matches.len(), 1);
         assert!(std::ptr::eq(matches[0], &cache[0]));
     }
@@ -840,16 +855,16 @@ mod position_tests {
         state.positions = 1;
         state.position_minimums[0] = 1;
         for value in [0, 21, 255] {
-            assert!(filter(schemas, &[witness(&[(0, value)])], &state).is_empty());
+            assert!(filter(schemas, None, &[witness(&[(0, value)])], &state).is_empty());
         }
         let mut missing = witness(&[(0, 20)]);
         missing.raw.clear();
-        assert!(filter(schemas, &[missing], &state).is_empty());
+        assert!(filter(schemas, None, &[missing], &state).is_empty());
         static UNMAPPED: crate::fields::VersionedSchemas = crate::fields::VersionedSchemas {
             player_fields: &[],
             ..crate::fields::fm26::FM26
         };
-        assert!(filter(&UNMAPPED, &[witness(&[(0, 20)])], &state).is_empty());
+        assert!(filter(&UNMAPPED, None, &[witness(&[(0, 20)])], &state).is_empty());
     }
 
     #[test]
@@ -914,19 +929,19 @@ mod club_filter_tests {
         };
         let schemas = GameBuild::Fm27Steam.schemas();
         assert_eq!(
-            filter(schemas, &rows, &state)
+            filter(schemas, None, &rows, &state)
                 .iter()
                 .map(|p| p.uid)
                 .collect::<Vec<_>>(),
             [1]
         );
         state.query = "2".into();
-        assert!(filter(schemas, &rows, &state).is_empty());
+        assert!(filter(schemas, None, &rows, &state).is_empty());
         state.query.clear();
         state.ca_min = "101".into();
-        assert!(filter(schemas, &rows, &state).is_empty());
+        assert!(filter(schemas, None, &rows, &state).is_empty());
         state.clear_filters();
-        assert_eq!(filter(schemas, &rows, &state).len(), 3);
+        assert_eq!(filter(schemas, None, &rows, &state).len(), 3);
     }
     #[test]
     fn my_clubs_unions_current_and_owned_membership_and_overrides_manual() {
@@ -950,20 +965,20 @@ mod club_filter_tests {
         };
         let schemas = GameBuild::Fm27Steam.schemas();
         assert_eq!(
-            filter_with_clubs(schemas, &rows, &state, Some(&scope))
+            filter_with_clubs(schemas, None, &rows, &state, Some(&scope))
                 .iter()
                 .map(|p| p.uid)
                 .collect::<Vec<_>>(),
             [1, 2, 3]
         );
-        assert!(filter_with_clubs(schemas, &rows, &state, None).is_empty());
+        assert!(filter_with_clubs(schemas, None, &rows, &state, None).is_empty());
         let other = crate::cache::MyClubs {
             club_ids: [8888].into_iter().collect(),
             label: "Other save".into(),
         };
-        assert!(filter_with_clubs(schemas, &rows, &state, Some(&other)).is_empty());
+        assert!(filter_with_clubs(schemas, None, &rows, &state, Some(&other)).is_empty());
         state.ca_min = "101".into();
-        assert!(filter_with_clubs(schemas, &rows, &state, Some(&scope)).is_empty());
+        assert!(filter_with_clubs(schemas, None, &rows, &state, Some(&scope)).is_empty());
     }
     #[test]
     fn invalid_unknown_and_unsupported_clubs_fail_closed() {
@@ -972,14 +987,14 @@ mod club_filter_tests {
         for value in ["-1", "1.5", "abc", "4294967296"] {
             state.club_id = value.into();
             assert!(state.validation_error().is_some());
-            assert!(filter(GameBuild::Fm27Steam.schemas(), &rows, &state).is_empty());
+            assert!(filter(GameBuild::Fm27Steam.schemas(), None, &rows, &state).is_empty());
         }
         state.club_id = "9999".into();
         assert!(state.validation_error().is_none());
-        assert!(filter(GameBuild::Fm27Steam.schemas(), &rows, &state).is_empty());
+        assert!(filter(GameBuild::Fm27Steam.schemas(), None, &rows, &state).is_empty());
         state.club_id = "1751".into();
         for build in [GameBuild::Fm26Steam, GameBuild::Fm27GamePass] {
-            assert!(filter(build.schemas(), &rows, &state).is_empty());
+            assert!(filter(build.schemas(), None, &rows, &state).is_empty());
         }
     }
     #[test]
@@ -1001,5 +1016,74 @@ mod club_filter_tests {
         assert!(state.validation_error().is_some());
         state.clear_filters();
         assert!(!state.my_clubs);
+    }
+}
+
+#[cfg(test)]
+mod game_date_tests {
+    use super::*;
+    use crate::game_date::GameDate;
+    use crate::game_version::GameBuild;
+
+    fn row(addr: u64, day: u16) -> CachedPlayer {
+        let schemas = GameBuild::Fm27Steam.schemas();
+        let offset = schemas.offset_of("p_dob").unwrap();
+        let mut raw = vec![0; schemas.player_struct_size];
+        raw[offset..offset + 2].copy_from_slice(&(day | 0x8000).to_le_bytes());
+        raw[offset + 2..offset + 4].copy_from_slice(&1991u16.to_le_bytes());
+        CachedPlayer {
+            owning_club_id: None,
+            addr,
+            index: 0,
+            name: "Witness".into(),
+            uid: addr as u32,
+            ca: 100,
+            pa: 150,
+            dob_year: 1991,
+            raw,
+            person_shift: 0,
+            nation_id: None,
+            club_id: None,
+            value: None,
+        }
+    }
+
+    #[test]
+    fn birthday_changes_column_filter_and_sort_age() {
+        let schemas = GameBuild::Fm27Steam.schemas();
+        let rows = [row(1, 195), row(2, 196), row(3, 0)];
+        let today = Some(GameDate {
+            day: 195,
+            year: 2026,
+        });
+        assert_eq!(player_age(schemas, None, &rows[0]), Some(36));
+        assert_eq!(player_age(schemas, today, &rows[0]), Some(35));
+        assert_eq!(player_age(schemas, today, &rows[1]), Some(34));
+        assert_eq!(player_age(schemas, today, &rows[2]), None);
+        let state = PlayerSearchState {
+            age_min: "35".into(),
+            age_max: "35".into(),
+            ..Default::default()
+        };
+        let found = filter(schemas, today, &rows, &state);
+        assert_eq!(found.iter().map(|p| p.uid).collect::<Vec<_>>(), [1]);
+        assert!(filter(schemas, None, &rows, &state).is_empty());
+        assert_eq!(
+            compare_players(
+                schemas,
+                today,
+                &rows[0],
+                &rows[1],
+                SortColumn::Age,
+                SortDir::Asc
+            ),
+            std::cmp::Ordering::Greater
+        );
+        for dir in [SortDir::Asc, SortDir::Desc] {
+            assert_eq!(
+                compare_players(schemas, today, &rows[2], &rows[0], SortColumn::Age, dir),
+                std::cmp::Ordering::Greater
+            );
+        }
     }
 }

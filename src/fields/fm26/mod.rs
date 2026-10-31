@@ -89,5 +89,6 @@ pub static FM26: VersionedSchemas = VersionedSchemas {
     player_person_offset: 0,
     player_coach_shift: 0,
     human_manager_vtable_rva: 0,
+    game_date: None,
     age_reference_year: 2026,
 };

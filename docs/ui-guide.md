@@ -2,7 +2,7 @@
 
 ## Navigation
 
-Player, Staff, Human Manager and Club detail views share a persistent name/identity header. Player and staff headers show age and the club/nation information available in the attached game's schema. Unknown information is labelled explicitly rather than guessed.
+Player, Staff, Human Manager and Club detail views share a persistent name/identity header. Player and staff headers show age and the club/nation information available in the attached game's schema; club headers show the club's nation where mapped (FM27). On FM27 Steam, age is calculated on the attached game's current date and updates as days pass; other builds estimate it from the birth year and the build's season year. Unknown information is labelled explicitly rather than guessed.
 
 The left sidebar groups **Players**, **Staff** and **Clubs** under Browse, with **Human Manager** under Management. Connection controls have their own Game Connection block. Back/Forward/Reload remain at the top; **Undo** and **Change history** are in the editing toolbar above the main workspace, not among navigation destinations. Profile identity summaries and attribute groups use bordered sections.
 
@@ -21,7 +21,7 @@ Nation names are informational, not links: there is no mapped nation detail/list
 Every search starts with **Name/UID**, followed by its supported filters and **Reset all**. Filtering is live; no Search button is required.
 
 - A numeric query matches the exact UID.
-- Name words must all match, ignoring case.
+- Name words must all match, ignoring case. Club search matches all words in either the short name or the full name ("Tottenham" finds Spurs).
 - Numeric bounds are inclusive. Invalid numbers or reversed bounds show an explanation and match no records; they are not silently ignored.
 - Click supported column headings to sort. Unknown ages remain last in either direction.
 - When a text field or advanced search does not have keyboard focus, use Up/Down to select a result and Enter to open it. The selected/last-opened row is highlighted.

@@ -22,6 +22,12 @@ pub(crate) const CLUB_SUB_RECORDS: &[SubRecord] = &[
     // FM26's finance+0x48 budget pointer does not resolve on FM27 (null for
     // Arsenal, Spurs, Man City, Liverpool); the budgets live in finance itself.
     SubRecord { id: "stadium", parent: SubRecordParent::Direct,         ptr_offset: 0xB0,  size: 0x98  },
+    // The club's own nation object (name FmString at +0x18, like the player
+    // and staff nation records). FM27 witnesses, 2026-10-31: Spurs England,
+    // Swansea Wales, Toronto FC Canada (FM's search shows WAL / CAN). +0xD8
+    // is the league's country instead (Swansea England, Toronto United
+    // States); +0xF0 is neither (Toronto Canada, Swansea England).
+    SubRecord { id: "nation",  parent: SubRecordParent::Direct,         ptr_offset: 0xE8,  size: 0x20  },
     // Home stadium: club+0x18 is the team vector's data pointer; entry 0 is the
     // senior team (team UID == club UID for Bayern, Spurs, Man City, Madrid),
     // and team+0x78 points at the stadium entity. Resolves for 1779 of a
@@ -61,7 +67,7 @@ pub(crate) const FIELDS: &[Field] = &[
     // Club reputation: u16 0-10000 on the senior team object (club+0x18 →
     // teams[0] + 0xA8). Arsenal 8950, Spurs 7650, Man City 9150, Liverpool 8850.
     Field { key: "c_reputation",         label: "Reputation",         entity: Club, category: General,    offset: sub_raw("senior_team", 0xA8) },
-    Field { key: "c_nation",             label: "Nation",             entity: Club, category: General,    offset: None           },
+    Field { key: "c_nation",             label: "Nation",             entity: Club, category: General,    offset: sub_fm_string("nation", 0x18) },
 
     // ── Info sub-record (+0x100 from club base) ───────────────────────────
     // FM27: every info field after the abbreviations sits +8 from FM26.
@@ -133,17 +139,23 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "c_avg_season_ticket",  label: "Avg Season Ticket",  entity: Club, category: Finance,    offset: None },
 
     // ── Budgets (i32 pounds, directly in the full finance object) ───────
-    // Confirmed on FM27's Spurs finance screen: Spending Wage Budget
-    // £4,355,776 p/w = +0x814; Total Wage Budget £4.5M (incl. youth grant
-    // £900 at +0x7DC) and Next Season's Budget £4,505,776 = +0x808 and +0x834,
-    // equal for all four witnesses, so which is which is not settled.
-    // Transfer budget £25.9M (+0x7C4) confirmed on the same screen.
-    // Arsenal / Man City / Liverpool: spending 4,440,326 / 5,352,976 /
-    // 5,404,502; total 4,940,326 / 5,852,976 / 5,754,502.
+    // FM27's Club > Finances > Wages screen (Spurs, 2026-10-31 save) reads
+    // "£4,362,011 / £4,559,136 — Current wage total (incl. bonuses) / Wage
+    // budget (incl. youth grant income: £1.15K)", "Next season's budget
+    // £4,559,136". +0x814 = 4,362,011 is the current wage total (spending,
+    // derived from contracts), not a budget, so it is read-only here and FM27
+    // has no editable wage budget row. +0x808 and +0x834 both read 4,559,136
+    // (equal for every witness), so which is the wage budget and which next
+    // season's budget is not settled; +0x808 is shown as the wage budget.
+    // Transfer budget £25.9M (+0x7C4) confirmed on FM's screens, and a write
+    // to it showed in game after a day passed.
+    // Arsenal / Man City / Liverpool: current total 4,440,326 / 5,352,976 /
+    // 5,404,502; budget 4,940,326 / 5,852,976 / 5,754,502.
     Field { key: "c_transfer_budget",    label: "Transfer Budget",    entity: Club, category: Finance,    offset: sub_raw("finance", 0x7C4) },
     Field { key: "c_transfer_remaining", label: "Transfer Remaining", entity: Club, category: Finance,    offset: None },
-    Field { key: "c_wage_budget",        label: "Spending Wage Budget", entity: Club, category: Finance,  offset: sub_raw("finance", 0x814) },
-    Field { key: "c_wage_total",         label: "Total Wage Budget",  entity: Club, category: Finance,    offset: sub_raw("finance", 0x808) },
+    Field { key: "c_wage_budget",        label: "Wage Budget",        entity: Club, category: Finance,    offset: None },
+    Field { key: "c_wage_spend",         label: "Current Wage Total", entity: Club, category: Finance,    offset: sub_raw("finance", 0x814) },
+    Field { key: "c_wage_total",         label: "Wage Budget",        entity: Club, category: Finance,    offset: sub_raw("finance", 0x808) },
     Field { key: "c_youth_grant",        label: "Youth Grant Income", entity: Club, category: Finance,    offset: sub_raw("finance", 0x7DC) },
 
 

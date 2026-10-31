@@ -161,6 +161,14 @@ pub(super) fn load_club_view(fm: &FmProcess, addr: u64, index: usize) -> Result<
     };
     let stadium_name = stadium_string("st_name");
     let stadium_name2 = stadium_string("st_name2");
+    // Club nation: FmString inside the schema's `nation` sub-record.
+    let nation = schema.field("c_nation").and_then(|f| f.offset).and_then(|loc| {
+        let nation_addr = resolve_sub_ptr(fm, addr, "nation", srs);
+        let nr = read_sub_bytes(fm, nation_addr, srs, "nation")?;
+        let off = loc.offset() as usize;
+        let np = u64::from_le_bytes(nr.get(off..off + 8)?.try_into().ok()?);
+        fm.read_fm_name(np).ok().filter(|s| !s.trim().is_empty())
+    });
 
     Ok(ClubView {
         addr,
@@ -181,6 +189,7 @@ pub(super) fn load_club_view(fm: &FmProcess, addr: u64, index: usize) -> Result<
         nickname,
         stadium_name,
         stadium_name2,
+        nation,
         stadium_entity_raw,
     })
 }

@@ -62,6 +62,9 @@ pub struct CachedClub {
     pub index: usize,
     pub uid: u32,
     pub name: String,
+    /// Full name (FM27 "Tottenham Hotspur" for "Spurs"); empty when it is
+    /// unreadable. Club search matches either name.
+    pub full_name: String,
     pub gender: u8,
     pub transfer_budget: Option<u32>,
     // Unmapped list-column fields:

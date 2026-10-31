@@ -11,6 +11,7 @@ pub mod bridge;
 pub mod cache;
 pub mod club;
 pub mod fields;
+pub mod game_date;
 pub mod game_version;
 pub mod player;
 pub mod process;

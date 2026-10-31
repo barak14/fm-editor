@@ -15,12 +15,13 @@ pub enum StaffTab {
 
 pub fn show(
     schemas: &'static crate::fields::VersionedSchemas,
+    today: Option<crate::game_date::GameDate>,
     ui: &mut egui::Ui,
     staff: &mut StaffView,
     tab: &mut StaffTab,
 ) -> Vec<FieldEdit> {
     let mut edits = Vec::new();
-    header(schemas, ui, staff, "Staff");
+    header(schemas, today, ui, staff, "Staff");
 
     let has_contract = staff.contract_raw.is_some();
     if *tab == StaffTab::Contract && !has_contract {
@@ -63,6 +64,7 @@ fn redirect_shifted_edits(staff: &StaffView, edits: &mut [FieldEdit]) {
 
 fn header(
     schemas: &'static crate::fields::VersionedSchemas,
+    today: Option<crate::game_date::GameDate>,
     ui: &mut egui::Ui,
     staff: &StaffView,
     kind: &str,
@@ -72,7 +74,7 @@ fn header(
         staff.name.as_deref().unwrap_or("Unknown"),
         kind,
         staff.record.id(),
-        entity_header::age(schemas, &staff.record.raw, "s_dob"),
+        entity_header::age(schemas, today, &staff.record.raw, "s_dob"),
         staff.club_name.as_deref(),
         staff.club_addr,
         staff.nationality.as_deref(),
@@ -202,11 +204,12 @@ fn show_overview(
 /// shifted addresses after collecting the widgets' edits.
 pub fn show_manager(
     schemas: &'static crate::fields::VersionedSchemas,
+    today: Option<crate::game_date::GameDate>,
     ui: &mut egui::Ui,
     staff: &mut StaffView,
 ) -> Vec<FieldEdit> {
     let mut edits = Vec::new();
-    header(schemas, ui, staff, "Human Manager");
+    header(schemas, today, ui, staff, "Human Manager");
     ui.separator();
 
     egui::ScrollArea::vertical().show(ui, |ui| {

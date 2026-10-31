@@ -49,8 +49,13 @@ pub fn filter<'a>(cache: &'a [CachedClub], state: &ClubSearchState) -> Vec<&'a C
                     return false;
                 }
             } else {
-                let name = club.name.to_lowercase();
-                if !words.iter().all(|word| name.contains(*word)) {
+                // Every word must appear in the short name or every word in
+                // the full name ("Tottenham" finds "Spurs").
+                let matches = |name: &str| {
+                    let name = name.to_lowercase();
+                    words.iter().all(|word| name.contains(*word))
+                };
+                if !matches(&club.name) && !matches(&club.full_name) {
                     return false;
                 }
             }
@@ -255,6 +260,7 @@ mod tests {
             index: 0,
             uid,
             name: name.into(),
+            full_name: String::new(),
             gender: 0,
             transfer_budget: budget,
             nation_id: None,
@@ -310,6 +316,23 @@ mod tests {
         assert_eq!(filter(&clubs, &state).len(), 1);
         state.female = true;
         assert!(filter(&clubs, &state).is_empty());
+    }
+
+    #[test]
+    fn full_name_matches_but_words_do_not_mix_names() {
+        let mut spurs = club(1, 728, "Spurs", Some(25_900_000));
+        spurs.full_name = "Tottenham Hotspur".into();
+        let clubs = [spurs, club(2, 13, "Hotspur Albury", None)];
+        let uids = |query: &str| {
+            let state = ClubSearchState { query: query.into(), ..Default::default() };
+            filter(&clubs, &state).iter().map(|c| c.uid).collect::<Vec<_>>()
+        };
+        assert_eq!(uids("tottenham"), [728]);
+        assert_eq!(uids("Tottenham Hotspur"), [728]);
+        assert_eq!(uids("spurs"), [728]);
+        assert_eq!(uids("hotspur"), [728, 13]);
+        // "spurs" is only in the short name, "tottenham" only in the full one.
+        assert!(uids("spurs tottenham").is_empty());
     }
 
     #[test]

@@ -371,18 +371,18 @@ pub fn read_player_at(fm: &FmProcess, addr: u64, index: usize) -> Result<PlayerR
     })
 }
 
-/// Compute a player's age in whole years from the DOB year (u16 half of
-/// the `p_dob` DateDayYear field). Returns `None` if the year is unset (0).
-pub fn player_age(rec: &PlayerRecord) -> Option<u16> {
-    let dob_year_offset = rec.build.schemas().field("p_dob")?.offset?.offset() as usize + 2;
-    if rec.raw.len() < dob_year_offset + 2 {
-        return None;
+/// Compute age on the attached game's date, retaining the historical year-only
+/// calculation when no current date is available.
+pub fn player_age(rec: &PlayerRecord, today: Option<crate::game_date::GameDate>) -> Option<u16> {
+    let offset = rec.build.schemas().field("p_dob")?.offset?.offset() as usize;
+    let year_offset = offset.checked_add(2)?;
+    let bytes = rec.raw.get(year_offset..year_offset.checked_add(2)?)?;
+    let year = u16::from_le_bytes([bytes[0], bytes[1]]);
+    if let Some(today) = today {
+        let day_bytes = rec.raw.get(offset..year_offset)?;
+        let day = u16::from_le_bytes([day_bytes[0], day_bytes[1]]);
+        return crate::game_date::age_on((day, year), today).map(u16::from);
     }
-    let year = u16::from_le_bytes(
-        rec.raw[dob_year_offset..dob_year_offset + 2]
-            .try_into()
-            .unwrap(),
-    );
     if year == 0 {
         return None;
     }
@@ -397,7 +397,14 @@ mod tests {
     #[test]
     fn records_decode_with_their_own_build() {
         let versions = [GameBuild::Fm24Steam, GameBuild::Fm27Steam];
-        let mut raw = vec![0; versions.iter().map(|v| v.schemas().player_struct_size).max().unwrap()];
+        let mut raw = vec![
+            0;
+            versions
+                .iter()
+                .map(|v| v.schemas().player_struct_size)
+                .max()
+                .unwrap()
+        ];
         let ca_offsets = versions.map(|v| v.schemas().offset_of("p_ca").unwrap());
         assert_ne!(ca_offsets[0], ca_offsets[1]);
         for (offset, value) in ca_offsets.into_iter().zip([123u16, 187]) {
@@ -422,11 +429,38 @@ mod tests {
             nationality: None,
             birthplace: None,
         };
-        let fm27 = PlayerRecord { build: GameBuild::Fm27Steam, ..fm24.clone() };
+        let fm27 = PlayerRecord {
+            build: GameBuild::Fm27Steam,
+            ..fm24.clone()
+        };
         assert_eq!(fm24.field_u16("p_ca"), Some(123));
         assert_eq!(fm27.field_u16("p_ca"), Some(187));
-        assert_eq!(player_age(&fm24), Some(25));
-        assert_eq!(player_age(&fm27), Some(25));
+        assert_eq!(player_age(&fm24, None), Some(25));
+        assert_eq!(player_age(&fm27, None), Some(25));
         assert_eq!(fm24.field_u16("p_ca"), Some(123));
+        let mut fm27 = fm27;
+        let dob_offset = fm27.build.schemas().offset_of("p_dob").unwrap();
+        // 8 July 1991, including the flag bits carried by live DOB words.
+        fm27.raw[dob_offset..dob_offset + 2].copy_from_slice(&(189u16 | 0x8000).to_le_bytes());
+        fm27.raw[dob_offset + 2..dob_offset + 4].copy_from_slice(&1991u16.to_le_bytes());
+        assert_eq!(player_age(&fm27, None), Some(36));
+        for (day, expected) in [(188, 34), (189, 35), (195, 35)] {
+            assert_eq!(
+                player_age(&fm27, Some(crate::game_date::GameDate { day, year: 2026 })),
+                Some(expected)
+            );
+        }
+        fm27.raw[dob_offset..dob_offset + 2].fill(0);
+        assert_eq!(
+            player_age(
+                &fm27,
+                Some(crate::game_date::GameDate {
+                    day: 195,
+                    year: 2026
+                })
+            ),
+            None
+        );
+        assert_eq!(player_age(&fm27, None), Some(36));
     }
 }

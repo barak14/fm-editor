@@ -72,6 +72,8 @@ pub struct ClubView {
     /// Official/alternative stadium name (`st_name2`), e.g. "City of
     /// Manchester Stadium" for the Etihad. Null for most stadiums.
     pub stadium_name2: Option<String>,
+    /// The club's own nation name (`c_nation`); None where unmapped.
+    pub nation: Option<String>,
 }
 
 impl ClubView {
@@ -122,11 +124,11 @@ pub enum BridgeCmd {
 pub enum BridgeResult {
     /// fm.exe attached AND a save is loaded (entity arrays populated and
     /// stable across two consecutive probes).
-    Connected(u32, EntityCounts),
+    Connected(u32, EntityCounts, Option<crate::game_date::GameDate>),
     /// fm.exe attached but no save is loaded yet, or save creation is
     /// still in progress. The worker keeps pinging; once counts are
     /// stable + plausible, we promote to Connected.
-    Attached(u32, crate::game_version::GameBuild),
+    Attached(u32, crate::game_version::GameBuild, Option<crate::game_date::GameDate>),
     /// Several games are running (they all run as `fm.exe`) and no PID was
     /// given. Nothing was attached; the UI asks which one to use.
     ChooseGame(Vec<crate::process::RunningGame>),
@@ -156,7 +158,8 @@ pub enum BridgeResult {
         id: u64,
         error: String,
     },
-    PingOk,
+    /// Current date for this attachment, refreshed by status polls and reloads.
+    PingOk(Option<crate::game_date::GameDate>),
     PingFail,
     Error(String),
 }

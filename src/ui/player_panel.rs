@@ -17,6 +17,7 @@ pub enum PlayerTab {
 
 pub fn show(
     schemas: &'static crate::fields::VersionedSchemas,
+    today: Option<crate::game_date::GameDate>,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     tab: &mut PlayerTab,
@@ -33,7 +34,7 @@ pub fn show(
             .field_u32("p_uid")
             .map(|v| v.to_string())
             .unwrap_or_else(|| "Unknown".into()),
-        crate::ui::entity_header::age(schemas, &player.raw, "p_dob"),
+        crate::ui::entity_header::age(schemas, today, &player.raw, "p_dob"),
         player.club_name.as_deref(),
         player.club_addr,
         player.nationality.as_deref(),

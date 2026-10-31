@@ -150,6 +150,7 @@ mod tests {
                     index: i,
                     uid: i as u32,
                     name: name.to_string(),
+                    full_name: String::new(),
                     gender: 0,
                     transfer_budget: None,
                     nation_id: None,

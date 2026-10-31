@@ -105,6 +105,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                         let pid = process.pid;
                         let build = process.build;
                         let notice = process.dll_hash_notice.clone();
+                        let game_date = process.game_date();
                         let ac = build_cache(&process);
                         // Never promote on the first observation — even if
                         // counts look plausible right now, we haven't seen
@@ -117,7 +118,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                         };
                         cache = None;
                         fm = Some(process);
-                        let _ = tx.send(BridgeResult::Attached(pid, build));
+                        let _ = tx.send(BridgeResult::Attached(pid, build, game_date));
                         if let Some(msg) = notice {
                             let _ = tx.send(BridgeResult::Error(msg));
                         }
@@ -130,6 +131,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
 
             BridgeCmd::LoadEntityCache => {
                 if let (Some(f), Some(c)) = (&fm, &cache) {
+                    let _ = tx.send(BridgeResult::PingOk(f.game_date()));
                     match bulk_load::load_entity_cache(f, c, &tx) {
                         Ok(arc) => {
                             let _ = tx.send(BridgeResult::CacheReady(arc));
@@ -239,7 +241,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                                     clubs: current.clubs_count,
                                 };
                                 cache = Some(current);
-                                let _ = tx.send(BridgeResult::Connected(pid, counts));
+                                let _ = tx.send(BridgeResult::Connected(pid, counts, f.game_date()));
                                 // Human manager (fast, goes first)
                                 if let (Some(f2), Some(_)) = (&fm, &cache) {
                                     match entity_load::load_human_manager(f2) {
@@ -270,7 +272,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                                 let _ = tx.send(BridgeResult::SaveUnloaded(pid));
                             }
                             _ => {
-                                let _ = tx.send(BridgeResult::PingOk);
+                                let _ = tx.send(BridgeResult::PingOk(f.game_date()));
                             }
                         }
                         last_counts = if plausible { Some(current_tuple) } else { None };

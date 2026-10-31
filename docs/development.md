@@ -102,8 +102,8 @@ check. Verification is specific to the attached build, not a project-wide stamp.
    For editable fields, record the original, make a controlled edit, confirm it in
    FM, Undo and confirm restoration. FM caches an entity's displayed data once it
    has shown it in a session, and navigating away and back does not refresh it.
-   Edit before FM first displays the witness, and expect FM to keep showing the
-   edited value after Undo; confirm restoration in memory. Restore test changes and
+   Edit before FM first displays the witness, or let one game day pass (Calendar >
+   Go On Holiday) to refresh it; confirm restoration in memory. Restore test changes and
    state exactly which builds/workflows were verified. If FM is unavailable, report
    the missing gate rather than calling the mapping verified.
 

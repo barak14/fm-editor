@@ -24,6 +24,18 @@ instead of the file-backed span.
 
 Version gate: `known_dll_hash` is 0 (not calibrated); attach reports the hash.
 
+## Current game date
+
+`game_plugin.dll+0x56F1A18` holds a pointer to a game object (vtable
++0x4C8C858). Its DateDayYear at **+0x7F4** is today's date: a 1-based day of
+the year, then the year (FM stores 8 Jul 1991 as 189). Found 2026-10-31 by
+scanning every writable mapping for 194/2026 while FM showed Mon 13/7/2026
+(49,446 matches). After one day of holiday FM showed Tue 14/7/2026, and only
+this address read 195/2026. The next four bytes read 244/2026 (1 Sep 2026)
+and are unmapped. The editor reads the date on attach and on each two-second
+status poll, and calculates ages from it (`game_date` in the schema). Game
+Pass has no mapping.
+
 ## Entity arrays (RVA relative to game_plugin.dll)
 
 The FM26 array cluster is intact, moved as one block by **+0x8BA158**.
@@ -236,9 +248,10 @@ the schema leaves it unmapped (FM27).
 | Field | Location | Values |
 |-------|----------|--------|
 | Reputation (u16) | senior team (club+0x18 → [0]) + 0xA8 | 8950 / 7650 / 9150 / 8850 |
-| Transfer budget (i32 £) | finance+0x7C4 | 152.7M / 25.9M / 48.9M / 43.3M (Spurs confirmed in game) |
-| Current wage total incl. bonuses (i32 £/week) | finance+0x814 | 4,440,326 / 4,355,776 / 5,352,976 / 5,404,502. FM's Finances > Overview Wages card labels it "Current wage total (incl. bonuses)": Spurs £4,362,011 in the 2026-10-31 save. It is spending, not a budget; FM's Portal shows it as "Spending Wage" |
-| Wage budget (i32 £/week) | finance+0x808 and +0x834 (equal for every witness; which is current and which next season is unsettled) | 4,940,326 / 4,505,776 / 5,852,976 / 5,754,502. The same Wages card shows Spurs' "Budget" £4,559,136 (2026-10-31 save; both offsets read 4,559,136) |
+| Transfer budget (i32 £) | finance+0x7C4 | 152.7M / 25.9M / 48.9M / 43.3M (Spurs confirmed in game; write confirmed, see "Live write verification") |
+| Current wage total incl. bonuses (i32 £/week) | finance+0x814 | 4,440,326 / 4,355,776 / 5,352,976 / 5,404,502. FM's Club > Finances > Wages screen reads "£4,362,011 / £4,559,136 — Current wage total (incl. bonuses) / Wage budget (incl. youth grant income: £1.15K)" for Spurs (2026-10-31 save). It is spending, not a budget; FM's Portal calls it "Spending Wage". The editor shows it read-only (`c_wage_spend`); FM27 has no editable wage budget row |
+| Wage budget (i32 £/week) | finance+0x808 and +0x834 (equal for every witness; which is the wage budget and which "Next season's budget" is unsettled) | 4,940,326 / 4,505,776 / 5,852,976 / 5,754,502. Spurs' wage budget and next season's budget both show £4,559,136 in FM (2026-10-31 save; both offsets read 4,559,136). Shown read-only from +0x808 (`c_wage_total`) |
+| Nation | club+0xE8 → nation object (vtable +0x4CDF658), name FmString +0x18 | Spurs England, Swansea Wales, Toronto FC Canada; FM's search lists Swansea WAL and Toronto FC CAN (2026-10-31). +0xD8 is the league's country (Swansea England, Toronto FC United States, Berwick Scotland), +0xF0 matches neither |
 | Youth grant income (i32 £) | finance+0x7DC | 180 / 900 / 720 / 990 (Spurs £900 in game) |
 | Corporate facilities | finance+0x8A9 | 19 / 20 / 14 / 16 (Arsenal 19 = "Excellent" in game) |
 
@@ -355,10 +368,8 @@ Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
 - Staff role sub-record pointer (0x1D0).
 - Stadium array root (`rva_stadium_base`) and stride.
 - Asking price (+0x238) for a listed player (see the player table).
-- Own-club budget writes (transfer budget, balance) are confirmed in memory
-  only: FM had already shown Spurs' finances (see the caching note below).
-- Day advance was not tested: whether FM refreshes its cached display after
-  time passes is unknown.
+- Balance writes are untested in game. The transfer budget write is confirmed
+  (see "Live write verification").
 
 ### Club search membership (2026-10-30, Steam Huelva save)
 
@@ -402,8 +413,8 @@ left in memory.
 **FM caches displayed entities.** Once FM has shown a player, staff member or
 club in a session, it keeps showing those values. Navigating away, opening
 another entity and reopening it through search does not refresh them. Edit
-before FM first displays the entity, and expect FM to keep showing the edited
-value after Undo. Witnesses:
+before FM first displays the entity, or let a day pass: one day of holiday
+(Calendar > Go On Holiday) refreshed every cached screen checked. Witnesses:
 
 - Virgil van Dijk (37024025): Crossing (+0x15F, encoded) 4 (raw 20) → 10 (raw
   48). FM's profile, opened after the edit, shows 10. After Undo memory reads 4
@@ -416,7 +427,10 @@ value after Undo. Witnesses:
 | Player attribute | Van Dijk Crossing | 4 → 10 | 10 on the profile | 4 (raw 20) |
 | Academy coaching, both copies (info +0x12C, finance +0x8A6) | Chelsea (630) | 19/19 → 4/4 (recruitment 18 untouched) | Academy Coaching "Fairly Basic"; Youth Recruitment (18) "Excellent" | 19/19, two undo entries, newest first |
 | Staff coaching attribute | Mikel Arteta (6701089) Fitness (+0x34, encoded) | 7 (raw 35) → 12 (raw 58) | "Good" (on the same profile 10–11 Average, 12–14 Good, 15–17 Very Good, 18–19 Outstanding) | 7 (raw 35) |
-| Transfer budget (finance +0x7C4) | Spurs, already shown | 25,900,000 → 40,000,000 | still £25.9M (cached) | 25,900,000 |
+| Transfer budget (finance +0x7C4) | Spurs, already shown | 25,900,000 → 40,000,000 | still £25.9M until one day of holiday, then the Portal showed £40M (Tue 14/7/2026) | 25,900,000; finance pointer unchanged across the day |
+
+The same day of holiday refreshed Van Dijk's profile: FM showed Crossing 4
+again, matching memory after Undo.
 
 Read checks in the same session: Van Dijk's 36 visible attributes, height,
 DOB, caps 96/13 and U21 3/0 match FM. His wage, 350,000, lies within FM's

@@ -424,6 +424,15 @@ pub fn read_field_f32<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Opti
 // VersionedSchemas — one static per supported game version
 // =========================================================================
 
+/// Location of the current DateDayYear in this build's game object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GameDateLocation {
+    /// Module-relative address of the pointer to the game object.
+    pub ptr_rva: u64,
+    /// Byte offset of the date within the pointed-to game object.
+    pub offset: u64,
+}
+
 /// Complete field / layout / RVA schema for one game build.
 ///
 /// There is exactly one `static` of this type per supported build
@@ -518,6 +527,9 @@ pub struct VersionedSchemas {
     /// `find_human_manager` is treated as shifted.
     pub human_manager_vtable_rva: u64,
 
+    /// Current in-game date location, only when verified for this build.
+    pub game_date: Option<GameDateLocation>,
+
     /// Year ages are computed against (game start season). FM26 keeps the
     /// editor's historical 2026; FM24 saves start in July 2023.
     pub age_reference_year: u16,
@@ -590,6 +602,24 @@ mod schema_lookup_tests {
     use crate::game_version::GameBuild;
 
     use super::*;
+
+    #[test]
+    fn game_date_location_is_specific_to_the_verified_build() {
+        assert_eq!(
+            GameBuild::Fm27Steam.schemas().game_date,
+            Some(GameDateLocation {
+                ptr_rva: 0x56F1A18,
+                offset: 0x7F4
+            })
+        );
+        for build in [
+            GameBuild::Fm27GamePass,
+            GameBuild::Fm24Steam,
+            GameBuild::Fm26Steam,
+        ] {
+            assert_eq!(build.schemas().game_date, None, "{build:?}");
+        }
+    }
 
     #[test]
     fn field_lookup_returns_that_builds_entry() {

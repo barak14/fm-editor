@@ -31,7 +31,7 @@ pub fn show(
         None,
         None,
         None,
-        None,
+        club.nation.as_deref(),
     );
     ui.horizontal(|ui| {
         ui.label("Ground:");
@@ -222,8 +222,8 @@ fn show_finance(
     // Each row edits the sub-record its schema location names (FM26 keeps the
     // budgets in a finance → budget sub-record, FM27 in the finance object).
     let mut shown = false;
-    // Labels come from the schema: FM24's screen says "Wage Budget", FM27's
-    // "Spending Wage Budget".
+    // Labels come from the schema. FM27 has no editable wage budget: its
+    // budget and current wage total are shown read-only below.
     for key in ["c_balance", "c_transfer_budget", "c_transfer_remaining", "c_wage_budget"] {
         let Some((container, offset)) = sub_location(schemas, key) else {
             continue;
@@ -253,15 +253,15 @@ fn show_finance(
         }
     }
     // Derived totals: shown, not edited (FM recomputes them).
-    for (label, key) in [
-        ("Total Wage Budget (p/w)", "c_wage_total"),
-        ("Youth Grant Income", "c_youth_grant"),
-    ] {
-        if let Some(v) = schemas
-            .field(key)
-            .and_then(|f| fields::read_field_u32(club, &club.raw, &f))
-        {
-            field_widget::info_label(ui, label, v);
+    for key in ["c_wage_total", "c_wage_spend", "c_youth_grant"] {
+        let Some(field) = schemas.field(key) else { continue };
+        if let Some(v) = fields::read_field_u32(club, &club.raw, field) {
+            let label = if key == "c_youth_grant" {
+                field.label.to_string()
+            } else {
+                format!("{} (p/w)", field.label)
+            };
+            field_widget::info_label(ui, &label, v);
             shown = true;
         }
     }
