@@ -350,8 +350,32 @@ Live write/undo (2026-10-31, branch build, FM27 Steam, headless session):
   (holiday only). The injury entry stayed in the vector, so the read-before-
   write guard allowed Undo, which restored 1 Aug / 15 Aug. The next day FM
   showed him injured again ("Inj", same injury and date).
-- **Not yet verified live:** Lift ban, transfer listing, loan listing,
-  transfer value and clause-amount writes.
+
+Second write pass (2026-10-31, main build 5498734, same save and headless
+session). Edits made Thu 16/7/2026 through the editor's UI; one day of holiday
+(holiday options set to reject all transfer offers) then refreshed FM:
+
+- **Transfer value:** Ben Davies (28049754) 8,840,353 → 55,000,000. FM's
+  squad Transfer Value column showed "£55M" (other players show ranges).
+- **Transfer listing:** Ben Davies off → on. The editor set the listing date
+  to 16 Jul 2026; FM's squad list and profile showed "Lst".
+- **Loan listing:** Tosin Adarabioyo (28100239) off → on; FM's squad list
+  showed "Loa".
+- **Clause amount:** Ben Davies appearance fee £30,000 → £77,000; FM's
+  Contract page showed "Appearance Fee £77K" (goal £40K, clean sheet £20K and
+  unused substitute £4.1K unchanged).
+- **Lift ban:** Mykhaylo Mudryk (71101331), suspended 12 Dec 2024 until 30
+  Jul 2026. Lift ban set the end to 16 Jul 2026; on 17 Jul FM's squad list
+  showed no suspension. FM then **removed the absence entry**: the medical
+  object's absences vector (+0x18) is empty, so the ban cannot be restored
+  through Undo once a day has passed. Lifting a ban is effectively
+  irreversible after the game advances.
+- **Undo:** not exercised through the undo stack. FM added one staff record
+  during the day (49,197 → 49,198); the bridge reports count drift as "save
+  unloaded" (`bridge/worker.rs`, Ping handler) and the editor cleared its
+  undo stack. The four reversible values above were restored by editing them
+  back through the editor; fm-debug confirmed transfer value 8,840,353 and
+  both listings off, and the editor showed the appearance fee at £30,000.
 
 ### Player-coaches
 
@@ -423,8 +447,8 @@ Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
 - Staff role sub-record pointer (0x1D0).
 - Stadium array root (`rva_stadium_base`) and stride.
 - Asking price (+0x238) for a listed player (see the player table).
-- Balance writes are untested in game. The transfer budget write is confirmed
-  (see "Live write verification").
+- Undo across a game day: count drift clears the editor's undo stack (see
+  "Second write pass" above).
 
 ### Club search membership (2026-10-30, Steam Huelva save)
 
@@ -483,6 +507,7 @@ before FM first displays the entity, or let a day pass: one day of holiday
 | Academy coaching, both copies (info +0x12C, finance +0x8A6) | Chelsea (630) | 19/19 → 4/4 (recruitment 18 untouched) | Academy Coaching "Fairly Basic"; Youth Recruitment (18) "Excellent" | 19/19, two undo entries, newest first |
 | Staff coaching attribute | Mikel Arteta (6701089) Fitness (+0x34, encoded) | 7 (raw 35) → 12 (raw 58) | "Good" (on the same profile 10–11 Average, 12–14 Good, 15–17 Very Good, 18–19 Outstanding) | 7 (raw 35) |
 | Transfer budget (finance +0x7C4) | Spurs, already shown | 25,900,000 → 40,000,000 | still £25.9M until one day of holiday, then the Portal showed £40M (Tue 14/7/2026) | 25,900,000; finance pointer unchanged across the day |
+| Balance (finance +0x0C) | Spurs, already shown | 173,975,262 → 201,234,567 | Club > Finances: "Overall Balance £201M" after one day of holiday (Fri 17/7/2026) | Restored by a manual edit to 173,975,262 (undo stack lost, see "Second write pass") |
 
 The same day of holiday refreshed Van Dijk's profile: FM showed Crossing 4
 again, matching memory after Undo.

@@ -41,7 +41,7 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 - **Reload future transfers on open** — Option to re-fetch future transfer data each time that screen is opened.
 - **Multi-select players and staff** — Allow multi-selection in list views for bulk actions.
 - **Right-click context menu** — Context menu on players, staff, and clubs in the main list view to run actions (e.g. edit, add to shortlist, navigate to club/nation) without opening the detail panel.
-- **CA/PA rating columns for players** — Add Current Ability and Potential Ability as visible columns in the player list.
+- ✓ **CA/PA rating columns for players** — Add Current Ability and Potential Ability as visible columns in the player list.
 - **Resizeable columns with auto-size** — All list view columns should be resizeable, with a double-click or button to auto-fit column width to content.
 - ✓ **Fixed column widths** — Prevent long names or values from pushing columns out of alignment; enforce a max width with truncation/tooltip.
 - **Customisable columns per view** — Let the user choose which columns are shown and in what order for each list view (players, staff, clubs).
@@ -64,11 +64,11 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 - **Player morale** — Set morale for individual players or an entire squad. *Progress:* FM27 Steam edits individual morale (`+0x26C`, level 1–20; all 20 Spurs witnesses matched FM's Morale column; write and Undo verified live). Squad-wide changes and FM24/FM26 remain.
 - **View and remove player unhappiness concerns** — Inspect active concerns (for example, wanting a new contract or more first-team football) and remove a selected concern without having to satisfy the demand. This is separate from boosting morale or changing squad status. Investigate related promises and teammates supporting a complaint separately; do not assume removing the original concern clears the squad reaction. Require per-build verification and undo for every removal. FM's profile "Happiness" box is a different measure from morale. *Not started.*
 - **Promises** — View promises made to a player (playing time, signings, future squad status) and their deadlines; consider removing or fulfilling them. *Not started.*
-- **Market value / transfer value** — View and edit what the game thinks a player is worth. *Progress:* FM27 Steam shows and edits transfer value (`+0x234`, six witnesses within FM's displayed range); the write is not yet verified live. FM27 asking price (`+0x238`) stays unconfirmed (reads -1 even for a listed player). FM24 is unmapped.
+- **Market value / transfer value** — View and edit what the game thinks a player is worth. *Progress:* FM27 Steam shows and edits transfer value (`+0x234`, six witnesses within FM's displayed range; write verified live on 2026-10-31). FM27 asking price (`+0x238`) stays unconfirmed (reads -1 even for a listed player). FM24 is unmapped.
 - **Squad numbers** — Extend existing player contract shirt-number editing to the squad workflow. *Progress:* per-player editing works on FM24/FM27; FM26 squad number is unmapped; no squad-level workflow yet.
-- **Contract details** — Extend existing wage, expiry, squad-status and squad-number editing with release/bonus clauses, loyalty bonuses and transfer status; show interested clubs and transfer proposals where verified. *Progress:* FM27 Steam edits transfer/loan listing (with listing date) and bonus/fee clause amounts; neither write is verified live yet. Loyalty bonuses, release clauses, interested clubs and transfer proposals remain.
+- **Contract details** — Extend existing wage, expiry, squad-status and squad-number editing with release/bonus clauses, loyalty bonuses and transfer status; show interested clubs and transfer proposals where verified. *Progress:* FM27 Steam edits transfer/loan listing (with listing date) and bonus/fee clause amounts (all verified live on 2026-10-31). Loyalty bonuses (FM's contract page shows "Remaining Loyalty Bonus"), release clauses, interested clubs and transfer proposals remain.
 - **International record** — View caps and goals for national teams (read-only to start). *Progress:* read-only caps/goals shown on FM24 and FM27 (plus U21 caps/goals on FM27); FM26 is unmapped. International retirement and "remove international withdrawal" remain.
-- **Ban / suspension removal** — Clear active bans and suspensions. *Progress:* FM27 Steam lists suspensions and holidays and has **Lift ban** for date-based suspensions; not yet verified live.
+- **Ban / suspension removal** — Clear active bans and suspensions. *Progress:* FM27 Steam lists suspensions and holidays and has **Lift ban** for date-based suspensions (verified live on 2026-10-31). Once a game day passes, FM deletes the expired entry, so the lift cannot be undone; the UI should say so before writing.
 - **Complete player profile coverage** — Extend current attributes, CA/PA, positions, traits, personality, reputation and personal details with happiness, career plans, languages and favourite/disliked clubs and people. *Progress:* height, date of birth, appearance (ethnicity, skin tone, hair) and, on FM27 Steam, favoured clubs are covered. Still missing: name editing (first, last, common, full and shirt names; the shirt-name string at `+0xF0` is a lead), body type, days in country, career plans, languages, disliked clubs/people, preferred moves and scout knowledge.
 - **Registration and work permits** — Player registration (including continental competition registration), trained-in-club/nation status, work-permit eligibility and nation-specific rules such as Italy's non-EU treatment; distinguish these from nationality rules and club registration limits. *Not started.*
 - **Attribute freeze** — Optional player/staff attribute maintenance, with explicit scope, stop controls, undo semantics and safe detach/reconnect behaviour; never an invisible background writer. *Not started.*
@@ -82,7 +82,7 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 
 ## Club Data
 
-- **Finances** — View and edit bank balance, transfer budget, and wage budget. *Progress:* FM27 Steam edits balance and transfer budget (transfer budget write verified live; balance write not yet); wage budget and current wage total are read-only because which of two equal budget fields is this season's is unsettled.
+- **Finances** — View and edit bank balance, transfer budget, and wage budget. *Progress:* FM27 Steam edits balance and transfer budget (both writes verified live); wage budget and current wage total are read-only because which of two equal budget fields is this season's is unsettled.
 - **Facilities** — Training ground rating, youth facilities, stadium capacity. *Progress:* FM27 Steam edits training, youth facilities, academy coaching (both copies; write verified live), youth recruitment and corporate facilities. Youth importance/level is unmapped; stadium capacity is read-only.
 - **Board expectations** — Set what the board wants from the current season.
 - **Squad registration** — Manage FFP squad slots (affects European competition eligibility).
@@ -169,5 +169,5 @@ Release work is complete (2026-10-30); see [the packaging guide](docs/releases.m
 
 ---
 
-*Last updated: 2026-10-30*
+*Last updated: 2026-10-31*
 *Historical completion markers retained; expanded scope is not a new completion audit. Player Data progress notes reflect a code review on 2026-10-30, not live verification.*
