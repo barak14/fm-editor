@@ -813,16 +813,18 @@ mod player_schema_tests {
             (5, "Quite Poor"),
             (6, "Fairly Poor"),
             (7, "Slightly Poor"),
+            (8, "Fair"),
             (9, "Fairly Okay"),
             (10, "Okay"),
             (11, "Fairly Good"),
             (12, "Quite Good"),
             (13, "Good"),
             (14, "Really Good"),
+            (20, "Perfect"),
         ] {
             assert_eq!(schemas.morale_label(level), label);
         }
-        for level in [0, 1, 4, 8, 15, 16, 17, 18, 19, 20, 255] {
+        for level in [0, 1, 4, 15, 16, 17, 18, 19, 255] {
             assert_eq!(schemas.morale_label(level), format!("Level {level}"));
         }
         assert_eq!(

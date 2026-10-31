@@ -315,10 +315,13 @@ Pass inherits these struct offsets (unverified); FM24/FM26 have none.
 
 - **Morale** level byte at +0x26C, range 1-20 across the database. Labels
   shown only for witnessed levels: 2 Extremely Poor, 3 Very Poor, 5 Quite
-  Poor, 6 Fairly Poor, 7 Slightly Poor, 9 Fairly Okay, 10 Okay, 11 Fairly
-  Good, 12 Quite Good, 13 Good, 14 Really Good. Other levels show "Level N".
-  2026-10-31: Declan Rice reads 20 and FM's squad view shows "Perfect" (not
-  yet a label).
+  Poor, 6 Fairly Poor, 7 Slightly Poor, 8 Fair, 9 Fairly Okay, 10 Okay, 11
+  Fairly Good, 12 Quite Good, 13 Good, 14 Really Good, 20 Perfect. Other
+  levels show "Level N". 2026-10-31 (Tue 14/7/2026): all 20 Spurs senior
+  players compared against FM's squad Morale column matched, including
+  Bentancur 8 "Fair"; Declan Rice reads 20 and Arsenal's squad view shows
+  "Perfect". FM's profile "Happiness" box is a different measure (Kudus:
+  morale 7 "Slightly Poor", Happiness "Slightly Happy").
 - **Medical** object: pointer at player+0xF8 (shifted for player-coaches). Injuries vector at +0x00 (0x38-byte
   entries: type pointer +0x08 with name at type+0x20, start date +0x20, full
   and light training days u16 +0x28 / +0x2A). Absences vector at +0x18
@@ -336,8 +339,19 @@ Pass inherits these struct offsets (unverified); FM24/FM26 have none.
   drop (percent); 0x16 club extension option (years). Witnesses: Kudus, van
   Hecke.
 
-The write actions (Heal, Lift ban, morale, transfer listing, clause amounts)
-have no recorded live write/undo verification yet.
+Live write/undo (2026-10-31, branch build, FM27 Steam, headless session):
+
+- **Morale:** Marcos Senesi 10 "Okay" → 3 "Very Poor". After one day of
+  holiday (Wed 15/7/2026) FM's squad Morale column showed "Very Poor". Undo
+  restored 10, and after another day (Thu 16/7) FM showed "Okay".
+- **Heal:** Micky van de Ven, "a moderate knee ligament sprain" injured
+  13/7/2026, due back in light training 1 Aug and full training 15 Aug. Heal
+  set both to 14 Jul. After the day passed FM's squad list showed no injury
+  (holiday only). The injury entry stayed in the vector, so the read-before-
+  write guard allowed Undo, which restored 1 Aug / 15 Aug. The next day FM
+  showed him injured again ("Inj", same injury and date).
+- **Not yet verified live:** Lift ban, transfer listing, loan listing,
+  transfer value and clause-amount writes.
 
 ### Player-coaches
 

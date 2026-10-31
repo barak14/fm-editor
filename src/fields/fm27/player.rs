@@ -11,9 +11,9 @@ use crate::fields::Entity::Player;
 /// Independently witnessed FM27 morale labels; other levels must stay numeric.
 pub(crate) const MORALE_LABELS: &[(u8, &str)] = &[
     (2, "Extremely Poor"), (3, "Very Poor"), (5, "Quite Poor"),
-    (6, "Fairly Poor"), (7, "Slightly Poor"), (9, "Fairly Okay"),
+    (6, "Fairly Poor"), (7, "Slightly Poor"), (8, "Fair"), (9, "Fairly Okay"),
     (10, "Okay"), (11, "Fairly Good"), (12, "Quite Good"),
-    (13, "Good"), (14, "Really Good"),
+    (13, "Good"), (14, "Really Good"), (20, "Perfect"),
 ];
 
 /// FM27 Steam, 13 Jul 2026 witness save. Medical: Kudus, van de Ven,
