@@ -4,6 +4,8 @@ High-level feature backlog. Work through these in any order.
 
 Scope expanded on 2026-10-30 using the [FMLE26 advertised feature overview and release history](https://www.fmscout.com/a-fm-live-editor-26.html) as a capability checklist, not a UI specification. New entries describe target coverage, not verified support. Existing checkmarks are historical; this update does not re-verify mappings or certify parity. Partially implemented areas list the remaining scope. Licensing, distribution, performance claims and patch-support promises are not feature requirements.
 
+Scope expanded again on 2026-10-31 from FMRTE 27 screenshots (club information, kits, tactics, player information and statistics pages), also as a capability checklist. Field values shown by another editor are leads, not mappings; each still needs our own witnesses.
+
 All new memory fields require version-specific research and two witnesses, paired schema/layout documentation, and live verification. Every write, including bulk actions and recurring freezes, must pass through the acknowledged-write/undo path. FM24/FM26/FM27 coverage must be stated explicitly rather than assumed.
 
 ---
@@ -56,18 +58,22 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 
 ## Player Data
 
-- **Nationality / international eligibility** — Edit primary and secondary nationality and which national team a player can represent. *Progress:* primary nationality name is shown read-only on FM24/FM27 (`p_nationality`); FM26 has only the nation pointer. Secondary nationality, eligibility and editing remain.
-- **Injury management** — View active injuries, heal them instantly, set injury type and estimated recovery time. *Not started:* no injury, fitness, sharpness or fatigue fields are mapped.
-- **Player morale** — Set morale for individual players or an entire squad. *Progress:* FM26/FM27 schemas carry a `p_morale` lead (`+0x26C`) that is not shown in the UI and is unverified (the FM27 layout lists morale as not decoded); FM24 has a lead only in its layout notes.
-- **View and remove player unhappiness concerns** — Inspect active concerns (for example, wanting a new contract or more first-team football) and remove a selected concern without having to satisfy the demand. This is separate from boosting morale or changing squad status. Investigate related promises and teammates supporting a complaint separately; do not assume removing the original concern clears the squad reaction. Require per-build verification and undo for every removal. *Not started.*
-- **Market value / transfer value** — View and edit what the game thinks a player is worth. *Progress:* FM26/FM27 schemas map `p_value` (`+0x234`) without recorded witnesses and nothing displays it; FM24 is unmapped. FM27 asking price (`+0x238`) is editable on the contract tab.
+- **Nationality / international eligibility** — Edit primary and secondary nationality and which national team a player can represent. *Progress:* primary nationality name is shown read-only on FM24/FM27 (`p_nationality`); FM26 has only the nation pointer. FM27 Steam shows other nationalities read-only. Editing, eligibility and "declared for nation" status remain.
+- **Injury management** — View active injuries, heal them instantly, set injury type and estimated recovery time. *Progress:* FM27 Steam lists injuries and has **Heal** (write and Undo verified live on 2026-10-31). Setting injury type or recovery time remains.
+- **Player condition** — Show and restore fitness, match sharpness, match exercise and jadedness. *Not started:* `p_fitness`, `p_sharpness` and `p_fatigue` are declared but unmapped on every build.
+- **Player morale** — Set morale for individual players or an entire squad. *Progress:* FM27 Steam edits individual morale (`+0x26C`, level 1–20; all 20 Spurs witnesses matched FM's Morale column; write and Undo verified live). Squad-wide changes and FM24/FM26 remain.
+- **View and remove player unhappiness concerns** — Inspect active concerns (for example, wanting a new contract or more first-team football) and remove a selected concern without having to satisfy the demand. This is separate from boosting morale or changing squad status. Investigate related promises and teammates supporting a complaint separately; do not assume removing the original concern clears the squad reaction. Require per-build verification and undo for every removal. FM's profile "Happiness" box is a different measure from morale. *Not started.*
+- **Promises** — View promises made to a player (playing time, signings, future squad status) and their deadlines; consider removing or fulfilling them. *Not started.*
+- **Market value / transfer value** — View and edit what the game thinks a player is worth. *Progress:* FM27 Steam shows and edits transfer value (`+0x234`, six witnesses within FM's displayed range); the write is not yet verified live. FM27 asking price (`+0x238`) stays unconfirmed (reads -1 even for a listed player). FM24 is unmapped.
 - **Squad numbers** — Extend existing player contract shirt-number editing to the squad workflow. *Progress:* per-player editing works on FM24/FM27; FM26 squad number is unmapped; no squad-level workflow yet.
-- **Contract details** — Extend existing wage, expiry, squad-status and squad-number editing with release/bonus clauses, loyalty bonuses and transfer status; show interested clubs where verified. *Progress:* FM27 shows transfer/loan listing read-only (flag offset still unchecked against a listed player) and edits asking price; clauses, bonuses and interested clubs remain.
-- **International record** — View caps and goals for national teams (read-only to start). *Progress:* read-only caps/goals shown on FM24 and FM27 (plus U21 caps/goals on FM27); FM26 is unmapped.
-- **Ban / suspension removal** — Clear active bans and suspensions. *Not started.*
-- **Complete player profile coverage** — Extend current attributes, CA/PA, positions, traits, personality, reputation and personal details with happiness, career plans, languages and favourite/disliked clubs and people. *Progress:* height, date of birth and appearance (ethnicity, skin tone, hair) are also covered; the listed extensions remain.
-- **Registration and work permits** — Player registration, trained-in-club/nation status and work-permit eligibility; distinguish these from nationality rules and club registration limits. *Not started.*
+- **Contract details** — Extend existing wage, expiry, squad-status and squad-number editing with release/bonus clauses, loyalty bonuses and transfer status; show interested clubs and transfer proposals where verified. *Progress:* FM27 Steam edits transfer/loan listing (with listing date) and bonus/fee clause amounts; neither write is verified live yet. Loyalty bonuses, release clauses, interested clubs and transfer proposals remain.
+- **International record** — View caps and goals for national teams (read-only to start). *Progress:* read-only caps/goals shown on FM24 and FM27 (plus U21 caps/goals on FM27); FM26 is unmapped. International retirement and "remove international withdrawal" remain.
+- **Ban / suspension removal** — Clear active bans and suspensions. *Progress:* FM27 Steam lists suspensions and holidays and has **Lift ban** for date-based suspensions; not yet verified live.
+- **Complete player profile coverage** — Extend current attributes, CA/PA, positions, traits, personality, reputation and personal details with happiness, career plans, languages and favourite/disliked clubs and people. *Progress:* height, date of birth, appearance (ethnicity, skin tone, hair) and, on FM27 Steam, favoured clubs are covered. Still missing: name editing (first, last, common, full and shirt names; the shirt-name string at `+0xF0` is a lead), body type, days in country, career plans, languages, disliked clubs/people, preferred moves and scout knowledge.
+- **Registration and work permits** — Player registration (including continental competition registration), trained-in-club/nation status, work-permit eligibility and nation-specific rules such as Italy's non-EU treatment; distinguish these from nationality rules and club registration limits. *Not started.*
 - **Attribute freeze** — Optional player/staff attribute maintenance, with explicit scope, stop controls, undo semantics and safe detach/reconnect behaviour; never an invisible background writer. *Not started.*
+- **Role ratings and recommended CA** — Show how well a player suits a selected role (key/preferable attributes highlighted), a role-suitability rating, and the CA his attributes imply. Read-only analysis first; any "set role attributes" preset is a bulk write under the bulk-edit safeguards. *Not started.*
+- **Player statistics** — Season statistics by competition (appearances, minutes, goals, clean sheets, ratings), with comparisons against players in the same position and league rankings per statistic. Read-only. *Not started.*
 
 ## Human Managers & Staff
 
@@ -76,20 +82,22 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 
 ## Club Data
 
-- **Finances** — View and edit bank balance, transfer budget, and wage budget.
-- **Facilities** — Training ground rating, youth facilities, stadium capacity.
+- **Finances** — View and edit bank balance, transfer budget, and wage budget. *Progress:* FM27 Steam edits balance and transfer budget (transfer budget write verified live; balance write not yet); wage budget and current wage total are read-only because which of two equal budget fields is this season's is unsettled.
+- **Facilities** — Training ground rating, youth facilities, stadium capacity. *Progress:* FM27 Steam edits training, youth facilities, academy coaching (both copies; write verified live), youth recruitment and corporate facilities. Youth importance/level is unmapped; stadium capacity is read-only.
 - **Board expectations** — Set what the board wants from the current season.
 - **Squad registration** — Manage FFP squad slots (affects European competition eligibility).
 - **Affiliations** — Set up and edit feeder club relationships.
-- **Club finances and income depth** — Extend budget editing with income streams, debts/loans, ticket and season-ticket data, and transfer clauses.
-- **Ownership and staffing** — Ownership type/status, chairperson and benefactor settings, takeover controls and extra staff allowances.
-- **Club relationships and identity** — Favourite/rival club and person relationships, supporters, attendance and identity details; kit editing is tracked under Entities.
+- **Club finances and income depth** — Extend budget editing with income streams, debts/loans, ticket and season-ticket data, scouting budget and range, initial season budget, and transfer clauses.
+- **Ownership and staffing** — Ownership type/status, chairperson title and status, benefactor settings, takeover controls and extra staff allowances (coaches, physios, sports scientists, analysts, scouts per senior/U23/U19 team).
+- **Club relationships and identity** — Favourite/rival club and person relationships, supporters, attendance (average/minimum/maximum), season-ticket holders, social-media followers, club status (professional/semi-pro), club morale, club colours and custom-logo permission; kit editing is tracked under Entities. *Progress:* FM27 Steam shows the club's nation, supporter profile/attributes, season tickets and social followers read-only.
 - **Club vision and tactics** — Extend board expectations with club vision and tactical attributes/preferred formations.
+- **Club tactics view** — Show a club's current tactic: in-possession and out-of-possession shapes, the player and role in each slot with a suitability rating, starting eleven and substitutes. Read-only first; complements the existing Best XI planner. *Not started.*
+- **Regional divisions** — View and edit the regional division a club is placed in, where the league system uses them. *Not started.*
 
 ## Entities
 
 - **Stadium support** — Search and edit independent stadium records, including stands, capacities, pitch type/dimensions, condition and facilities; extend the existing read-only club ground view.
-- **Team kit editing** — Change kit colours, types and styles, with previews, for clubs and national teams.
+- **Team kit editing** — Change kit colours, types and styles, with previews, for clubs and national teams. Cover home, away, third and goalkeeper kits; each item (shirt, shorts, socks, text, icon) has a style, foreground, background, outline and number colours, and may be specific to a competition or season. Allow adding, duplicating and removing items, and allowing or disallowing licensed kits. *Not started:* no kit data is mapped on any build.
 
 ## Nations & National Teams
 
@@ -124,11 +132,13 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 
 - **Bulk edit** — Select search results or a club/national squad, preview affected entities and apply selected field changes. Report partial failures individually and support undo for confirmed writes.
 - **Comparison view** — Open two players side by side for direct attribute comparison.
-- **Player history** — View career stats, clubs, and loan history (read-only).
+- **Player history** — View career stats, clubs, and loan history (read-only); consider adding a history entry where FM supports it.
 - **Hidden attributes in search columns** — Expose consistency, important matches, etc. as filterable/sortable columns in the player list.
 - **Clone player profile** — Copy selected attributes, CA/PA, personality, hidden attributes, positions and traits to one or many players. Preview the copied fields; do not clone identity or contracts implicitly.
-- **Reusable player templates** — Save named sets of attributes, positions and traits, then apply them across players and saves; validate against the target version's supported fields.
-- **Instant player and squad actions** — Heal injuries, restore fitness, remove bans, boost morale and inspire players; maximize team cohesion and tactical familiarity. Support individual, club-squad and national-squad scope where appropriate, using the same preview/undo safeguards as bulk editing.
+- **Swap players** — Exchange two players' clubs or national-team call-ups as one reversible operation; verify every linked record. *Not started.*
+- **Reusable player templates** — Save named sets of attributes, positions and traits, then apply them across players and saves; validate against the target version's supported fields. A "wonderkid" template (high PA, young-player attributes) is one preset.
+- **Instant player and squad actions** — Heal injuries, restore fitness, remove bans, boost morale and inspire players; maximize team cohesion and tactical familiarity. Support individual, club-squad and national-squad scope where appropriate, using the same preview/undo safeguards as bulk editing. *Progress:* individual Heal, Lift ban and morale exist on FM27 Steam; squad scope, fitness, inspire, cohesion and tactical familiarity remain.
+- **Favourites** — Pin players, staff and clubs for quick access across sessions of the same save. *Not started.*
 
 ## Image / Face Support
 
