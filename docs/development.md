@@ -45,7 +45,8 @@ env $(bash /path/to/fm-editor/Tools/fm-headless.sh launch-env 2>/dev/null) %comm
 so FM opens normally on the desktop whenever the harness is stopped. Measured
 on the FM27 3D main menu (7900 XTX shared with the desktop): FM added about 22
 percentage points of GPU load with a 60 Hz output and about 10 at 15 Hz, so
-the output rate alone does not throttle it; the DXVK cap does that.
+the output rate alone does not throttle it. The DXVK cap is there to do that;
+its effect has not been measured yet.
 
 ```bash
 bash Tools/fm-headless.sh start           # optional WxH, default 1920x1080
@@ -99,8 +100,10 @@ check. Verification is specific to the attached build, not a project-wide stamp.
    data and rendering without edits where applicable. Run compile/tests and launch.
 7. **Verify live.** Navigate to the witnesses and compare displayed values with FM.
    For editable fields, record the original, make a controlled edit, confirm it in
-   FM, Undo and confirm restoration. FM may cache its UI: navigate away/back or
-   otherwise refresh it before diagnosing a mismatch. Restore test changes and
+   FM, Undo and confirm restoration. FM caches an entity's displayed data once it
+   has shown it in a session, and navigating away and back does not refresh it.
+   Edit before FM first displays the witness, and expect FM to keep showing the
+   edited value after Undo; confirm restoration in memory. Restore test changes and
    state exactly which builds/workflows were verified. If FM is unavailable, report
    the missing gate rather than calling the mapping verified.
 

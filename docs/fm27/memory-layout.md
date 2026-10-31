@@ -168,9 +168,9 @@ Academy Coaching "Excellent" = +0x12C (17), Youth Recruitment "Good" = +0x12D
 (15). The FM26 schema had Training and Youth swapped. Academy coaching and
 recruitment have a second copy in the finance object (+0x8A6 / +0x8A7, equal
 to the info copy for all four witnesses), and corporate facilities live only
-there (+0x8A9; Arsenal 19 = "Excellent"). The facility screen reads the
-finance copies, so an edit to the info copy alone may not show in game; this
-is unverified. FM26's "youth improvement" (+0x126) and "youth academy"
+there (+0x8A9; Arsenal 19 = "Excellent"). The editor writes both coaching and
+recruitment copies; that write shows in game (see "Live write verification"
+below). FM26's "youth improvement" (+0x126) and "youth academy"
 (+0x121) match nothing on the screen and are unmapped.
 
 Cross-reference: the GPL-3 FM27€0 editor by Anze Alexander
@@ -206,9 +206,9 @@ player base + 0x288, staff base + 0x100.
 | Signed | contract+0x44 (date) | Haaland 17 Jan 2025, Mbappé 1 Jul 2024 |
 | Squad status (u8) | contract+0x54 (FM26 +0x24 reads 11 for all) | 1 Star / 2 Important / 1 Star / 2 Important / 5 Impact Sub |
 | Squad number (u8, 255 = none) | contract+0x5D | 9 / 10 / 10 / 7 / 255 |
-| Listing flags | contract+0x57 (bit 0 transfer, bit 1 loan) | all unlisted; not checked on a listed player |
+| Listing flags | contract+0x57 (bit 0 transfer, bit 1 loan) | all five unlisted; Mikel Merino (Arsenal, 67211760) reads 1 and FM shows Transfer status "Listed", Loan status "Not set" (2026-10-31) |
 | Job code | contract+0x26 (FM26 "contract type") | 1 = Player for all five |
-| Asking price (i32, -1 unset) | +0x238 | -1 for all five |
+| Asking price (i32, -1 unset) | +0x238 | -1 for all five, and also -1 for Merino, whom FM lists with a £45M transfer value; that £45M is not stored as an i32 in his first 0x800 bytes or his contract. Mapping unconfirmed |
 | Club name | team (+0x130) → club (team+0x30) → +0xC0 | Manchester City / Barcelona / R. Madrid |
 | Nationality | nation (+0x2F0) → +0x18 | Norway / Spain / France / England / Portugal |
 | Place of birth | city (+0x308) → +0x18 | Leeds / Esplugues de Llobregat / Bondy / London / Funchal |
@@ -237,8 +237,8 @@ the schema leaves it unmapped (FM27).
 |-------|----------|--------|
 | Reputation (u16) | senior team (club+0x18 → [0]) + 0xA8 | 8950 / 7650 / 9150 / 8850 |
 | Transfer budget (i32 £) | finance+0x7C4 | 152.7M / 25.9M / 48.9M / 43.3M (Spurs confirmed in game) |
-| Spending Wage Budget (i32 £/week) | finance+0x814 | 4,440,326 / 4,355,776 / 5,352,976 / 5,404,502 (Spurs confirmed in game) |
-| Total Wage Budget / Next Season's Budget | finance+0x808 and +0x834 (equal for every witness; which is which unsettled) | 4,940,326 / 4,505,776 / 5,852,976 / 5,754,502 (Spurs: total "£4.5M", next season £4,505,776 in game) |
+| Current wage total incl. bonuses (i32 £/week) | finance+0x814 | 4,440,326 / 4,355,776 / 5,352,976 / 5,404,502. FM's Finances > Overview Wages card labels it "Current wage total (incl. bonuses)": Spurs £4,362,011 in the 2026-10-31 save. It is spending, not a budget; FM's Portal shows it as "Spending Wage" |
+| Wage budget (i32 £/week) | finance+0x808 and +0x834 (equal for every witness; which is current and which next season is unsettled) | 4,940,326 / 4,505,776 / 5,852,976 / 5,754,502. The same Wages card shows Spurs' "Budget" £4,559,136 (2026-10-31 save; both offsets read 4,559,136) |
 | Youth grant income (i32 £) | finance+0x7DC | 180 / 900 / 720 / 990 (Spurs £900 in game) |
 | Corporate facilities | finance+0x8A9 | 19 / 20 / 14 / 16 (Arsenal 19 = "Excellent" in game) |
 
@@ -350,14 +350,15 @@ Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
 ## Unverified / known broken
 
 - `p_name2` block-2 names: removed on FM27 (see above).
-- Budgets, reputation, wages and squad status are memory-checked only; the
-  user confirmed balance and caps in game.
+- Reputation is memory-checked only; FM shows reputation as words
+  ("Worldwide", "Continental"), not numbers.
 - Staff role sub-record pointer (0x1D0).
 - Stadium array root (`rva_stadium_base`) and stride.
-- Writes: only one round trip verified. The user's manager Fitness
-  (`s_fitness`, manager+0x34, encoded): 13 → 14 in the editor, undo back to
-  13, confirmed in memory (raw 65) and after reloading in the editor. No
-  other field has been written.
+- Asking price (+0x238) for a listed player (see the player table).
+- Own-club budget writes (transfer budget, balance) are confirmed in memory
+  only: FM had already shown Spurs' finances (see the caching note below).
+- Day advance was not tested: whether FM refreshes its cached display after
+  time passes is unknown.
 
 ### Club search membership (2026-10-30, Steam Huelva save)
 
@@ -389,3 +390,40 @@ Verified module SHA-256: `BC940E472418FC5C214208D7CF30FECF600F689B6F9D71C11BA19A
 On FM27 Steam, manager discovery now requires the already-mapped human-manager vtable and excludes the platform-account placeholder. Game Pass keeps the previous heuristic because its inherited vtable RVA is unverified.
 
 Live feature UI: manual current Club ID 1751 returned 24 players; My clubs returned 41, including the reserve group and both incoming-loan witnesses. Counts are save-specific, not constants.
+
+## Live write verification (2026-10-31, Steam, Spurs save)
+
+FM27 Steam under Proton, run in the headless session (`Tools/fm-headless.sh`),
+with a debug editor on the same display. Game date Mon 13 Jul 2026, 09:00. Each
+write went through the editor's UI and acknowledged-write path, was read back
+through fm-debug, compared with FM's own screens, then undone. No test value is
+left in memory.
+
+**FM caches displayed entities.** Once FM has shown a player, staff member or
+club in a session, it keeps showing those values. Navigating away, opening
+another entity and reopening it through search does not refresh them. Edit
+before FM first displays the entity, and expect FM to keep showing the edited
+value after Undo. Witnesses:
+
+- Virgil van Dijk (37024025): Crossing (+0x15F, encoded) 4 (raw 20) → 10 (raw
+  48). FM's profile, opened after the edit, shows 10. After Undo memory reads 4
+  (raw 20), but FM still shows 10 after reopening his profile.
+- Spurs (728): facilities shown before the edit stayed "Good" in FM while both
+  coaching copies read 18, then 3.
+
+| Write | Witness (never shown in FM before the edit) | Memory | FM after the edit | Undo |
+|-------|--------------------------------------------|--------|-------------------|------|
+| Player attribute | Van Dijk Crossing | 4 → 10 | 10 on the profile | 4 (raw 20) |
+| Academy coaching, both copies (info +0x12C, finance +0x8A6) | Chelsea (630) | 19/19 → 4/4 (recruitment 18 untouched) | Academy Coaching "Fairly Basic"; Youth Recruitment (18) "Excellent" | 19/19, two undo entries, newest first |
+| Staff coaching attribute | Mikel Arteta (6701089) Fitness (+0x34, encoded) | 7 (raw 35) → 12 (raw 58) | "Good" (on the same profile 10–11 Average, 12–14 Good, 15–17 Very Good, 18–19 Outstanding) | 7 (raw 35) |
+| Transfer budget (finance +0x7C4) | Spurs, already shown | 25,900,000 → 40,000,000 | still £25.9M (cached) | 25,900,000 |
+
+Read checks in the same session: Van Dijk's 36 visible attributes, height,
+DOB, caps 96/13 and U21 3/0 match FM. His wage, 350,000, lies within FM's
+scouted range of £325K–£375K. Arteta's coaching, mental and knowledge labels
+match, as do his contract (£375K p/w, 30/6/2030) and DOB. Squad status 4 =
+"Squad Player" (Merino) and 1 = "Star Player" (Van Dijk). Squad numbers
+Merino 23 and Rice 41 match their Arsenal shirts. Spurs' balance (finance+0x0C)
+reads 173,975,262 and FM shows £173,975,262. Facility labels: Academy Coaching
+16 "Good" (Spurs) and 17 "Excellent" (Arsenal); Youth Recruitment 18 "Excellent"
+(Chelsea).
