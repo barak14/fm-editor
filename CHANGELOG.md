@@ -20,6 +20,10 @@
 - Make player profile layouts use available space: independently stacked attribute cards reduce gaps and scrolling; **Positions & Traits** sizes the pitch to the profile viewport and places traits beside it on wide views, with readable stacked layouts on narrow screens. Keep the existing schema-backed numeric editing and Undo behaviour.
 - FM27 Steam: favoured-club reasons read the right byte. **As a player** / **As a supporter** were wrong for some clubs (Mbappé's R. Madrid, Litmanen's Ajax).
 
+### Documentation
+
+- Prioritize nation, competition, award, official and stadium discovery/browsing in the roadmap, with read-only coverage first; mark reusable player templates as low priority.
+
 ## 0.3.0 (prerelease)
 
 ### Features

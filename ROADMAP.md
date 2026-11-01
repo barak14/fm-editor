@@ -1,6 +1,6 @@
 # fm-editor Roadmap
 
-High-level feature backlog. Work through these in any order.
+High-level feature backlog. Prioritize finding and browsing the save's entities over player templates; there is no fixed order among the new entity types below.
 
 Scope expanded on 2026-10-30 using the [FMLE26 advertised feature overview and release history](https://www.fmscout.com/a-fm-live-editor-26.html) as a capability checklist, not a UI specification. New entries describe target coverage, not verified support. Existing checkmarks are historical; this update does not re-verify mappings or certify parity. Partially implemented areas list the remaining scope. Licensing, distribution, performance claims and patch-support promises are not feature requirements.
 
@@ -98,7 +98,20 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 
 ## Entities
 
-- **Stadium support** — Search and edit independent stadium records, including stands, capacities, pitch type/dimensions, condition and facilities; extend the existing read-only club ground view.
+**Priority: entity discovery and browsing.** Add **Nations, Competitions, Awards,
+Officials and Stadiums** as searchable entity types before reusable player
+templates. Start read-only: enumerate records from the attached save, expose
+verified names/UIDs and basic profiles, and resolve related links by object
+identity. Aim for complete entity lists, not just records reachable through the
+currently loaded players or clubs; label incomplete coverage honestly. Editing
+comes later, field by field, with the per-build evidence and Undo requirements
+above. These are planned capabilities, not currently supported pages.
+
+- **Nation discovery** — Enumerate and search nations, with identity-backed profiles and links from existing nationality/club-nation data. Currently displayed nation names are not a complete nation entity model. Broader nation rules and national-team coverage are tracked below.
+- **Competition discovery** — Enumerate and search leagues, cups and other competitions; add basic profiles and participant/related-entity links where verified. Competition browsing is separate from the match-result and table editing backlog below.
+- **Award discovery** — Enumerate and search award definitions; show recipients and history only where separately mapped and verified. No award entity model is currently implemented.
+- **Official discovery** — Enumerate and search referees and other match officials, with supported profile details. Verify their record types and relationships rather than assuming ordinary staff records provide an officials model.
+- **Stadium discovery and support** — Start with a read-only, searchable directory of independent stadium records, including grounds not linked to a currently loaded club. Existing club-ground details and FM24/FM26 stadium schemas are a foundation, not a complete browser; FM27 stadium offsets remain inherited/unverified. Then extend verified coverage to stands, capacities, pitch type/dimensions, condition and facilities, with editing only after write/Undo verification.
 - **Team kit editing** — Change kit colours, types and styles, with previews, for clubs and national teams. Cover home, away, third and goalkeeper kits; each item (shirt, shorts, socks, text, icon) has a style, foreground, background, outline and number colours, and may be specific to a competition or season. Allow adding, duplicating and removing items, and allowing or disallowing licensed kits. *Not started:* no kit data is mapped on any build.
 
 ## Nations & National Teams
@@ -112,7 +125,7 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 - **Advanced staff search** — Expanded search for staff with filterable attributes.
 - **Advanced club search** — Expanded search for clubs with filterable attributes.
 - **Advanced player search coverage** — Extend existing live Name/UID and attribute filters with verified profile/contract criteria and useful sortable result data.
-- **Nation and stadium search** — Live filtering and advanced filters for the new entity types; use the same interaction rules as existing player/staff/club searches.
+- **New entity search** — Live Name/UID filtering for nations, competitions, awards, officials and stadiums as their loaders and identities become supported. Add verified advanced filters incrementally and use the same interaction rules as existing player/staff/club searches.
 
 ## Shortlists & Transfers
 
@@ -138,7 +151,7 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 - **Hidden attributes in search columns** — Expose consistency, important matches, etc. as filterable/sortable columns in the player list.
 - **Clone player profile** — Copy selected attributes, CA/PA, personality, hidden attributes, positions and traits to one or many players. Preview the copied fields; do not clone identity or contracts implicitly.
 - **Swap players** — Exchange two players' clubs or national-team call-ups as one reversible operation; verify every linked record. *Not started.*
-- **Reusable player templates** — Save named sets of attributes, positions and traits, then apply them across players and saves; validate against the target version's supported fields. A "wonderkid" template (high PA, young-player attributes) is one preset.
+- **Reusable player templates (low priority)** — Save named sets of attributes, positions and traits, then apply them across players and saves; validate against the target version's supported fields. A "wonderkid" template (high PA, young-player attributes) is one preset. Defer until the higher-priority entity-discovery/browser coverage above.
 - **Instant player and squad actions** — Heal injuries, restore fitness, remove bans, boost morale and inspire players; maximize team cohesion and tactical familiarity. Support individual, club-squad and national-squad scope where appropriate, using the same preview/undo safeguards as bulk editing. *Progress:* individual Heal, Lift ban and morale exist on FM27 Steam; squad scope, fitness, inspire, cohesion and tactical familiarity remain.
 - **Favourites** — Pin players, staff and clubs for quick access across sessions of the same save. *Not started.*
 
