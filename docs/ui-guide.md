@@ -117,3 +117,28 @@ These player rows and actions are mapped for **FM27 Steam only**. FM27 Game Pass
 - **Bonuses & clauses** shows appearance fees, goal/clean-sheet/assist bonuses and unused-substitute fees as editable pound amounts. Wage-drop percentages and club-extension years are read-only. Unknown clause types retain their raw amount/value display.
 
 Unloaded lists say **Not loaded** and unreadable lists are explicitly unavailable/read-only, not misrepresented as empty. All editable controls remain visible but disabled while disconnected or awaiting an acknowledgement. List-item values update only after the write is acknowledged; the player is then re-read to refresh list membership, even if another entity is now active. Confirmed changes support **Undo**, just like other player edits.
+
+## Experimental FM27 Part Time offer policy trial
+
+The FM27 Club view includes **Contract policy (trial)**. It can prepare a
+read-only eligibility/before-and-after preview for the selected club. Editing
+is disabled by default. A trial requires an explicit `--enable-policy-trial`
+launch, the verified Windows Steam build, a human manager at that club, an
+eligible Non-Contract-only policy, and confirmation of a separate test save
+with an untouched backup. Unsupported records show a refusal, not an editable
+default. No club name or UID is hardcoded into eligibility.
+
+An explicit **Apply club policy trial** adds a Part Time policy input for future
+offers. FM still chooses/validates terms through normal negotiation. This does
+not convert an existing contract, select wages/dates or remove board limits.
+The Player Contract tab continues to show unsupported type conversion; wages
+are labelled in GBP/week and bonuses in GBP/event.
+
+The initial live trial exposed an Undo-guard bug, now covered by a regression
+and corrected in code. The user has since confirmed Undo after opening/changing
+an offer, reapplication and save/reload. Read-only checks confirmed the policy
+after reload and a day advance. An accepted fixed-term Part Time contract also
+matches the read-only current-contract checks. **Post-contract reload and salary-
+payment tests remain outstanding.** Follow the [evidence and test-copy workflow](fm27/contract-type-investigation.md)
+before use. Undo concerns the byte edit and cannot reverse accepted contracts
+or gameplay consequences after time advances.

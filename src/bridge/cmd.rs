@@ -2,7 +2,7 @@
 //! the `BridgeResult` responses it receives, and the `ProcessBridge` handle
 //! that wraps the mpsc channel pair.
 
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::thread;
 
 use crate::cache::EntityCache;
@@ -116,12 +116,18 @@ pub enum BridgeCmd {
     LoadStaff(u64, usize),
     LoadClub(u64, usize),
     LoadHumanManager,
+    /// Read-only preparation; never writes or mutates the displayed club buffer.
+    PrepareClubPolicy {
+        request_id: u64,
+        identity: crate::club_policy::ClubIdentity,
+    },
     /// Refuse a write when memory no longer matches the UI/Undo snapshot.
     WriteBytes {
         id: u64,
         addr: u64,
         expected: Vec<u8>,
         data: Vec<u8>,
+        policy_guard: Option<crate::club_policy::PolicyGuard>,
     },
     Ping,
     Shutdown,
@@ -134,7 +140,11 @@ pub enum BridgeResult {
     /// fm.exe attached but no save is loaded yet, or save creation is
     /// still in progress. The worker keeps pinging; once counts are
     /// stable + plausible, we promote to Connected.
-    Attached(u32, crate::game_version::GameBuild, Option<crate::game_date::GameDate>),
+    Attached(
+        u32,
+        crate::game_version::GameBuild,
+        Option<crate::game_date::GameDate>,
+    ),
     /// Several games are running (they all run as `fm.exe`) and no PID was
     /// given. Nothing was attached; the UI asks which one to use.
     ChooseGame(Vec<crate::process::RunningGame>),
@@ -162,12 +172,20 @@ pub enum BridgeResult {
     StaffLoaded(StaffView),
     ClubLoaded(ClubView),
     HumanManagerLoaded(StaffView),
+    ClubPolicyPrepared {
+        request_id: u64,
+        result: Result<crate::club_policy::PolicyProposal, String>,
+    },
     WriteOk {
         id: u64,
+        warning: Option<String>,
     },
     WriteFail {
         id: u64,
         error: String,
+        /// Policy writes distinguish a preflight refusal from uncertain completion.
+        /// None preserves the ordinary writer's existing failure semantics.
+        write_attempted: Option<bool>,
     },
     /// Current date for this attachment, refreshed by status polls and reloads.
     PingOk(Option<crate::game_date::GameDate>),
@@ -186,9 +204,13 @@ pub struct ProcessBridge {
 
 impl ProcessBridge {
     pub fn new() -> Self {
+        Self::with_policy_trial(false)
+    }
+
+    pub(crate) fn with_policy_trial(allow_policy_trial: bool) -> Self {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let (result_tx, result_rx) = mpsc::channel();
-        thread::spawn(move || worker_loop(cmd_rx, result_tx));
+        thread::spawn(move || worker_loop(cmd_rx, result_tx, allow_policy_trial));
         Self { cmd_tx, result_rx }
     }
 

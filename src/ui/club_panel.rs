@@ -13,15 +13,20 @@ pub enum ClubTab {
     Facilities,
     Finance,
     Stadium,
+    ContractPolicy,
 }
 
-pub fn show(
+pub(crate) fn show(
     schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
     club: &mut ClubView,
     tab: &mut ClubTab,
-) -> Vec<FieldEdit> {
+    policy_ui: &mut crate::ui::club_policy::PolicyUi,
+    show_policy: bool,
+    writable: bool,
+) -> (Vec<FieldEdit>, Option<crate::ui::club_policy::Action>) {
     let mut edits = Vec::new();
+    let mut policy_action = None;
 
     entity_header::show(
         ui,
@@ -52,11 +57,14 @@ pub fn show(
         }
     });
 
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.selectable_value(tab, ClubTab::Overview, "Overview");
         ui.selectable_value(tab, ClubTab::Facilities, "Facilities");
         ui.selectable_value(tab, ClubTab::Finance, "Finance");
         ui.selectable_value(tab, ClubTab::Stadium, "Stadium (read-only)");
+        if show_policy {
+            ui.selectable_value(tab, ClubTab::ContractPolicy, "Contract policy (trial)");
+        }
     });
     ui.separator();
 
@@ -65,9 +73,25 @@ pub fn show(
         ClubTab::Facilities => show_facilities(schemas, ui, club, &mut edits),
         ClubTab::Finance => show_finance(schemas, ui, club, &mut edits),
         ClubTab::Stadium => show_stadium(schemas, ui, club),
+        ClubTab::ContractPolicy => {
+            if show_policy {
+                policy_action = policy_ui.show(
+                    ui,
+                    crate::club_policy::ClubIdentity {
+                        address: club.addr,
+                        index: club.index,
+                        uid: club.uid,
+                    },
+                    &club.full_name,
+                    writable,
+                );
+            } else {
+                ui.label("Contract policy trial unsupported for this build.");
+            }
+        }
     });
 
-    edits
+    (edits, policy_action)
 }
 
 fn show_overview(
@@ -224,11 +248,18 @@ fn show_finance(
     let mut shown = false;
     // Labels come from the schema. FM27 has no editable wage budget: its
     // budget and current wage total are shown read-only below.
-    for key in ["c_balance", "c_transfer_budget", "c_transfer_remaining", "c_wage_budget"] {
+    for key in [
+        "c_balance",
+        "c_transfer_budget",
+        "c_transfer_remaining",
+        "c_wage_budget",
+    ] {
         let Some((container, offset)) = sub_location(schemas, key) else {
             continue;
         };
-        let Some(field) = schemas.field(key) else { continue };
+        let Some(field) = schemas.field(key) else {
+            continue;
+        };
         let label = if key == "c_wage_budget" {
             format!("{} (p/w)", field.label)
         } else {
@@ -254,7 +285,9 @@ fn show_finance(
     }
     // Derived totals: shown, not edited (FM recomputes them).
     for key in ["c_wage_total", "c_wage_spend", "c_youth_grant"] {
-        let Some(field) = schemas.field(key) else { continue };
+        let Some(field) = schemas.field(key) else {
+            continue;
+        };
         if let Some(v) = fields::read_field_u32(club, &club.raw, field) {
             let label = if key == "c_youth_grant" {
                 field.label.to_string()

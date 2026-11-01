@@ -14,6 +14,12 @@ fn main() -> eframe::Result {
     // and does not touch the eframe loop.
     // Parse CLI args once; shared between debug and title logic.
     let args: Vec<String> = std::env::args().collect();
+    let mcp_only = args.iter().any(|arg| arg == "--mcp-only");
+    #[cfg(not(debug_assertions))]
+    if mcp_only {
+        eprintln!("--mcp-only requires a debug build");
+        std::process::exit(1);
+    }
 
     // --branch <name>  or  --branch=<name>  — injected by build-and-launch.sh
     // for non-main worktrees so the window title shows which branch is running.
@@ -48,6 +54,14 @@ fn main() -> eframe::Result {
                     .find_map(|a| a.strip_prefix("--mcp-port=").and_then(|s| s.parse().ok()))
             })
             .unwrap_or(7799);
+        if mcp_only {
+            eprintln!("Read-only fm-debug on 127.0.0.1:{port}; GUI disabled");
+            if let Err(error) = fm_editor::debug::run_read_only(port) {
+                eprintln!("Read-only fm-debug failed: {error}");
+                std::process::exit(1);
+            }
+            return Ok(());
+        }
         let log = fm_editor::debug::new_log();
         let state = fm_editor::debug::start(log, port);
 
@@ -80,7 +94,9 @@ fn main() -> eframe::Result {
         "FM Editor",
         options,
         Box::new(move |cc| {
-            let app = FmEditorApp::new(cc).with_branch(branch);
+            let app = FmEditorApp::new(cc)
+                .with_branch(branch)
+                .with_policy_trial(args.iter().any(|a| a == "--enable-policy-trial"));
             #[cfg(debug_assertions)]
             let app = app.with_mcp_state(mcp_state);
             Ok(Box::new(app))

@@ -1,6 +1,8 @@
 //! Debug MCP tool implementations — one module per logical group.
 
 pub mod attach;
+pub mod club_policy;
+pub mod contracts;
 pub mod entities;
 pub mod fields_read;
 pub mod logs;

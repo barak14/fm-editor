@@ -11,7 +11,7 @@ use crate::cache::{CachedClub, CachedPlayer, CachedStaff, EntityCache};
 use crate::game_version::GameBuild;
 use crate::player::PlayerRecord;
 use crate::process::RunningGame;
-use crate::settings::{theme_data_id, AppSettings, Scale, Theme, WagePeriod};
+use crate::settings::{AppSettings, Scale, Theme, WagePeriod, theme_data_id};
 use crate::staff::StaffRecord;
 use crate::ui::navigation::{self, BrowserHistory};
 use crate::ui::pages::{
@@ -180,6 +180,7 @@ pub struct FmEditorApp {
     undo_stack: UndoStack,
     writes: WriteTracker,
     write_error: Option<String>,
+    policy_ui: crate::ui::club_policy::PolicyUi,
 
     // Status
     status_msg: Option<(String, Instant)>,
@@ -241,6 +242,7 @@ impl FmEditorApp {
             undo_stack: UndoStack::new(),
             writes: WriteTracker::new(),
             write_error: None,
+            policy_ui: Default::default(),
             status_msg: None,
             entity_counts: None,
             show_history: false,
@@ -254,6 +256,16 @@ impl FmEditorApp {
     /// Keep the preview/worktree identity when the attached game changes the title.
     pub fn with_branch(mut self, branch: Option<String>) -> Self {
         self.window_branch = branch;
+        self
+    }
+
+    /// Only an explicit startup flag enables policy trial writes in the worker.
+    pub fn with_policy_trial(mut self, enabled: bool) -> Self {
+        if enabled {
+            self.bridge.send(BridgeCmd::Shutdown);
+            self.bridge = ProcessBridge::with_policy_trial(true);
+            self.policy_ui.enabled = true;
+        }
         self
     }
 
@@ -285,6 +297,7 @@ impl FmEditorApp {
         self.player_snapshots.clear();
         self.staff_snapshots.clear();
         self.undo_stack.clear();
+        self.policy_ui.reset();
         self.writes.clear();
         self.write_error = None;
     }
@@ -407,10 +420,17 @@ impl FmEditorApp {
                     self.manager_loading = false;
                     self.manager_view = Some(view);
                 }
-                BridgeResult::WriteOk { id } => self.complete_write(id, true, None),
-                BridgeResult::WriteFail { id, error } => {
-                    self.complete_write(id, false, Some(error))
+                BridgeResult::ClubPolicyPrepared { request_id, result } => {
+                    self.policy_ui.receive(request_id, result)
                 }
+                BridgeResult::WriteOk { id, warning } => {
+                    self.complete_write(id, true, warning, None)
+                }
+                BridgeResult::WriteFail {
+                    id,
+                    error,
+                    write_attempted,
+                } => self.complete_write(id, false, Some(error), write_attempted),
                 BridgeResult::Error(e) => {
                     // While detached, errors come from attach attempts: the
                     // games offered earlier may be gone, so stop offering them.
@@ -575,10 +595,25 @@ impl FmEditorApp {
         }
     }
 
-    fn complete_write(&mut self, id: u64, success: bool, error: Option<String>) {
+    fn complete_write(
+        &mut self,
+        id: u64,
+        success: bool,
+        error: Option<String>,
+        write_attempted: Option<bool>,
+    ) {
         let Some(completion) = self.writes.complete(id, success) else {
             return;
         };
+        let policy_write = completion.entry.policy_guard.is_some();
+        if policy_write {
+            self.policy_ui.finished(
+                success,
+                error.as_deref(),
+                completion.was_undo,
+                write_attempted,
+            );
+        }
         // Keep the edited player's list membership fresh even if the user
         // navigated to another entity while this acknowledgement was pending.
         let list_players: std::collections::BTreeSet<_> = if completion.success
@@ -597,16 +632,31 @@ impl FmEditorApp {
         };
         self.reconcile_write_buffers(&completion.entry, completion.was_undo, completion.success);
         if completion.success {
+            if let Some(warning) = &error {
+                self.write_error = Some(warning.clone());
+            }
             if completion.was_undo {
                 self.set_status(format!("Undone: {}", completion.entry.description));
             } else {
                 self.undo_stack.push(completion.entry);
             }
         } else {
-            let message = format!(
-                "Write failed: {}. The unsuccessful change was not added to Undo; displayed bytes have been restored.",
-                error.as_deref().unwrap_or("Unknown error")
-            );
+            let message = if policy_write && write_attempted == Some(false) {
+                format!(
+                    "Policy change refused before writing: {}. No memory write was attempted. The original Undo entry is retained after a refused Undo. Reload the untouched test backup before starting a new trial.",
+                    error.as_deref().unwrap_or("Unknown validation error")
+                )
+            } else if policy_write {
+                format!(
+                    "Policy write not confirmed: {}. No success is claimed. Displayed data will be refreshed; memory may already have changed. Inspect readback before retrying. The untouched backup is the recovery path.",
+                    error.as_deref().unwrap_or("Unknown error")
+                )
+            } else {
+                format!(
+                    "Write failed: {}. The unsuccessful change was not added to Undo; displayed bytes have been restored.",
+                    error.as_deref().unwrap_or("Unknown error")
+                )
+            };
             self.write_error = Some(message);
             if completion.was_undo {
                 self.undo_stack.push(completion.entry);
@@ -776,6 +826,7 @@ impl eframe::App for FmEditorApp {
         let mut undo_requested = !ctx.wants_keyboard_input()
             && ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z));
         let mut edits: Vec<field_widget::FieldEdit> = Vec::new();
+        let mut policy_action = None;
         let mut load_tab: Option<usize> = None;
         let mut clicked_player: Option<usize> = None;
         let mut clicked_xi_player: Option<usize> = None;
@@ -1396,8 +1447,10 @@ impl eframe::App for FmEditorApp {
                             }
                             EntityTabType::Club => {
                                 if let Some(c) = self.selected_club.as_mut().filter(|c| c.addr == tab_addr) {
-                                    let e = club_panel::show(schemas, ui, c, &mut self.club_tab);
-                                    edits.extend(e);
+                                    let (e,action) = club_panel::show(schemas,ui,c,&mut self.club_tab,&mut self.policy_ui,
+                                        self.attached_build.is_some_and(|b|b.version()==crate::game_version::GameVersion::Fm27),
+                                        self.conn.is_writable() && !self.writes.is_pending() && edits.is_empty());
+                                    edits.extend(e);policy_action=action;
                                 } else {
                                     ui.label("Club details unavailable. Reload while the game is connected.");
                                 }
@@ -1512,6 +1565,26 @@ impl eframe::App for FmEditorApp {
         }
 
         // A write becomes undoable only after the worker confirms success.
+        if let Some(action) = policy_action
+            && self.conn.is_writable()
+            && !self.writes.is_pending()
+            && edits.is_empty()
+        {
+            match action {
+                crate::ui::club_policy::Action::Prepare {
+                    request_id,
+                    identity,
+                } => self.bridge.send(BridgeCmd::PrepareClubPolicy {
+                    request_id,
+                    identity,
+                }),
+                crate::ui::club_policy::Action::Apply(entry) => {
+                    for cmd in self.writes.submit(vec![entry]) {
+                        self.bridge.send(cmd);
+                    }
+                }
+            }
+        }
         if undo_requested
             && edits.is_empty()
             && self.conn.is_writable()
@@ -1537,6 +1610,7 @@ impl eframe::App for FmEditorApp {
                     old_raw: edit.old_raw,
                     new_raw: edit.new_raw,
                     timestamp: Instant::now(),
+                    policy_guard: None,
                 })
                 .collect();
             for cmd in self.writes.submit(entries) {

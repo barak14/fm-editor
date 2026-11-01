@@ -139,6 +139,8 @@ async fn call_tool(name: &str, args: Value, state: &DebugState) -> Result<Value,
 
     let text = match name {
         "attach_status"       => attach::run(args, state)?,
+        "snapshot_player_contract" => contracts::run(args, state)?,
+        "preview_club_policy_trial" => super::tools::club_policy::run(args, state)?,
         "get_entity_address"  => entities::get_entity_address(args, state)?,
         "search_entities"     => entities::search_entities(args, state)?,
         "dump_struct"         => memory::dump_struct(args, state)?,
@@ -163,6 +165,35 @@ async fn call_tool(name: &str, args: Value, state: &DebugState) -> Result<Value,
 
 fn tool_list() -> Value {
     json!([
+        {
+            "name":"preview_club_policy_trial",
+            "description":"Read-only GUI-equivalent club policy proposal for the exact witnessed Windows FM27 Steam fingerprint. Checks fresh club identity/array membership, class, info ownership, a human manager's employer chain, current date, original policy bytes and repeated reads. Never writes or exposes an executable write token. Only all-Non-Contract policy inputs qualify; existing Part Time and unknown inputs are refused.",
+            "inputSchema":{
+                "type":"object","additionalProperties":false,
+                "properties":{
+                    "pid":{"type":"integer","minimum":1},
+                    "index":{"type":"integer","minimum":0},
+                    "expected_address":{"type":"integer","minimum":65537},
+                    "expected_uid":{"type":"integer","minimum":1,"maximum":4294967295u32}
+                },
+                "required":["pid","index","expected_address","expected_uid"]
+            }
+        },
+        {
+            "name": "snapshot_player_contract",
+            "description": "Read-only, bounded current-contract snapshot for the witnessed FM27 Steam fingerprint and contract class. Requires fresh PID, player index, address and UID. Checks membership, owner and repeated bytes; rejects stale/truncated reads. Includes exact raw bytes, units and labels for exact witnessed type-byte codes. Unknown codes stay unknown. Does not inspect pending/future contracts or enable conversion.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "pid": { "type": "integer", "minimum": 1 },
+                    "index": { "type": "integer", "minimum": 0 },
+                    "expected_address": { "type": "integer", "minimum": 65537 },
+                    "expected_uid": { "type": "integer", "minimum": 1, "maximum": 4294967295u32 }
+                },
+                "required": ["pid", "index", "expected_address", "expected_uid"]
+            }
+        },
         {
             "name": "attach_status",
             "description": "Returns whether the MCP server is attached to fm.exe, the attached game version and PID, every running game, and basic entity counts. Call this first. With several games open it follows the game the editor is attached to; pass `pid` to switch to another one.",

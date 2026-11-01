@@ -13,6 +13,13 @@ Steam's Proton.
 
 ## Features
 
+An experimental Windows FM27 Steam **club-policy trial** is available only with
+explicit `--enable-policy-trial` startup. It proposes allowing Part Time offers
+for an all-Non-Contract club policy; direct player-contract conversion remains
+disabled. Read the [evidence, separate-copy requirements and trial instructions](docs/fm27/contract-type-investigation.md#guarded-club-policy-workaround-implemented-live-trial-outstanding)
+before using it. Offer controls, Undo, policy persistence and an accepted Part Time deal have
+been tested; accepted-contract reload and salary-payment checks remain.
+
 - **Players** — attributes, positions, CA/PA, personality, reputation, date of birth, traits;
   club, nationality, place of birth, international caps; contract wage, expiry, squad status,
   squad number and asking price.
@@ -135,6 +142,12 @@ Debug builds serve an [MCP](https://modelcontextprotocol.io) server on
 read-only tools — `search_entities`, `dump_struct`, `probe_range`, `probe_pointer_chain`,
 `compare_entities`, `read_entity_fields` and others — inspect live game memory, which is how
 new fields are mapped. [`.mcp.json`](.mcp.json) is an example client configuration.
+
+For diagnostics without an editor window, a debug build also supports
+`fm-editor --mcp-only --mcp-port 7884` (`fm-editor.exe` on Windows). This mode
+starts the existing read-only server without the GUI or write bridge. See the
+[FM27 contract investigation](docs/fm27/contract-type-investigation.md) for bounded
+contract snapshots, Windows usage and current verification limits.
 
 ## Contributing
 

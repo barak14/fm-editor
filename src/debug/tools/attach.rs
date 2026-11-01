@@ -17,7 +17,10 @@ use crate::{club, player, staff};
 pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
     let requested = match args.get("pid") {
         None | Some(Value::Null) => None,
-        Some(v) => Some(v.as_u64().ok_or("pid must be an integer")? as u32),
+        Some(v) => Some(
+            u32::try_from(v.as_u64().ok_or("pid must be an unsigned integer")?)
+                .map_err(|_| "pid out of range")?,
+        ),
     };
     let running: Vec<Value> = process::running_games()
         .map(|games| {
@@ -29,6 +32,18 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
         .unwrap_or_default();
 
     let mut guard = state.fm.lock().unwrap_or_else(|e| e.into_inner());
+    // The debug attachment is independent of the GUI. Forget a dead process
+    // and its address cache before deciding which running game to inspect.
+    // Checking the handle as well as PID membership also catches PID reuse.
+    if guard.as_ref().is_some_and(|fm| {
+        !running
+            .iter()
+            .any(|game| game["pid"].as_u64() == Some(u64::from(fm.pid)))
+            || fm.read_u8(fm.gp_base).is_err()
+    }) {
+        *guard = None;
+        *state.mini_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
     let current = guard.as_ref().map(|fm| fm.pid);
     let target = match (requested, current) {
         (Some(pid), Some(cur)) if pid == cur => None,
@@ -51,6 +66,8 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
                 *guard = Some(fm);
             }
             Err(e) => {
+                *guard = None;
+                *state.mini_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
                 return Ok(serde_json::to_string_pretty(&json!({
                     "attached":      false,
                     "error":         e,
@@ -71,6 +88,12 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
         "version":       fm.build.version().display_name(),
         "storefront":    fm.build.storefront().display_name(),
         "module_path":   fm.module_path,
+        "module_base":   format!("0x{:X}", fm.gp_base),
+        "module_end":    format!("0x{:X}", fm.gp_end),
+        "module_header_hash": fm.module_header_hash().ok().map(|h| format!("0x{h:016X}")),
+        "schema_known_dll_hash": format!("0x{:016X}", fm.schemas().known_dll_hash),
+        "fingerprint_calibrated": fm.schemas().known_dll_hash != 0,
+        "compatibility_notice": fm.dll_hash_notice,
         "pid":           fm.pid,
         "editor_pid":    state.editor_pid.load(Ordering::Relaxed),
         "running_games": running,

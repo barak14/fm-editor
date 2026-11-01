@@ -1,10 +1,10 @@
 //! Debug-only MCP server — compiled only when `debug_assertions` is set.
 //!
-//! Exposes 13 MCP tools via streamable HTTP on `localhost:7799` so an agent can probe
+//! Exposes read-only MCP tools via streamable HTTP on `localhost:7799` so an agent can probe
 //! fm.exe memory directly during a live session — finding new field offsets,
 //! diagnosing blank names, discovering sub-records — without recompiling.
 //!
-//! Entry point: call `debug::start(log)` once from `main()` before the eframe
+//! Entry point: call `debug::start(log, port)` once from `main()` before the eframe
 //! event loop. Everything else is self-contained.
 
 use std::collections::VecDeque;
@@ -127,4 +127,12 @@ pub fn start(log: DebugLog, port: u16) -> Arc<DebugState> {
         });
     });
     state
+}
+
+/// Serve the existing read-only tools without constructing a GUI or bridge.
+/// Errors propagate to the CLI so a failed bind cannot look like a live server.
+pub fn run_read_only(port: u16) -> Result<(), String> {
+    let state = Arc::new(DebugState::new(new_log(), port));
+    let runtime = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    runtime.block_on(mcp_server::run(state))
 }
