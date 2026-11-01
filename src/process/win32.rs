@@ -6,8 +6,8 @@ use std::mem;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::System::Diagnostics::Debug::{ReadProcessMemory, WriteProcessMemory};
 use windows::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, Process32FirstW, Process32NextW,
-    MODULEENTRY32W, PROCESSENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS,
+    CreateToolhelp32Snapshot, MODULEENTRY32W, Module32FirstW, Module32NextW, PROCESSENTRY32W,
+    Process32FirstW, Process32NextW, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS,
 };
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_ALL_ACCESS};
 
@@ -47,6 +47,11 @@ pub fn read_bytes(h: &ProcHandle, addr: u64, n: usize) -> Result<Vec<u8>, String
         )
         .map_err(|e| format!("ReadProcessMemory at 0x{addr:X}: {e}"))?;
     }
+    if bytes_read != n {
+        return Err(format!(
+            "ReadProcessMemory at 0x{addr:X}: short read ({bytes_read}/{n})"
+        ));
+    }
     Ok(buf)
 }
 
@@ -62,6 +67,12 @@ pub fn write_bytes(h: &ProcHandle, addr: u64, data: &[u8]) -> Result<(), String>
             Some(&mut bytes_written),
         )
         .map_err(|e| format!("WriteProcessMemory at 0x{addr:X}: {e}"))?;
+    }
+    if bytes_written != data.len() {
+        return Err(format!(
+            "Short write at 0x{addr:X}: {bytes_written}/{} bytes",
+            data.len()
+        ));
     }
     Ok(())
 }
@@ -105,9 +116,8 @@ pub fn find_pids(name: &str) -> Result<Vec<u32>, String> {
 /// Find a module's base address, size, and full on-disk path within a process.
 pub fn find_module_info(pid: u32, module_name: &str) -> Result<(u64, u64, String), String> {
     unsafe {
-        let snap =
-            CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid)
-                .map_err(|e| format!("CreateToolhelp32Snapshot (module): {e}"))?;
+        let snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid)
+            .map_err(|e| format!("CreateToolhelp32Snapshot (module): {e}"))?;
 
         let mut entry = MODULEENTRY32W {
             dwSize: mem::size_of::<MODULEENTRY32W>() as u32,
@@ -142,5 +152,21 @@ pub fn find_module_info(pid: u32, module_name: &str) -> Result<(u64, u64, String
         }
         let _ = CloseHandle(snap);
         Err(format!("{module_name} not found in pid {pid}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_exact_bytes_from_the_test_process_and_rejects_unmapped_memory() {
+        let handle = open(std::process::id()).unwrap();
+        let bytes = std::hint::black_box([0xA5u8, 0x1A, 0xFF, 0x07, 0x40, 0x04]);
+        assert_eq!(
+            read_bytes(&handle, bytes.as_ptr() as u64, bytes.len()).unwrap(),
+            bytes
+        );
+        assert!(read_bytes(&handle, 0x10, 8).is_err());
     }
 }

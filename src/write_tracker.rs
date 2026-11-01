@@ -58,6 +58,7 @@ impl WriteTracker {
         let cmd = BridgeCmd::WriteBytes {
             id,
             addr: entry.addr,
+            policy_guard: entry.policy_guard.clone(),
             expected: if was_undo {
                 entry.new_raw.clone()
             } else {
@@ -100,6 +101,7 @@ mod tests {
             old_raw: vec![1, 2],
             new_raw: vec![3, 4],
             timestamp: Instant::now(),
+            policy_guard: None,
         }
     }
 
@@ -125,6 +127,37 @@ mod tests {
         };
         assert_eq!(expected, vec![3, 4]);
         assert_eq!(data, vec![1, 2]);
+    }
+
+    #[test]
+    fn policy_guard_follows_acknowledged_entry_through_undo() {
+        let p = crate::club_policy::test_proposal();
+        let mut e = entry(p.address());
+        e.old_raw = vec![p.before];
+        e.new_raw = vec![p.after];
+        e.policy_guard = Some(p.guard);
+        let identity = e.policy_guard.as_ref().unwrap().identity();
+        let mut tracker = WriteTracker::new();
+        let BridgeCmd::WriteBytes {
+            id, policy_guard, ..
+        } = tracker.submit(vec![e]).remove(0)
+        else {
+            panic!()
+        };
+        assert_eq!(policy_guard.unwrap().identity(), identity);
+        let completion = tracker.complete(id, true).unwrap();
+        let BridgeCmd::WriteBytes {
+            expected,
+            data,
+            policy_guard,
+            ..
+        } = tracker.submit_undo(completion.entry)
+        else {
+            panic!()
+        };
+        assert_eq!(expected, vec![0]);
+        assert_eq!(data, vec![4]);
+        assert_eq!(policy_guard.unwrap().identity(), identity);
     }
 
     #[test]

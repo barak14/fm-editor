@@ -39,17 +39,11 @@ pub fn show(
         player.club_addr,
         player.nationality.as_deref(),
     );
-    if *tab == PlayerTab::Contract && player.contract_raw.is_none() {
-        *tab = PlayerTab::Overview;
-    }
-
     // Sub-tab bar
     ui.horizontal(|ui| {
         ui.selectable_value(tab, PlayerTab::Overview, "Overview");
         ui.selectable_value(tab, PlayerTab::PositionsTraits, "Positions & Traits");
-        if player.contract_raw.is_some() {
-            ui.selectable_value(tab, PlayerTab::Contract, "Contract");
-        }
+        ui.selectable_value(tab, PlayerTab::Contract, "Contract");
     });
     ui.separator();
 
@@ -556,7 +550,13 @@ fn show_contract(
     player: &mut PlayerRecord,
     edits: &mut Vec<FieldEdit>,
 ) {
-    ui.strong("Contract");
+    ui.strong("Current contract");
+    if player.build.version() == crate::game_version::GameVersion::Fm27 {
+        show_unverified_contract_type(ui);
+        ui.label(
+            "Wage: GBP/week. Monetary bonuses: GBP per event. No currency conversion is applied.",
+        );
+    }
 
     // Contract fields live in the contract sub-record: edit its bytes and
     // address. Asking price is in the player struct itself.
@@ -643,6 +643,15 @@ fn show_contract(
         }
     }
     show_clauses(schemas, ui, player, edits);
+}
+
+/// No record, retained selection or edit sink: this unsupported control cannot
+/// default an unknown byte to a known type or emit a proposed write.
+fn show_unverified_contract_type(ui: &mut egui::Ui) {
+    field_widget::info_label(ui, "Contract Type", "Unknown");
+    ui.label("Contract type conversion is unavailable: the required contract changes have not been verified.");
+    ui.add_enabled(false, egui::Button::new("Apply Contract Type"));
+    ui.label("This tab reads the current contract. Pending offers and future contracts are not mapped. Changing wage or expiry does not change contract type.");
 }
 
 /// Medical/list data is loaded by the bridge, never inferred from a cached search row.
@@ -1538,5 +1547,79 @@ mod tests {
         // Day word 7019 = flags | day 363 → 29 Dec 2025.
         let buf = [7019u16.to_le_bytes(), 2025u16.to_le_bytes()].concat();
         assert_eq!(fmt_date_at(&buf, 0).as_deref(), Some("29 Dec 2025"));
+    }
+
+    #[test]
+    fn fm27_contract_render_and_disabled_apply_never_emit_edits() {
+        fn apply_center(shape: &egui::Shape) -> Option<egui::Pos2> {
+            match shape {
+                egui::Shape::Text(t) if t.galley.text() == "Apply Contract Type" => {
+                    Some(t.pos + t.galley.size() * 0.5)
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().find_map(apply_center),
+                _ => None,
+            }
+        }
+        for build in [
+            crate::game_version::GameBuild::Fm27Steam,
+            crate::game_version::GameBuild::Fm27GamePass,
+        ] {
+            for width in [1200.0, 280.0] {
+                for length in [None, Some(0), Some(7), Some(196)] {
+                    let mut player = fixture_player(build);
+                    player.contract_raw = length.map(|n| vec![0xFF; n]);
+                    player.contract_addr = length.map(|_| 0x30000);
+                    let before = player.contract_raw.clone();
+                    let before_player = player.raw.clone();
+                    let ctx = egui::Context::default();
+                    crate::ui::navigation::set_editing_enabled(&ctx, true);
+                    let mut tab = PlayerTab::Contract;
+                    let mut center = None;
+                    for frame in 0..3 {
+                        let mut events = Vec::new();
+                        if frame > 0 {
+                            let pos = center.expect("disabled Apply must be visible");
+                            events.push(egui::Event::PointerMoved(pos));
+                            events.push(egui::Event::PointerButton {
+                                pos,
+                                button: egui::PointerButton::Primary,
+                                pressed: frame == 1,
+                                modifiers: egui::Modifiers::NONE,
+                            });
+                        }
+                        let mut edits = Vec::new();
+                        let output = ctx.run(
+                            egui::RawInput {
+                                screen_rect: Some(egui::Rect::from_min_size(
+                                    egui::Pos2::ZERO,
+                                    egui::vec2(width, 900.0),
+                                )),
+                                events,
+                                ..Default::default()
+                            },
+                            |ctx| {
+                                egui::CentralPanel::default().show(ctx, |ui| {
+                                    edits = show(
+                                        build.schemas(),
+                                        None,
+                                        ui,
+                                        &mut player,
+                                        &mut tab,
+                                        0x20000,
+                                        WagePeriod::Weekly,
+                                        None,
+                                    );
+                                });
+                            },
+                        );
+                        center = output.shapes.iter().find_map(|s| apply_center(&s.shape));
+                        assert!(matches!(tab, PlayerTab::Contract));
+                        assert!(edits.is_empty());
+                        assert_eq!(player.contract_raw, before);
+                        assert_eq!(player.raw, before_player);
+                    }
+                }
+            }
+        }
     }
 }

@@ -9,6 +9,7 @@
 //! should be a single-line call into the new module's handler — keeping
 //! this file boring is the whole point.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 
 use crate::club;
@@ -148,7 +149,26 @@ fn ping_transition(
 // Worker loop
 // ---------------------------------------------------------------------------
 
-pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<BridgeResult>) {
+fn next_policy_epoch() -> u64 {
+    static EPOCH: AtomicU64 = AtomicU64::new(1);
+    let mut value = EPOCH.load(Ordering::Relaxed);
+    loop {
+        let next = value
+            .checked_add(1)
+            .expect("policy session counter exhausted");
+        match EPOCH.compare_exchange_weak(value, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return value,
+            Err(current) => value = current,
+        }
+    }
+}
+
+pub(super) fn worker_loop(
+    rx: mpsc::Receiver<BridgeCmd>,
+    tx: mpsc::Sender<BridgeResult>,
+    allow_policy_trial: bool,
+) {
+    let mut policy_epoch = next_policy_epoch();
     let mut fm: Option<FmProcess> = None;
     let mut cache: Option<ArrayCache> = None;
     // Count-stability tracking: the (humans, staff, clubs) counts we saw
@@ -160,6 +180,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
     while let Ok(cmd) = rx.recv() {
         match cmd {
             BridgeCmd::Attach(pid) => {
+                policy_epoch = next_policy_epoch();
                 let attached = match pid {
                     Some(pid) => FmProcess::attach_pid(pid),
                     None => match process::running_games() {
@@ -269,25 +290,62 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                 }
             }
 
+            BridgeCmd::PrepareClubPolicy {
+                request_id,
+                identity,
+            } => {
+                let result = fm
+                    .as_ref()
+                    .ok_or_else(|| "No process attached".to_owned())
+                    .and_then(|f| {
+                        if cache.is_none() || !counts_are_plausible(&build_cache(f)) {
+                            return Err("Save is not ready for a policy preview".into());
+                        }
+                        crate::club_policy::prepare(f, policy_epoch, identity)
+                    });
+                let _ = tx.send(BridgeResult::ClubPolicyPrepared { request_id, result });
+            }
+
             BridgeCmd::WriteBytes {
                 id,
                 addr,
                 expected,
                 data,
+                policy_guard,
             } => {
                 let result = match &fm {
+                    Some(f) if policy_guard.is_some() => {
+                        if !allow_policy_trial {
+                            Err(("Policy writes are disabled; start explicitly with --enable-policy-trial for a separate-copy trial".into(),Some(false)))
+                        } else {
+                            policy_guard
+                                .as_ref()
+                                .expect("matched Some")
+                                .write(f, policy_epoch, addr, &expected, &data)
+                                .map_err(|e| (e.message, Some(e.write_attempted)))
+                        }
+                    }
                     Some(f) => checked_write(
                         addr,
                         &expected,
                         &data,
                         |at, len| f.read_bytes(at, len),
                         |at, bytes| f.write_bytes(at, bytes),
-                    ),
-                    None => Err("Cannot write: no process attached".to_owned()),
+                    )
+                    .map(|()| None)
+                    .map_err(|e| (e, None)),
+                    None => Err((
+                        "Cannot write: no process attached".to_owned(),
+                        policy_guard.as_ref().map(|_| false),
+                    )),
                 };
                 let response = match result {
-                    Ok(()) => BridgeResult::WriteOk { id },
-                    Err(error) => BridgeResult::WriteFail { id, error },
+                    Ok(warning) => BridgeResult::WriteOk { id, warning },
+                    Err((error, write_attempted)) => BridgeResult::WriteFail {
+                        id,
+                        error,
+                        write_attempted,
+                    },
                 };
                 let _ = tx.send(response);
             }
@@ -298,6 +356,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                     if f.read_u8(f.gp_base).is_err() {
                         let had_cache = cache.is_some();
                         fm = None;
+                        policy_epoch = next_policy_epoch();
                         cache = None;
                         last_counts = None;
                         if had_cache {
@@ -346,6 +405,7 @@ pub(super) fn worker_loop(rx: mpsc::Receiver<BridgeCmd>, tx: mpsc::Sender<Bridge
                                 }
                             }
                             PingTransition::SaveUnloaded => {
+                                policy_epoch = next_policy_epoch();
                                 // The save identity changed or the arrays became
                                 // implausible → a different save, or none.
                                 cache = None;
@@ -539,14 +599,16 @@ mod tests {
             (0x10000, vec![1], vec![3]),
             (0x7FFF_FFFF_FFFE, vec![1, 2], vec![3, 4]),
         ] {
-            assert!(checked_write(
-                addr,
-                &expected,
-                &data,
-                |_, _| panic!("must not read"),
-                refuse_write
-            )
-            .is_err());
+            assert!(
+                checked_write(
+                    addr,
+                    &expected,
+                    &data,
+                    |_, _| panic!("must not read"),
+                    refuse_write
+                )
+                .is_err()
+            );
         }
     }
 
@@ -560,13 +622,19 @@ mod tests {
                 addr: 100,
                 data: vec![1],
                 expected: vec![0],
+                policy_guard: None,
             })
             .unwrap();
         cmd_tx.send(BridgeCmd::Shutdown).unwrap();
-        worker_loop(cmd_rx, result_tx);
+        worker_loop(cmd_rx, result_tx, false);
         match result_rx.recv().unwrap() {
-            BridgeResult::WriteFail { id, error } => {
+            BridgeResult::WriteFail {
+                id,
+                error,
+                write_attempted,
+            } => {
                 assert_eq!(id, 42);
+                assert_eq!(write_attempted, None);
                 assert!(error.contains("no process attached"));
             }
             _ => panic!("expected a write failure acknowledgement"),

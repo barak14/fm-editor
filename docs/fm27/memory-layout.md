@@ -24,6 +24,94 @@ instead of the file-backed span.
 
 Version gate: `known_dll_hash` is 0 (not calibrated); attach reports the hash.
 
+### Windows contract inspection and policy trial, 2026-10-31
+
+Windows Steam **27.0.0+2486695**, Steam build ID **26227640**. Module size is
+433,986,560 bytes; SHA-256 is
+`bc940e472418fc5c214208d7cf30fecf600f689b6f9d71c11ba19a2df0fe057f`.
+The existing editor header fingerprint is **0x74A331ED3E28B06C**. Its historical
+multiplier differs from standard FNV-1a and was not changed. `known_dll_hash`
+remains zero: this narrow evidence does not calibrate or verify the whole schema.
+
+**Current contracts:** existing player +0x330 -> contract; contract +0x08 ->
+embedded person at player +0x288. Both are little-endian 64-bit pointers.
+The witnessed contract vtable RVA is **0x4B00AE8**. The type is **one byte +0xC3**,
+with exact read-only labels:
+
+| Byte | Independently labelled witnesses | Context |
+|---|---|---|
+| 0 | Sam Hutchinson 5131229, Jack Dean 2000544627; Roman Charles-Cook 2000144100 | Farnham/Farnham/Dover Part Time, 8 Sep 2026; recaptured later |
+| 1 | David Raya 29111433, Jurri?n Timber 37063644 | Arsenal Full Time, user-confirmed, 8/13 Sep 2026 |
+| 4 | Brad House 28106526, Aaron Williams 2000445820; Roman Charles-Cook 2000144100 after joining | Farnham Non-Contract, 8/12/13 Sep 2026 |
+
+Labels came from FM/user, not wage, expiry or club status. Aaron is the younger
+Farnham player, not same-name UID 29072222. Roman's later contract is a different
+allocation created through gameplay by the user. Its wage is 0, expiry
+`02 00 6C 07` (no genuine fixed term), with type 4.
+
+Bounded code reads establish width 1: setter store RVA **0x2342E73** writes
+`byte ptr [rdi+0xC3]`; serializer **0x2337E0A/0x2337E33** takes that address and
+passes length 1. All other values remain unknown; no masks/default enum or write
+encoder are provided. **Contract +0x26 is a job code.** +0x57 is 0x40 in both Full
+Time and Non-Contract witnesses and is not a reliable type discriminator.
+
+Metadata is `src/fields/fm27/contract.rs`; generic writable `p_contract_type`
+stays **None**. Current-contract inspection validates fingerprint, class,
+UID/array membership, owner and repeated buffers. Game Pass/player-coach coverage
+and direct type conversion remain unsupported. Wages are GBP/week, bonuses
+GBP/event; packed date flags must be preserved, with no present-day FX conversion.
+
+**Negotiation drafts are separate:** native `CONTRACT_DETAILS_EDIT_SESSION`
+vtable RVA **0x4E03A08**, component type +0x603 and wage +0x5EC, are research-only
+findings. After Use Existing Contract, Roman's working draft changed 4/0 to
+0/500 GBP/week while the baseline stayed 4/0 and FM still rejected salary/length.
+The current Dover contract remained unchanged. Acceptance paths also coordinate
+wage/no-expiry state for type 4; a one-field conversion is not verified. See
+[open-offer evidence](contract-type-investigation.md#open-negotiation-research-evidence-not-a-supported-mapping).
+
+**Club permitted-type inputs:** existing club +0x100 -> info. Ordinary option
+builder RVA **0x2330300** reads seven byte inputs at info **+0xE0..+0xE6**;
+property dispatch **0x10A20D5** and byte store **0x10A3330** identify
+Ccsp/Ccsk/Ccsf/Ccsr/Ccsb/Ccsh/Ccsy respectively. Bucket labels, special-case
+rules and initial-data intent remain unverified. They are not generic editable
+club fields.
+
+| Club UID | 8 Sep original and 13 Jul fresh-career policy |
+|---|---|
+| 8325096, Farnham | 4/4/4/4/4/4/4 |
+| 647, Dover | 0/0/0/0/4/4/4 |
+| 602, Arsenal | 1/1/1/1/1/1/1 |
+
+The fresh standard-database Farnham career reproduced disabled salary/length on
+Sam Rak-Sakyi (2000108696): null current contract, type-4 draft. An independent
+Dover offer for Jay Emmanuel-Thomas (28010572) showed Part Time and type 0/wage
+617 GBP/week. Both human-manager owned-contract/employer chains were rechecked.
+This distinguishes club policy from current-contract status and demonstrates
+the restriction predates Roman's transfer; it does not determine data intent.
+
+**Experimental policy trial:** `src/fields/fm27/policy.rs` gates Windows FM27
+Steam, exact hash and club class RVA **0x4CDA1F8**. For any selected human-managed
+club with all seven inputs 4, it proposes **Ccsp +0xE0 only: 4 -> 0**, preserving
+the other six inputs. Unsupported identities/patterns remain disabled. Apply
+requires an explicit trial startup, matching preview and test-copy confirmation.
+The acknowledged-write/Undo guard checks PID/epoch, original info bytes/date,
+array identities, manager class/UID/contract and ownership. Mutable negotiation
+state between manager identity fields is excluded. Only one byte may change;
+readback and staged failures preserve honest completion/Undo reporting.
+
+A user-triggered Apply/readback produced 0/4/4/4/4/4/4 on 13 July 2026. FM then
+showed a Farnham Part Time offer for Ryan Shotton (5129388), $1,400/year and 12
+months; the user confirmed changeable salary/length. Working draft type was
+0/wage 20 GBP/week, baseline 4/0. Ryan's player-coach class remains excluded from
+production current-contract inspection. The first Undo was refused before
+writing; the entire independently captured club prefix/info/date stayed
+unchanged. A regression reproduced the overbroad old manager-prefix guard;
+the corrected build still needs live Undo retesting. Contract acceptance,
+reapply/save/reload/day, employment and payroll remain unverified. No existing
+player contract is claimed repaired; achievement compatibility is unconfirmed.
+
+See [investigation, Windows usage and acceptance gates](contract-type-investigation.md).
+
 ## Current game date
 
 The editor reads today's date from **`game_plugin.dll+0x56AD378`**

@@ -7,6 +7,7 @@ pub struct UndoEntry {
     pub old_raw: Vec<u8>,
     pub new_raw: Vec<u8>,
     pub timestamp: Instant,
+    pub policy_guard: Option<crate::club_policy::PolicyGuard>,
 }
 
 pub struct UndoStack {
@@ -68,6 +69,7 @@ mod tests {
             old_raw: vec![1],
             new_raw: vec![2],
             timestamp: Instant::now(),
+            policy_guard: None,
         });
         assert_eq!(stack.last().unwrap().description, "Edit");
         assert_eq!(stack.len(), 1);
@@ -79,6 +81,7 @@ mod tests {
             old_raw: vec![2],
             new_raw: vec![3],
             timestamp: Instant::now(),
+            policy_guard: None,
         });
         stack.clear();
         assert!(stack.is_empty());

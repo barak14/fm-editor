@@ -4,7 +4,10 @@
 //! inherited leads from FM26, not verified FM27 mappings.
 
 mod club;
+#[cfg(debug_assertions)]
+pub(crate) mod contract;
 mod player;
+pub(crate) mod policy;
 mod stadium;
 pub mod staff;
 

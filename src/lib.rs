@@ -10,6 +10,7 @@ pub mod best_xi;
 pub mod bridge;
 pub mod cache;
 pub mod club;
+pub mod club_policy;
 pub mod fields;
 pub mod game_date;
 pub mod game_version;

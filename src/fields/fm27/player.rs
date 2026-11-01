@@ -246,6 +246,10 @@ pub(crate) const FIELDS: &[Field] = &[
         // job code (1 = player), not a contract type.
         Field { key: "p_contract_wage",    label: "Wage (£ p/w)",    entity: Player, category: Contract,   offset: sub_raw_u32("contract", 0x20) },
         Field { key: "p_squad_status",     label: "Squad Status",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x54)  },
+    // Generic writable mapping remains disabled. Fingerprint/class-scoped
+    // read-only labels live in contract.rs; conversion is not verified.
+    // Current contracts and negotiation offers are distinct.
+    // See the Windows contract investigation in docs/fm27/memory-layout.md.
         Field { key: "p_contract_type",    label: "Contract Type",    entity: Player, category: Contract,   offset: None },
         Field { key: "p_contract_signed",  label: "Contract Signed",  entity: Player, category: Contract,   offset: sub_date("contract", 0x44)    },
         Field { key: "p_contract_expiry",  label: "Contract Expiry",  entity: Player, category: Contract,   offset: sub_date("contract", 0x48)    },

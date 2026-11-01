@@ -207,6 +207,12 @@ impl FmProcess {
         self.build.schemas()
     }
 
+    /// Observed on-disk module header fingerprint, using the attachment gate's
+    /// algorithm. Reporting it does not calibrate or override that gate.
+    pub fn module_header_hash(&self) -> Result<u64, String> {
+        hash_module_header(&self.module_path)
+    }
+
     /// Read the current in-game date through this attachment's verified schema.
     /// Unmapped builds, invalid pointers/dates, and failed reads return None.
     pub fn game_date(&self) -> Option<GameDate> {
@@ -314,7 +320,9 @@ fn sniff_version(dll_path: &str) -> Result<GameVersion, String> {
     }
 }
 
-/// FNV-1a hash of the first 64 KB of a module file.
+/// Project fingerprint of the first 64 KB of a module file.
+/// The historical multiplier below differs from standard FNV-1a. Keep it
+/// unchanged so existing calibrated schemas retain their compatibility gate.
 ///
 /// Used as a lightweight build fingerprint to detect when FM has been
 /// patched and the schema should be re-verified. A file that cannot be read

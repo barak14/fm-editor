@@ -1,4 +1,5 @@
 pub mod club_panel;
+pub(crate) mod club_policy;
 pub mod entity_header;
 pub mod field_widget;
 pub mod navigation;
