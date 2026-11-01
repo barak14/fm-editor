@@ -34,6 +34,10 @@
 
 - Prioritize nation, competition, award, official and stadium discovery/browsing in the roadmap, with read-only coverage first; mark reusable player templates as low priority.
 
+### Packaging
+
+- Pin the 0.4.0 native packaging identity to the immutable `v0.4.0` application tag at commit `52b5e810fa2f3559816b6799954278aa1640bf38` from successful build `41305419521`, with an independent packaging revision. No verified installer or package is claimed yet.
+
 ## 0.3.0 (prerelease)
 
 ### Features

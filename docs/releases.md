@@ -127,12 +127,13 @@ FM27 Game Pass remains unverified; retain the compatibility warnings in the READ
    a draft GitHub prerelease titled `0.4.0 (preview)` with the Windows ZIP, Linux
    tarball and their matching source archives. Combine the platform checksum
    entries into one `SHA256SUMS` without dropping either platform's files.
-4. Native packages are a separate follow-up: add `packaging/releases/v0.4.0.json`
-   with the successful build run, source commit and verified archive/executable
-   hashes, then update the Arch input pins as described in the
-   [native package guide](native-packages.md). Only then change the native workflow's
-   default from `v0.3.0` and dispatch it with `release_tag=v0.4.0`. Until those
-   inputs exist, its 0.3.0 default and pins deliberately remain unchanged.
+4. Native packages are a separate follow-up: `packaging/releases/v0.4.0.json`
+   records the successful build run, source commit and verified archive/executable
+   hashes, and the Arch input pins follow it as described in the
+   [native package guide](native-packages.md). The native workflow now defaults to
+   `v0.4.0`. Native packaging wraps the immutable application commit and keeps its
+   own packaging revision separate; this does not itself show that packages were
+   built or tested.
 5. Attach verified native packages and their packaging-source bundle, update the
    combined checksums and native installation examples for 0.4.0, then review the
    complete draft before publication. Never relabel a 0.3.0 installer as 0.4.0.

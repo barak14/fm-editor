@@ -40,7 +40,7 @@ class ArchStagingTests(unittest.TestCase):
         self.archive = self.directory / "local-release.tar"
         self.checksums = self.directory / "SHA256SUMS"
         self.output = self.directory / "staged"
-        self.info = {"version": "0.3.0", "target": "x86_64-unknown-linux-gnu", "commit": COMMIT, "profile": "release"}
+        self.info = {"version": arch.VERSION, "target": "x86_64-unknown-linux-gnu", "commit": COMMIT, "profile": "release"}
         self.files = {name: f"Fixture {name}\n".encode() for name in (
             "README.md", "LICENSE", "CHANGELOG.md", "AGENTS.md", "ROADMAP.md")}
         self.files.update({
@@ -75,7 +75,7 @@ class ArchStagingTests(unittest.TestCase):
 
     def stage(self, **kwargs):
         args = dict(archive=self.archive, checksums=self.checksums, commit=COMMIT,
-                    version="0.3.0", output_dir=self.output)
+                    version=arch.VERSION, output_dir=self.output)
         args.update(kwargs)
         return arch.stage(**args)
 
@@ -83,6 +83,19 @@ class ArchStagingTests(unittest.TestCase):
         with self.assertRaisesRegex((ValueError, OSError), pattern):
             function()
         self.assertFalse(self.output.exists())
+
+    def test_current_release_pins_match_application_workflow_and_recipe(self):
+        version = re.search(r'^version = "([^"]+)"', (ROOT / "Cargo.toml").read_text(), re.M)[1]
+        self.assertEqual(arch.VERSION, version)
+        manifest = json.loads((ROOT / f"packaging/releases/v{version}.json").read_text())
+        pin = manifest["targets"]["x86_64-unknown-linux-gnu"]
+        self.assertEqual(pin["canonical_name"], arch.ARCHIVE_NAME)
+        self.assertEqual(pin["canonical_sha256"], arch.ARCHIVE_SHA256)
+        self.assertIn(f"pkgver={version}\n", self.recipe)
+        self.assertIn(arch.ARCHIVE_SHA256, self.recipe)
+        workflow = (ROOT / ".github/workflows/native-packages.yml").read_text()
+        self.assertIn(f"default: v{version}\n", workflow)
+        self.assertEqual(workflow.count(f"inputs.release_tag || 'v{version}'"), 2)
 
     def test_stages_only_recipe_sources_and_original_archive(self):
         self.assertEqual(self.stage_fixture(), self.output)
@@ -101,7 +114,7 @@ class ArchStagingTests(unittest.TestCase):
                 self.assert_rejected(self.stage_fixture, "checksum|SHA-256")
 
     def test_version_must_match_static_recipe(self):
-        for version in ("0.2.0", "../0.3.0", "0.3.0-rc1"):
+        for version in ("0.2.0", f"../{arch.VERSION}", f"{arch.VERSION}-rc1"):
             with self.subTest(version=version):
                 self.assert_rejected(lambda: self.stage_fixture(version=version), "only supports")
 
@@ -183,7 +196,7 @@ class ArchRecipeTests(unittest.TestCase):
         return re.findall(r"'([^']*)'", re.search(rf"^{name}=\((.*?)\)$", self.recipe, re.M | re.S)[1])
 
     def test_identity_dependencies_and_prebuilt_options(self):
-        for assignment in ("pkgname=fm-editor-bin", "pkgver=0.3.0", "pkgrel=1"):
+        for assignment in ("pkgname=fm-editor-bin", f"pkgver={arch.VERSION}", "pkgrel=1"):
             self.assertIn(assignment, self.recipe)
         self.assertEqual(self.array("arch"), ["x86_64"])
         self.assertEqual(self.array("depends"), ["glibc", "gcc-libs", "libglvnd", "libx11", "libxcursor",
