@@ -110,6 +110,36 @@ A branch push triggers the workflow immediately once the workflow file is pushed
 The Actions **Run workflow** button/manual dispatch requires the workflow to exist
 on the repository's default branch first. No push or dispatch publishes a release.
 
+## Preparing 0.4.0
+
+The application version is `0.4.0`; the intended tag is `v0.4.0`. Use the
+0.4.0 section of [the changelog](../CHANGELOG.md) for release notes. This remains
+an unsigned, experimental preview, not a claim of feature parity across builds.
+FM27 Game Pass remains unverified; retain the compatibility warnings in the README.
+
+1. Commit and push the prepared source, then require both **Build and package**
+   jobs to pass for that exact commit. Download both platform artifacts before
+   they expire. Do not substitute binaries from an earlier version.
+2. Complete the public-prerelease checks below, including extracted-package live
+   attach/edit/Undo checks and the dependency licence/source review. Record the
+   actual tested game builds and any missing evidence in the draft release.
+3. Create `v0.4.0` at that checked commit without moving any existing tag. Create
+   a draft GitHub prerelease titled `0.4.0 (preview)` with the Windows ZIP, Linux
+   tarball and their matching source archives. Combine the platform checksum
+   entries into one `SHA256SUMS` without dropping either platform's files.
+4. Native packages are a separate follow-up: add `packaging/releases/v0.4.0.json`
+   with the successful build run, source commit and verified archive/executable
+   hashes, then update the Arch input pins as described in the
+   [native package guide](native-packages.md). Only then change the native workflow's
+   default from `v0.3.0` and dispatch it with `release_tag=v0.4.0`. Until those
+   inputs exist, its 0.3.0 default and pins deliberately remain unchanged.
+5. Attach verified native packages and their packaging-source bundle, update the
+   combined checksums and native installation examples for 0.4.0, then review the
+   complete draft before publication. Never relabel a 0.3.0 installer as 0.4.0.
+
+Version/changelog preparation alone does not publish a release, create a tag or
+establish that any of these release gates have passed.
+
 ## Before a public prerelease
 
 - Choose the source commit, including any UI work still in a worktree. Commit and
