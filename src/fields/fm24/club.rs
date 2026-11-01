@@ -66,7 +66,11 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "c_balance",            label: "Balance",            entity: Club, category: Finance,    offset: sub_raw("finance", 0x14) },
     Field { key: "c_avg_ticket",         label: "Avg Ticket Price",   entity: Club, category: Finance,    offset: sub_f32("finance", 0x18) },
     Field { key: "c_avg_season_ticket",  label: "Avg Season Ticket",  entity: Club, category: Finance,    offset: sub_f32("finance", 0x1C) },
-    Field { key: "c_transfer_budget",    label: "Transfer Budget",    entity: Club, category: Finance,    offset: sub_raw("budget",  0x04) },
+    // Transfer budget i32 £ in the finance object. The budget sub-record copy
+    // at budget+0x04 matches on a fresh save, but FM's finance screen reads
+    // finance+0x7CC: with only finance+0x7CC raised to £15.7M (budget+0x04
+    // left at £5.7M), Spurs' Finances screen showed £15,700,000.
+    Field { key: "c_transfer_budget",    label: "Transfer Budget",    entity: Club, category: Finance,    offset: sub_raw("finance", 0x7CC) },
     Field { key: "c_transfer_remaining", label: "Transfer Remaining", entity: Club, category: Finance,    offset: sub_raw("budget",  0x08) },
     // Wage budget i32 £/week in the finance object. Spurs' finance screen
     // (2026-10-30): Wage Budget £3,421,987 p/w = finance+0x810, Currently

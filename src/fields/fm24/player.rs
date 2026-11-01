@@ -102,6 +102,8 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "p_name",             label: "Name",             entity: Player, category: General,  offset: fm_string(0x02C0) },
     Field { key: "p_name_first_sub",   label: "Name First Sub",   entity: Player, category: Internal, offset: pointer(0x02D0) },
     Field { key: "p_name_last_sub",    label: "Name Last Sub",     entity: Player, category: Internal, offset: pointer(0x02D8) },
+    // Weight u16 kg: Kane 86 matches FM's profile; Maddison edited 73 -> 80 showed 80 kg.
+    Field { key: "p_weight",       label: "Weight",           entity: Player, category: General,     offset: raw(0x014C) },
     Field { key: "p_height",       label: "Height",           entity: Player, category: General,     offset: raw(0x014E) },
     Field { key: "p_dob",          label: "Date of Birth",    entity: Player, category: General,     offset: date(0x02BC) },
     Field { key: "p_club_ptr",       label: "Club Entity",       entity: Player, category: Internal,    offset: pointer(0x03B0) },
@@ -165,7 +167,9 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "p_contract_type",    label: "Contract Type",    entity: Player, category: Contract,   offset: None     },
     Field { key: "p_contract_signed",  label: "Contract Signed",  entity: Player, category: Contract,   offset: None    },
     Field { key: "p_morale",       label: "Morale",           entity: Player, category: Condition,   offset: None },
-    Field { key: "p_traits",       label: "Traits (PPMs)",    entity: Player, category: Traits,      offset: None },
+    // 64-bit bitmask, bit = PPM_ID - 1 (as FM26/FM27). Kane 0x00000A0000080080
+    // decodes to FM's four traits; Maddison 0x0000200000080100 to his.
+    Field { key: "p_traits",       label: "Traits (PPMs)",    entity: Player, category: Traits,      offset: raw(0x0368) },
     // FM27 listing metadata has not been mapped on FM24.
     Field { key: "p_list_flags",   label: "Listing Flags",    entity: Player, category: Contract,    offset: None },
     Field { key: "p_list_date",    label: "Listed Since",     entity: Player, category: Contract,    offset: None },

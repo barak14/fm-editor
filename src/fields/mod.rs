@@ -985,4 +985,23 @@ mod player_schema_tests {
             }
         }
     }
+
+    #[test]
+    fn fm24_maps_live_witnessed_weight_traits_and_transfer_budget() {
+        let schemas = &fm24::FM24;
+        assert_eq!(schemas.offset_of("p_weight"), Some(0x14C));
+        assert_eq!(schemas.offset_of("p_traits"), Some(0x368));
+        // The u64 trait mask must fit inside the player buffer.
+        assert!(0x368 + 8 <= schemas.player_struct_size);
+        match schemas.field("c_transfer_budget").unwrap().offset.unwrap() {
+            FieldLocation::SubRecord { container, offset, .. } => {
+                assert_eq!((container, offset), ("finance", 0x7CC));
+            }
+            other => panic!("unexpected location {other:?}"),
+        }
+        // Leads that FM's own screens did not confirm stay unmapped.
+        for key in ["p_morale", "p_sharpness", "p_fitness", "p_fatigue"] {
+            assert_eq!(schemas.offset_of(key), None, "{key}");
+        }
+    }
 }

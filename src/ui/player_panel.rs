@@ -123,6 +123,15 @@ fn show_overview(
                     addr,
                 ));
             }
+            if let Some(f) = schemas.field("p_weight") {
+                edits.extend(field_widget::raw_u16_edit(
+                    ui,
+                    &f,
+                    &mut player.raw,
+                    250,
+                    addr,
+                ));
+            }
             if let Some(birthplace) = &player.birthplace {
                 field_widget::info_label(ui, "Place of Birth", birthplace);
             }

@@ -63,12 +63,26 @@ the `home_stadium` sub-record, so `rva_stadium_base` is 0.
     30 Jun 2025 #17); squad status 1 (Star Player) for the four stars. Squad
     number edited and undone in game on Cristian Romero (#17, Tottenham).
     Wage values (Kane 361,779, Romero 175,000) are not yet checked in game.
+- Weight u16 kg **0x14C** (mapped 2026-11-01): Kane 86, Udogie 73 and
+  Maddison 73 match FM's profile; edits Maddison 73 -> 80 and Kulusevski
+  79 -> 84 showed 80 kg / 84 kg in FM, and Undo restored memory.
+- Traits (PPMs) u64 bitmask **0x368**, bit = PPM ID - 1 as on FM26/FM27
+  (mapped 2026-11-01). Kane 0x00000A0000080080 = Tries Killer Balls Often,
+  Comes Deep To Get Ball, Gets Crowd Going, Tries Long Range Passes, exactly
+  FM's list. Maddison 0x0000200000080100 = Shoots From Distance, Comes Deep To
+  Get Ball (both in FM's list) and Hits Free Kicks With Power (not checked).
+  Adding Shoots From Distance to Udogie (0x2000000000, Dives Into Tackles)
+  showed both traits in FM; Undo restored memory.
 - Leads read but not yet confirmed in game: condition u16 0x1F8 and sharpness
-  u16 0x1F4 (0..10000), morale u16 0x25E, jadedness i16 0x1F6, weight u16
-  0x14C (Kane 86, Messi 67, Ronaldo 84, De Bruyne 68, Ward 68), asking price i32
-  0x1D4 (-1 = none), looks 0x309..0x30C, traits 0x368. Cristian Romero
-  (Tottenham) is consistent with FM's condition popup: condition 10000 "Peak",
-  sharpness 5100 "Needs match practice", jadedness -125 "Fresh" (one witness).
+  u16 0x1F4 (0..10000), jadedness i16 0x1F6, asking price i32 0x1D4 (-1 =
+  none), looks 0x309..0x30C. Cristian Romero (Tottenham) is consistent with
+  FM's condition popup: condition 10000 "Peak", sharpness 5100 "Needs match
+  practice", jadedness -125 "Fresh" (one witness). Kane's sharpness reads 5900
+  while FM says "Severely lacking in match sharpness" and Maddison's 5150
+  "Needs match practice", so the sharpness scale is unresolved.
+- Morale is **not** at the FM26/FM27 encoding: the byte at 0x25E reads 104..185
+  for six players (Kane, Maddison, Kulusevski, Udogie, Richarlison and
+  Cristian Romero Giraud), not a 1..20 level. Unmapped.
 
 ## Staff (vs FM26)
 
@@ -109,8 +123,15 @@ from the sub-records. Verified on the test save's human manager (role ratings Ma
   (+0x810), currently spending £3,271,987 (+0x81C) and next season's minimum
   guaranteed transfer budget £25.92M (+0x7D4 = 25,925,482). budget+0x0C read
   3,464,579 for Spurs and equals +0x810 for Arsenal, Barcelona and Derby.
-  Transfer budget £5.7M is both budget+0x04 and finance+0x7CC. The average
-  ticket price float is at both finance+0x18 (mapped) and +0x870.
+  Transfer budget is **finance+0x7CC** (mapped 2026-11-01); budget+0x04 holds
+  a copy that FM's finance screen does not read. With only finance+0x7CC
+  changed, Spurs showed £15.7M / £8.0M and Brighton (second human manager,
+  same save) £72.0M; Undo restored £5.7M and £69.5M on screen. Brighton's
+  wage budget changed when De Zerbi left (finance+0x810 1,712,351, FM
+  £1,712,350 p/w) while budget+0x0C stayed 1,731,413, so the budget
+  sub-record copies go stale. Transfer remaining stays at budget+0x08 (FM24
+  shows no separate figure to check it against). The average ticket price
+  float is at both finance+0x18 (mapped) and +0x870.
 - Home stadium: club+0x18 → [0] senior team → +0x78, same chain as FM26.
 - Not mapped: gender (+0x161 holds 0/2/4/8/10/32, not FM26's 0/1), nickname
   (stadium-sub +0x90 is a short name here), team UID, training ground,
@@ -139,6 +160,6 @@ r=0.89, DL/WBL r=0.82, attribute bytes ≤ 100, max(left, right foot) = 20 for a
 
 ## Unmapped worklist
 
-Player: value, morale and condition (leads above), traits, apps/goals, dates
+Player: value, morale and condition (leads above), apps/goals, dates
 (transfer/join/debut/listing), secondary name block, contract clauses and listing. Staff: the
 seven attributes above. Club and stadium: see above.

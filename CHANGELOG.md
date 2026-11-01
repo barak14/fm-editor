@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- FM24 Steam: editable player **Weight** and **Traits (PPMs)**, verified in game on Kane, Maddison, Kulusevski and Udogie.
+
+### Fixes
+
+- FM24 Steam: the club **Transfer Budget** now reads and writes the value FM's finance screen shows (finance+0x7CC). The budget-record copy used before is not what FM displays, so edits to it did not show in game.
+
 ## 0.3.0 (prerelease)
 
 ### Features
