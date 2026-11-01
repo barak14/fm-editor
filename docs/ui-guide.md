@@ -90,6 +90,8 @@ The [FM24 development research](https://fm-arena.com/thread/20900-some-training-
 links growth to age, professionalism and match exposure, with late-bloomer
 exceptions. Those mechanics have not been verified in FM27; this feature does
 not map or read match points or late-bloomer flags, or predict monthly growth.
+These detailed research notes remain in this guide; the planner exposes concise
+scope and estimation caveats on hover rather than repeating instructions inline.
 
 Each slot shows its selection and the next three eligible alternatives. By
 default alternatives exclude all starters; uncheck **Alternatives outside XI**
@@ -127,14 +129,25 @@ Read-only sections/tabs are labelled. Player attributes use independently stacke
 category cards in four columns on wide views, or two/one on narrower views. Short
 groups no longer leave an empty row beneath them while waiting for the tallest
 neighbour. Labels use proportional text and numeric hit targets are consistent.
+Redundant inline instructions have been removed; necessary caveats remain in
+labels and tooltips. Unsupported contract-type conversion has no Apply button;
+its read-only status and hover explanation remain visible on the Contract tab.
+
+In **Overview**, **Show potential attributes** above the attribute cards replaces
+their values with read-only estimates at PA in the same categories. This uses the
+existing extrapolation heuristic, not a guaranteed development outcome. Other
+Overview fields remain editable. Turning it off restores actual attribute values
+and normal editing; previewing never changes memory or adds Undo entries. The
+choice is kept separately for each player/build. Invalid attributes remain
+unavailable or visibly invalid, and attributes without projected growth stay as-is.
 
 Shared profile field rows, including reputation, use a fixed-width, left-aligned label column so value boxes line up regardless of label length. Long labels truncate with their full text available on hover. Compact CA/PA pairs, position cells and date controls retain their specialized layouts.
 
 The player **Positions & Traits** formation uses the same marked pitch and shirt
 icons, with all 15 positions arranged from ST at the top to GK at the bottom.
 Sweeper remains between DC and GK in the centre. On wide panels the pitch is
-sized against the available profile height, with traits and optional PA
-extrapolation beside it in an independently scrolling pane. Narrow panels stack
+sized against the available profile height, with traits beside it in an
+independently scrolling pane. Narrow panels stack
 the pitch and traits; genuinely short views scroll rather than shrinking numeric
 controls below a readable size. Position abbreviations appear on the shirts,
 with familiarity values directly beneath them instead of repeated labels.

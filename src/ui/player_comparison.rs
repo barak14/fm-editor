@@ -264,9 +264,6 @@ impl PlayerComparison {
                 if self.slots.iter().flatten().any(|s| s.identity.build == GameBuild::Fm27GamePass) {
                     ui.label(egui::RichText::new("Game Pass layout unverified").color(ui.visuals().warn_fg_color));
                 }
-                if self.slots[0].is_none() {
-                    ui.label("Open a player profile and choose Select for compare.");
-                }
                 ui.separator();
                 // Leave room for the scrollbar in both the pinned header and body.
                 let widths = ColumnWidths::new((ui.available_width() - 16.0).max(0.0), ui.spacing().item_spacing.x);
@@ -276,7 +273,8 @@ impl PlayerComparison {
                     } else if let Some(snapshot) = &self.slots[column - 1] {
                         identity_ui(ui, snapshot, column - 1);
                     } else {
-                        ui.label("No player selected");
+                        ui.label("No player selected")
+                            .on_hover_text("Open a player profile and choose Select for compare.");
                     }
                 });
                 ui.separator();

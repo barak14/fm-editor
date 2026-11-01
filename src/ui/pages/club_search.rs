@@ -77,11 +77,7 @@ pub fn filter_row(ui: &mut egui::Ui, state: &mut ClubSearchState) {
     ui.horizontal_wrapped(|ui| {
         ui.checkbox(&mut state.female, "Female")
             .on_hover_text("Only female clubs; unchecked includes all clubs.");
-        if ui
-            .button("Reset all")
-            .on_hover_text("Clear every club filter.")
-            .clicked()
-        {
+        if ui.button("Reset all").clicked() {
             state.reset();
         }
     });
@@ -174,7 +170,7 @@ pub fn results_grid(ui: &mut egui::Ui, results: &[&CachedClub]) -> Option<usize>
     let mut opened = None;
     let mut moved = None;
     if results.is_empty() {
-        ui.label("No results. Adjust filters or Reset all.");
+        ui.label("No results.");
     } else if crate::ui::navigation::result_keyboard_enabled(ui) && !ui.ctx().wants_keyboard_input()
     {
         let selected = order
@@ -324,8 +320,14 @@ mod tests {
         spurs.full_name = "Tottenham Hotspur".into();
         let clubs = [spurs, club(2, 13, "Hotspur Albury", None)];
         let uids = |query: &str| {
-            let state = ClubSearchState { query: query.into(), ..Default::default() };
-            filter(&clubs, &state).iter().map(|c| c.uid).collect::<Vec<_>>()
+            let state = ClubSearchState {
+                query: query.into(),
+                ..Default::default()
+            };
+            filter(&clubs, &state)
+                .iter()
+                .map(|c| c.uid)
+                .collect::<Vec<_>>()
         };
         assert_eq!(uids("tottenham"), [728]);
         assert_eq!(uids("Tottenham Hotspur"), [728]);

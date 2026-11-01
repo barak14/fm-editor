@@ -475,7 +475,7 @@ pub fn results_grid(
     }
 
     if results.is_empty() {
-        ui.label("No results. Adjust filters above.");
+        ui.label("No results.");
         return clicked;
     }
 

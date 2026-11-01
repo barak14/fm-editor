@@ -94,12 +94,12 @@ pub fn show(
         egui::ComboBox::from_id_salt("best_xi_formation").selected_text(FORMATIONS[state.formation].name).show_ui(ui, |ui| {
             for (i, f) in FORMATIONS.iter().enumerate() { ui.selectable_value(&mut state.formation, i, f.name); }
         });
-        ui.toggle_value(&mut state.growth, "Room to grow").on_hover_text("Off: strongest positional attributes. On: largest remaining PA minus CA, then positional fit.");
+        ui.toggle_value(&mut state.growth, "Room to grow").on_hover_text("Off: strongest positional attributes. On: remaining PA − CA, then positional fit. Headroom estimates growth capacity, not development speed; late-bloomer status is unknown.");
     });
     ui.horizontal_wrapped(|ui| {
         ui.label("Minimum familiarity:");
-        ui.add(egui::DragValue::new(&mut state.minimum).range(1..=20));
-        ui.weak("15 = accomplished; 20 = natural");
+        ui.add(egui::DragValue::new(&mut state.minimum).range(1..=20))
+            .on_hover_text("15 = accomplished; 20 = natural");
         ui.checkbox(&mut state.bench_only, "Alternatives outside XI");
     });
     if state.club.is_none() {
@@ -110,8 +110,7 @@ pub fn show(
             return None;
         }
     }
-    ui.weak("Current club membership, including youth. Away loans excluded. Cached snapshot: Reload Save to refresh.");
-    ui.weak("Fitness, injuries, suspensions and registration eligibility are not checked.");
+    ui.weak("Cached squad snapshot").on_hover_text("Current club membership, including youth. Away loans excluded. Reload Save to refresh. Fitness, injuries, suspensions and registration eligibility are not checked.");
     if state.lineup.is_none()
         || previous != (state.club, state.formation, state.growth, state.minimum)
     {
@@ -134,49 +133,89 @@ pub fn show(
     ui.strong(format!(
         "{mode} · {filled}/11 positions filled · {} players in scope",
         lineup.pool_size
-    ));
+    )).on_hover_text("Each player is used once: maximize filled positions, then total score. Strength uses heuristic attribute weights × familiarity / 20, not FM match-engine ratings; foot and roles are not modeled. Growth uses PA − CA capacity, not a development rate.");
     let mut clicked = None;
-    egui::ScrollArea::vertical().id_salt("best_xi_content").show(ui, |ui| {
-        ui.collapsing("How selection works", |ui| {
-            ui.label("The whole XI is optimized together, with each player used once. Fill as many positions as possible, then maximize the total score. Missing or invalid data leaves a gap.");
-            ui.label("Current strength uses the editor's heuristic position attribute weights (0–100), multiplied by familiarity / 20. These are not FM match-engine ratings. Left/right central slots share weights; preferred foot and player roles are not modeled.");
-            ui.label("Room to grow maximizes remaining PA − CA, then positional fit. This measures capacity for attribute growth, not future ability or how quickly it will be reached. Pro, Det and Amb are context only and do not change the ranking.");
-            ui.label("FM24 research links development to age, professionalism and match exposure, with late-bloomer exceptions. These mechanics are unverified in FM27. Match points, development flags and training conditions are unavailable here; no monthly forecast is made.");
-            ui.hyperlink_to("Read the FM-Arena development research", "https://fm-arena.com/thread/20900-some-training-and-development-conventional-wisdom-for-fm24/");
+    egui::ScrollArea::vertical()
+        .id_salt("best_xi_content")
+        .show(ui, |ui| {
+            if filled < 11 {
+                ui.colored_label(
+                    ui.visuals().warn_fg_color,
+                    format!("Incomplete XI ({filled}/11)"),
+                );
+            }
+            if ui.available_width() >= 620.0 {
+                pitch(ui, cache, lineup, state, &mut clicked);
+            }
+            ui.add_space(8.0);
+            ui.heading("Position depth").on_hover_text(
+                "Alternatives are ranked independently per slot and can appear in several lists.",
+            );
+            let columns = if ui.available_width() >= 1000.0 {
+                3
+            } else if ui.available_width() >= 650.0 {
+                2
+            } else {
+                1
+            };
+            for row in (0..11).collect::<Vec<_>>().chunks(columns) {
+                ui.columns(columns, |cols| {
+                    for (col, &slot) in row.iter().enumerate() {
+                        egui::Frame::group(cols[col].style()).show(&mut cols[col], |ui| {
+                            ui.set_min_width(ui.available_width());
+                            ui.strong(FORMATIONS[state.formation].slots[slot].label);
+                            if let Some(c) = &lineup.selected[slot] {
+                                player(
+                                    ui,
+                                    schemas,
+                                    cache,
+                                    c,
+                                    state.growth,
+                                    "First choice",
+                                    &mut clicked,
+                                );
+                            } else {
+                                ui.label("No eligible player");
+                            }
+                            ui.separator();
+                            let alternatives: Vec<_> = lineup.ranked[slot]
+                                .iter()
+                                .filter(|c| {
+                                    lineup.selected[slot].is_none_or(|s| s.player != c.player)
+                                        && (!state.bench_only
+                                            || !lineup
+                                                .selected
+                                                .iter()
+                                                .flatten()
+                                                .any(|s| s.player == c.player))
+                                })
+                                .take(3)
+                                .collect();
+                            if alternatives.is_empty() {
+                                ui.weak("No eligible alternatives");
+                            }
+                            for (rank, c) in alternatives.iter().enumerate() {
+                                let elsewhere = lineup
+                                    .selected
+                                    .iter()
+                                    .position(|s| s.is_some_and(|s| s.player == c.player));
+                                let label = elsewhere.map_or_else(
+                                    || format!("Cover {}", rank + 1),
+                                    |s| {
+                                        format!(
+                                            "Starts at {}",
+                                            FORMATIONS[state.formation].slots[s].label
+                                        )
+                                    },
+                                );
+                                player(ui, schemas, cache, c, state.growth, &label, &mut clicked);
+                            }
+                        });
+                    }
+                });
+                ui.add_space(6.0);
+            }
         });
-        if state.growth { ui.label("Headroom is a capacity estimate. Development speed and late-bloomer status are unknown."); }
-        if filled < 11 { ui.colored_label(ui.visuals().warn_fg_color, "Incomplete XI: some positions lack eligible players. Try another tactic or lower minimum familiarity."); }
-        if ui.available_width() >= 620.0 { pitch(ui, cache, lineup, state, &mut clicked); }
-        ui.add_space(8.0);
-        ui.heading("Position depth");
-        ui.weak("Alternatives are ranked independently per slot and can appear in several lists. Click a name to open the player.");
-        let columns = if ui.available_width() >= 1000.0 { 3 } else if ui.available_width() >= 650.0 { 2 } else { 1 };
-        for row in (0..11).collect::<Vec<_>>().chunks(columns) {
-            ui.columns(columns, |cols| {
-                for (col, &slot) in row.iter().enumerate() {
-                    egui::Frame::group(cols[col].style()).show(&mut cols[col], |ui| {
-                        ui.set_min_width(ui.available_width());
-                        ui.strong(FORMATIONS[state.formation].slots[slot].label);
-                        if let Some(c) = &lineup.selected[slot] {
-                            player(ui, schemas, cache, c, state.growth, "First choice", &mut clicked);
-                        } else { ui.label("No eligible player"); }
-                        ui.separator();
-                        let alternatives: Vec<_> = lineup.ranked[slot].iter().filter(|c| {
-                            lineup.selected[slot].is_none_or(|s| s.player != c.player)
-                                && (!state.bench_only || !lineup.selected.iter().flatten().any(|s| s.player == c.player))
-                        }).take(3).collect();
-                        if alternatives.is_empty() { ui.weak("No eligible alternatives"); }
-                        for (rank, c) in alternatives.iter().enumerate() {
-                            let elsewhere = lineup.selected.iter().position(|s| s.is_some_and(|s| s.player == c.player));
-                            let label = elsewhere.map_or_else(|| format!("Cover {}", rank + 1), |s| format!("Starts at {}", FORMATIONS[state.formation].slots[s].label));
-                            player(ui, schemas, cache, c, state.growth, &label, &mut clicked);
-                        }
-                    });
-                }
-            });
-            ui.add_space(6.0);
-        }
-    });
     clicked
 }
 

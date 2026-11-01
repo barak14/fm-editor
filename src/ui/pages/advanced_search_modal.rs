@@ -102,9 +102,9 @@ fn show_general_tab(ui: &mut egui::Ui, state: &mut PlayerSearchState) {
         });
     }
     ui.separator();
-    section_title(ui, "Positions");
-    ui.label("Any selected position (OR). Minimum familiarity: 1–20.");
-    ui.label("1 = None · 20 = Natural. Default minimum: 2.");
+    ui.label(egui::RichText::new("Positions").small().strong())
+        .on_hover_text("Any selected position (OR). Minimum familiarity: 1–20.\n1 = None · 20 = Natural. Default minimum: 2.");
+    ui.add_space(2.0);
     for (bit, &(_, label)) in POSITION_OFFSETS.iter().enumerate() {
         ui.push_id(bit, |ui| {
             ui.horizontal_wrapped(|ui| {

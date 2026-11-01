@@ -151,7 +151,11 @@ fn show_overview(
                 field_widget::info_label(ui, "Place of Birth", birthplace);
             }
             if let Some(languages) = player.languages.as_deref().filter(|l| !l.is_empty()) {
-                field_widget::info_label_wrapped(ui, "Languages", crate::person::format_languages(languages));
+                field_widget::info_label_wrapped(
+                    ui,
+                    "Languages",
+                    crate::person::format_languages(languages),
+                );
             }
             edits.extend(crate::ui::name_picker::names_section(
                 schemas,
@@ -268,7 +272,62 @@ fn show_overview(
 
     ui.separator();
 
-    show_attribute_stacks(schemas, ui, player, addr, edits);
+    show_overview_attributes(schemas, ui, player, addr, edits);
+}
+
+fn potential_attributes_id(player: &PlayerRecord, addr: u64) -> egui::Id {
+    egui::Id::new((
+        "potential_attributes",
+        format!("{:?}", player.build),
+        addr,
+        player.addr,
+        player.field_u32("p_uid"),
+    ))
+}
+
+/// Projections are encoded into a disposable copy, never the editable record.
+fn potential_attribute_raw(player: &PlayerRecord) -> Vec<u8> {
+    let mut raw = player.raw.clone();
+    for (key, _, projected) in ratings::extrapolate_player(player) {
+        let Some(location @ fields::FieldLocation::Direct { .. }) =
+            player.build.schemas().field(key).and_then(|f| f.offset)
+        else {
+            continue;
+        };
+        if let Ok(offset) = usize::try_from(location.offset()) {
+            if let Some(byte) = raw.get_mut(offset) {
+                *byte = location.encode_u8(projected);
+            }
+        }
+    }
+    raw
+}
+
+fn show_overview_attributes(
+    schemas: &'static fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    player: &mut PlayerRecord,
+    addr: u64,
+    edits: &mut Vec<FieldEdit>,
+) {
+    let id = potential_attributes_id(player, addr);
+    let mut preview = ui.data_mut(|data| data.get_temp::<bool>(id).unwrap_or(false));
+    if ui
+        .checkbox(&mut preview, "Show potential attributes")
+        .on_hover_text("Estimated attributes at PA; read-only, not a growth guarantee.")
+        .changed()
+    {
+        ui.data_mut(|data| data.insert_temp(id, preview));
+    }
+    if preview {
+        let mut raw = potential_attribute_raw(player);
+        ui.add_enabled_ui(false, |ui| {
+            // Keep even accidental widget proposals isolated from the live edit sink.
+            show_attribute_stacks_raw(schemas, ui, &mut raw, addr, &mut Vec::new());
+        });
+    } else {
+        show_attribute_stacks(schemas, ui, player, addr, edits);
+    }
 }
 
 /// Each column owns its vertical flow; a tall neighbour never delays its next card.
@@ -276,6 +335,16 @@ fn show_attribute_stacks(
     schemas: &'static fields::VersionedSchemas,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
+    addr: u64,
+    edits: &mut Vec<FieldEdit>,
+) {
+    show_attribute_stacks_raw(schemas, ui, &mut player.raw, addr, edits);
+}
+
+fn show_attribute_stacks_raw(
+    schemas: &'static fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    raw: &mut [u8],
     addr: u64,
     edits: &mut Vec<FieldEdit>,
 ) {
@@ -328,7 +397,7 @@ fn show_attribute_stacks(
                                         heading,
                                         Entity::Player,
                                         category,
-                                        &mut player.raw,
+                                        raw,
                                         addr,
                                         edits,
                                     );
@@ -392,7 +461,7 @@ fn show_positions_traits(
                         .id_salt("player_traits")
                         .max_height(height)
                         .show(ui, |ui| {
-                            show_traits_and_projection(schemas, ui, player, addr, edits);
+                            show_traits(schemas, ui, player, addr, edits);
                         });
                 },
             );
@@ -413,12 +482,12 @@ fn show_positions_traits(
                     (height - 24.0).clamp(390.0, 500.0),
                 );
                 ui.add_space(12.0);
-                show_traits_and_projection(schemas, ui, player, addr, edits);
+                show_traits(schemas, ui, player, addr, edits);
             });
     }
 }
 
-fn show_traits_and_projection(
+fn show_traits(
     schemas: &'static fields::VersionedSchemas,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
@@ -427,77 +496,6 @@ fn show_traits_and_projection(
 ) {
     ui.strong("Traits");
     show_traits_checkboxes(schemas, ui, player, addr, edits);
-
-    ui.add_space(16.0);
-    ui.separator();
-
-    // PA projection — Genie Scout-style, read-only preview. Hidden behind
-    // a checkbox so it doesn't clutter the default view. Pure display —
-    // never emits FieldEdits / writes to memory.
-    let checkbox_id = egui::Id::new("pa_extrap_toggle");
-    let mut show_extrap = ui.data_mut(|d| d.get_temp::<bool>(checkbox_id).unwrap_or(false));
-    if ui
-        .checkbox(&mut show_extrap, "Show PA extrapolation")
-        .changed()
-    {
-        ui.data_mut(|d| d.insert_temp(checkbox_id, show_extrap));
-    }
-
-    if show_extrap {
-        let ca = player.field_u8("p_ca").unwrap_or(0);
-        let pa = player.field_u8("p_pa").unwrap_or(0);
-        let projection = ratings::extrapolate_player(player);
-        if projection.is_empty() {
-            ui.label(
-                egui::RichText::new(if pa <= ca {
-                    "No growth \u{2014} CA is already at PA."
-                } else {
-                    "No attributes would grow under the current tier table."
-                })
-                .small()
-                .color(egui::Color32::from_rgb(150, 150, 150)),
-            );
-        } else {
-            ui.strong(format!("PA Projection (CA={ca} \u{2192} PA={pa})"));
-            ui.label(
-                egui::RichText::new("Read-only preview \u{2014} no changes written to memory")
-                    .small()
-                    .color(egui::Color32::from_rgb(150, 150, 150)),
-            );
-            for cat in [
-                Category::Technical,
-                Category::SetPieces,
-                Category::Mental,
-                Category::Physical,
-                Category::Goalkeeping,
-                Category::Hidden,
-            ] {
-                let cat_rows: Vec<_> = schemas
-                    .fields_for_category(Entity::Player, cat)
-                    .into_iter()
-                    .filter_map(|f| {
-                        projection
-                            .iter()
-                            .find(|(k, _, _)| *k == f.key)
-                            .map(|(_, old, new)| (f.label, *old, *new))
-                    })
-                    .collect();
-                if cat_rows.is_empty() {
-                    continue;
-                }
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(egui::RichText::new(format!("{cat:?}:")).strong().small());
-                    for (label, old, new) in cat_rows {
-                        ui.label(
-                            egui::RichText::new(format!("{label} {old}\u{2192}{new}"))
-                                .small()
-                                .color(egui::Color32::LIGHT_GREEN),
-                        );
-                    }
-                });
-            }
-        }
-    }
 }
 
 /// Position familiarities on a responsive pitch, attacking towards the top.
@@ -726,15 +724,13 @@ fn show_contract(
     ui.strong("Current contract");
     if player.build.version() == crate::game_version::GameVersion::Fm27 {
         show_unverified_contract_type(ui);
-        ui.label(
-            "Wage: GBP/week. Monetary bonuses: GBP per event. No currency conversion is applied.",
-        );
     }
 
     // Contract fields live in the contract sub-record: edit its bytes and
     // address. Asking price is in the player struct itself.
     if let (Some(cr), Some(caddr)) = (player.contract_raw.as_mut(), player.contract_addr) {
-        if let Some(f) = schemas.field("p_contract_wage") {
+        if let Some(mut f) = schemas.field("p_contract_wage").cloned() {
+            f.label = "Wage (GBP/week)";
             edits.extend(field_widget::raw_u32_edit(ui, &f, cr, caddr));
         }
         if let Some(f) = schemas.field("p_contract_expiry") {
@@ -821,10 +817,9 @@ fn show_contract(
 /// No record, retained selection or edit sink: this unsupported control cannot
 /// default an unknown byte to a known type or emit a proposed write.
 fn show_unverified_contract_type(ui: &mut egui::Ui) {
-    field_widget::info_label(ui, "Contract Type", "Unknown");
-    ui.label("Contract type conversion is unavailable: the required contract changes have not been verified.");
-    ui.add_enabled(false, egui::Button::new("Apply Contract Type"));
-    ui.label("This tab reads the current contract. Pending offers and future contracts are not mapped. Changing wage or expiry does not change contract type.");
+    ui.label("Contract type: Unknown (read-only)").on_hover_text(
+        "Type conversion is unverified. Only the current contract is mapped, not pending offers or future contracts. Wage and expiry edits do not change type.",
+    );
 }
 
 /// Medical/list data is loaded by the bridge, never inferred from a cached search row.
@@ -1201,7 +1196,8 @@ fn show_clauses(
         return;
     };
     ui.separator();
-    ui.strong("Bonuses & clauses");
+    ui.strong("Bonuses & clauses (GBP/event)")
+        .on_hover_text("Monetary bonuses use GBP per event; no currency conversion is applied.");
     match &player.clauses {
         ListState::Unmapped => {
             ui.label("Not loaded.");
@@ -1517,7 +1513,10 @@ mod tests {
                 // value, injury or absence rows, and no writes from rendering.
                 assert!(text.iter().any(|t| t.contains("Morale")), "{text:?}");
                 for absent in ["Transfer Value", "Injuries", "Unavailability"] {
-                    assert!(!text.iter().any(|t| t.contains(absent)), "{absent}: {text:?}");
+                    assert!(
+                        !text.iter().any(|t| t.contains(absent)),
+                        "{absent}: {text:?}"
+                    );
                 }
             } else {
                 assert!(text.is_empty(), "{build:?}: {text:?}");
@@ -1907,6 +1906,318 @@ mod tests {
         }
     }
 
+    fn growing_player(build: crate::game_version::GameBuild) -> PlayerRecord {
+        let mut player = fixture_player(build);
+        for category in [
+            Category::Technical,
+            Category::SetPieces,
+            Category::Mental,
+            Category::Physical,
+            Category::Goalkeeping,
+            Category::Hidden,
+            Category::Personality,
+            Category::Footedness,
+        ] {
+            for field in build
+                .schemas()
+                .fields_for_category(Entity::Player, category)
+            {
+                if let Some(loc @ fields::FieldLocation::Direct { .. }) = field.offset {
+                    player.raw[loc.offset() as usize] = loc.encode_u8(10);
+                }
+            }
+        }
+        for (key, value) in [("p_ca", 100u16), ("p_pa", 150)] {
+            let off = build.schemas().offset_of(key).unwrap();
+            player.raw[off..off + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        player
+    }
+
+    #[test]
+    fn potential_copy_uses_build_encoding_and_preserves_invalid_and_no_growth() {
+        use crate::game_version::GameBuild;
+        for build in [
+            GameBuild::Fm24Steam,
+            GameBuild::Fm26Steam,
+            GameBuild::Fm27Steam,
+        ] {
+            let mut player = growing_player(build);
+            let original = player.raw.clone();
+            let projection = ratings::extrapolate_player(&player);
+            assert!(!projection.is_empty());
+            let raw = potential_attribute_raw(&player);
+            assert_ne!(raw, original);
+            for (key, _, new) in projection {
+                let loc = build.schemas().field(key).unwrap().offset.unwrap();
+                assert_eq!(loc.decode_u8(raw[loc.offset() as usize]), new);
+            }
+            assert_eq!(player.raw, original);
+            let loc = build.schemas().field("passing").unwrap().offset.unwrap();
+            player.raw[loc.offset() as usize] = 255;
+            assert_eq!(potential_attribute_raw(&player)[loc.offset() as usize], 255);
+            for (ca, pa) in [(150u16, 150u16), (160, 100), (0, 150)] {
+                for (key, value) in [("p_ca", ca), ("p_pa", pa)] {
+                    let off = build.schemas().offset_of(key).unwrap();
+                    player.raw[off..off + 2].copy_from_slice(&value.to_le_bytes());
+                }
+                assert_eq!(potential_attribute_raw(&player), player.raw);
+            }
+            player.raw.clear();
+            assert!(potential_attribute_raw(&player).is_empty());
+        }
+    }
+
+    #[test]
+    fn potential_state_is_bound_to_build_address_and_uid() {
+        use crate::game_version::GameBuild;
+        let mut player = growing_player(GameBuild::Fm26Steam);
+        let id = potential_attributes_id(&player, player.addr);
+        assert_ne!(id, potential_attributes_id(&player, player.addr + 8));
+        player.addr += 8;
+        assert_ne!(id, potential_attributes_id(&player, 0x20000));
+        player.addr = 0x20000;
+        let off = player.build.schemas().offset_of("p_uid").unwrap();
+        player.raw[off..off + 4].copy_from_slice(&123u32.to_le_bytes());
+        assert_ne!(id, potential_attributes_id(&player, player.addr));
+        player.build = GameBuild::Fm27Steam;
+        assert_ne!(id, potential_attributes_id(&player, player.addr));
+    }
+
+    #[test]
+    fn overview_potential_toggle_replaces_values_without_edits_at_desktop_and_narrow_sizes() {
+        for width in [1200.0, 280.0] {
+            for enabled in [false, true] {
+                let ctx = egui::Context::default();
+                crate::ui::navigation::set_editing_enabled(&ctx, enabled);
+                let mut player = growing_player(crate::game_version::GameBuild::Fm26Steam);
+                let original = player.raw.clone();
+                let projected = ratings::extrapolate_player(&player);
+                let (key, old, new) = projected
+                    .iter()
+                    .find(|(key, _, _)| *key == "passing")
+                    .copied()
+                    .unwrap();
+                assert_ne!(old, new);
+                let label = player.build.schemas().field(key).unwrap().label;
+                let id = potential_attributes_id(&player, player.addr);
+                for preview in [false, true, false] {
+                    ctx.data_mut(|data| data.insert_temp(id, preview));
+                    let mut edits = Vec::new();
+                    let output = ctx.run(
+                        egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(
+                                egui::Pos2::ZERO,
+                                egui::vec2(width, 4000.0),
+                            )),
+                            ..Default::default()
+                        },
+                        |ctx| {
+                            egui::CentralPanel::default().show(ctx, |ui| {
+                                show_overview_attributes(
+                                    player.build.schemas(),
+                                    ui,
+                                    &mut player,
+                                    0x20000,
+                                    &mut edits,
+                                );
+                                assert!(
+                                    ui.is_enabled(),
+                                    "preview must not disable the rest of Overview"
+                                );
+                            });
+                        },
+                    );
+                    assert!(edits.is_empty());
+                    assert_eq!(player.raw, original);
+                    let text = painted_text(&output);
+                    let toggle = text
+                        .iter()
+                        .find(|(s, _, _)| s == "Show potential attributes")
+                        .unwrap();
+                    assert!(toggle.2.contains_rect(toggle.1));
+                    let heading = text.iter().find(|(s, _, _)| s == "Technical").unwrap();
+                    assert!(toggle.1.bottom() < heading.1.top());
+                    let row = text.iter().find(|(s, _, _)| s == label).unwrap();
+                    let expected = if preview { new } else { old }.to_string();
+                    assert!(
+                        text.iter().any(|(s, r, _)| s == &expected
+                            && (r.center().y - row.1.center().y).abs() < 2.0
+                            && r.left() > row.1.left()),
+                        "missing {label}={expected}"
+                    );
+                    for category in [
+                        "Technical",
+                        "Set Pieces",
+                        "Mental",
+                        "Footedness",
+                        "Physical",
+                        "Personality",
+                        "Goalkeeping",
+                        "Hidden",
+                    ] {
+                        assert_eq!(text.iter().filter(|(s, _, _)| s == category).count(), 1);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn overview_toggle_is_reachable_in_full_profile_but_absent_from_positions() {
+        for size in [egui::vec2(1200.0, 800.0), egui::vec2(280.0, 700.0)] {
+            let ctx = egui::Context::default();
+            let mut player = growing_player(crate::game_version::GameBuild::Fm26Steam);
+            let mut tab = PlayerTab::Overview;
+            let mut reachable = false;
+            for _ in 0..25 {
+                let output = profile_frame(
+                    &ctx,
+                    &mut player,
+                    &mut tab,
+                    size,
+                    scroll_events(egui::pos2(size.x - 40.0, size.y - 50.0), -90.0),
+                );
+                reachable |= painted_text(&output)
+                    .iter()
+                    .any(|(s, r, c)| s == "Show potential attributes" && c.contains_rect(*r));
+            }
+            assert!(reachable, "Overview toggle unreachable at {size:?}");
+            tab = PlayerTab::PositionsTraits;
+            let output = profile_frame(&ctx, &mut player, &mut tab, size, vec![]);
+            assert!(
+                !painted_text(&output)
+                    .iter()
+                    .any(|(s, _, _)| s.contains("potential attributes")
+                        || s.contains("extrapolation"))
+            );
+        }
+    }
+
+    #[test]
+    fn potential_checkbox_and_disabled_grid_ignore_edit_input() {
+        fn frame(
+            ctx: &egui::Context,
+            player: &mut PlayerRecord,
+            width: f32,
+            events: Vec<egui::Event>,
+        ) -> egui::FullOutput {
+            let before = player.raw.clone();
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(width, 4000.0),
+                    )),
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        let mut edits = Vec::new();
+                        show_overview_attributes(
+                            player.build.schemas(),
+                            ui,
+                            player,
+                            0x20000,
+                            &mut edits,
+                        );
+                        assert!(edits.is_empty());
+                    });
+                },
+            );
+            assert_eq!(player.raw, before);
+            output
+        }
+        fn click(ctx: &egui::Context, player: &mut PlayerRecord, width: f32, pos: egui::Pos2) {
+            for pressed in [true, false] {
+                frame(
+                    ctx,
+                    player,
+                    width,
+                    vec![
+                        egui::Event::PointerMoved(pos),
+                        egui::Event::PointerButton {
+                            pos,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+            }
+        }
+        for width in [1200.0, 280.0] {
+            let ctx = egui::Context::default();
+            crate::ui::navigation::set_editing_enabled(&ctx, true);
+            let mut player = growing_player(crate::game_version::GameBuild::Fm26Steam);
+            let id = potential_attributes_id(&player, player.addr);
+            let output = frame(&ctx, &mut player, width, vec![]);
+            let toggle = painted_text(&output)
+                .into_iter()
+                .find(|(s, _, _)| s == "Show potential attributes")
+                .unwrap()
+                .1
+                .center();
+            click(&ctx, &mut player, width, toggle);
+            assert_eq!(ctx.data_mut(|data| data.get_temp::<bool>(id)), Some(true));
+            let output = frame(&ctx, &mut player, width, vec![]);
+            let text = painted_text(&output);
+            let label = text.iter().find(|(s, _, _)| s == "Passing").unwrap().1;
+            let value = text
+                .iter()
+                .find(|(s, rect, _)| {
+                    s.parse::<u8>().is_ok()
+                        && (rect.center().y - label.center().y).abs() < 2.0
+                        && rect.left() > label.right()
+                })
+                .unwrap()
+                .1
+                .center();
+            click(&ctx, &mut player, width, value);
+            click(&ctx, &mut player, width, value);
+            frame(
+                &ctx,
+                &mut player,
+                width,
+                vec![egui::Event::Text("1".into())],
+            );
+            frame(
+                &ctx,
+                &mut player,
+                width,
+                vec![
+                    egui::Event::PointerMoved(value),
+                    egui::Event::PointerButton {
+                        pos: value,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+            );
+            frame(
+                &ctx,
+                &mut player,
+                width,
+                vec![egui::Event::PointerMoved(value + egui::vec2(30.0, 0.0))],
+            );
+            frame(
+                &ctx,
+                &mut player,
+                width,
+                vec![egui::Event::PointerButton {
+                    pos: value + egui::vec2(30.0, 0.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+            click(&ctx, &mut player, width, toggle);
+            assert_eq!(ctx.data_mut(|data| data.get_temp::<bool>(id)), Some(false));
+        }
+    }
+
     #[test]
     fn overview_cards_flow_independently_in_balanced_stacks() {
         for width in [1200.0, 700.0, 280.0, 400.0] {
@@ -2023,7 +2334,7 @@ mod tests {
     }
 
     #[test]
-    fn narrow_and_short_profiles_scroll_to_all_positions_and_projection_without_overflow() {
+    fn narrow_and_short_profiles_scroll_to_all_positions_and_traits_without_overflow() {
         for size in [
             egui::vec2(280.0, 700.0),
             egui::vec2(400.0, 700.0),
@@ -2037,7 +2348,7 @@ mod tests {
                 let mut player = populated_positions(true);
                 let mut tab = PlayerTab::PositionsTraits;
                 let mut visible_positions = std::collections::HashSet::new();
-                let mut projection_reachable = false;
+                let mut traits_reachable = false;
                 for frame in 0..85 {
                     let x = if size.x >= 820.0 && frame < 25 {
                         180.0
@@ -2056,8 +2367,8 @@ mod tests {
                                 rect.left() >= 0.0 && rect.right() <= size.x - 6.0,
                                 "horizontal overflow at {size:?}: {s}: {rect:?}"
                             );
-                            if s == "Show PA extrapolation" {
-                                projection_reachable = true;
+                            if s == "Traits" {
+                                traits_reachable = true;
                             }
                             for field in player
                                 .build
@@ -2076,7 +2387,7 @@ mod tests {
                     15,
                     "positions unreachable at {size:?}: {visible_positions:?}"
                 );
-                assert!(projection_reachable, "PA toggle unreachable at {size:?}");
+                assert!(traits_reachable, "Traits unreachable at {size:?}");
             }
         }
     }
@@ -2093,7 +2404,7 @@ mod tests {
             .find(|(s, _, _)| s == "GK")
             .unwrap()
             .1;
-        let mut projection_reachable = false;
+        let mut traits_reachable = false;
         for _ in 0..20 {
             let output = profile_frame(
                 &ctx,
@@ -2104,11 +2415,11 @@ mod tests {
             );
             let text = painted_text(&output);
             assert_eq!(text.iter().find(|(s, _, _)| s == "GK").unwrap().1, initial);
-            projection_reachable |= text
+            traits_reachable |= text
                 .iter()
-                .any(|(s, r, c)| s == "Show PA extrapolation" && c.contains_rect(*r));
+                .any(|(s, r, c)| s == "Traits" && c.contains_rect(*r));
         }
-        assert!(projection_reachable);
+        assert!(traits_reachable);
         tab = PlayerTab::Overview;
         for _ in 0..10 {
             profile_frame(
@@ -2157,16 +2468,7 @@ mod tests {
     }
 
     #[test]
-    fn fm27_contract_render_and_disabled_apply_never_emit_edits() {
-        fn apply_center(shape: &egui::Shape) -> Option<egui::Pos2> {
-            match shape {
-                egui::Shape::Text(t) if t.galley.text() == "Apply Contract Type" => {
-                    Some(t.pos + t.galley.size() * 0.5)
-                }
-                egui::Shape::Vec(shapes) => shapes.iter().find_map(apply_center),
-                _ => None,
-            }
-        }
+    fn fm27_contract_render_has_no_unsupported_apply_or_edits() {
         for build in [
             crate::game_version::GameBuild::Fm27Steam,
             crate::game_version::GameBuild::Fm27GamePass,
@@ -2181,19 +2483,7 @@ mod tests {
                     let ctx = egui::Context::default();
                     crate::ui::navigation::set_editing_enabled(&ctx, true);
                     let mut tab = PlayerTab::Contract;
-                    let mut center = None;
-                    for frame in 0..3 {
-                        let mut events = Vec::new();
-                        if frame > 0 {
-                            let pos = center.expect("disabled Apply must be visible");
-                            events.push(egui::Event::PointerMoved(pos));
-                            events.push(egui::Event::PointerButton {
-                                pos,
-                                button: egui::PointerButton::Primary,
-                                pressed: frame == 1,
-                                modifiers: egui::Modifiers::NONE,
-                            });
-                        }
+                    for _ in 0..3 {
                         let mut edits = Vec::new();
                         let output = ctx.run(
                             egui::RawInput {
@@ -2201,7 +2491,6 @@ mod tests {
                                     egui::Pos2::ZERO,
                                     egui::vec2(width, 900.0),
                                 )),
-                                events,
                                 ..Default::default()
                             },
                             |ctx| {
@@ -2220,7 +2509,16 @@ mod tests {
                                 });
                             },
                         );
-                        center = output.shapes.iter().find_map(|s| apply_center(&s.shape));
+                        let text = painted_text(&output);
+                        assert!(
+                            text.iter()
+                                .any(|(s, _, _)| s == "Contract type: Unknown (read-only)")
+                        );
+                        assert!(
+                            !text
+                                .iter()
+                                .any(|(s, _, _)| s.contains("Apply Contract Type"))
+                        );
                         assert!(matches!(tab, PlayerTab::Contract));
                         assert!(edits.is_empty());
                         assert_eq!(player.contract_raw, before);

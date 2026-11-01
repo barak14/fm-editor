@@ -13,12 +13,14 @@
 - FM27 Steam: staff profiles show **Languages**, **Coaching Licence** and preferred in/out-of-possession **Formations** (read-only); player profiles show **Languages**, in FM's order and level words.
 - FM27 Steam: edit player and staff **first, last and common names** by picking an existing name from a search (names are shared records; the editor re-points the person and never changes a name's text). Verified in game, through Undo, and across Save As and reload.
 - FM27 Steam: player **Asking Price** read and write verified in game (-1 = Unspecified).
+- Player Overview: **Show potential attributes** previews estimated values read-only in the normal attribute categories, replacing the separate Positions & Traits projection list. Actual attributes and editing return when switched off; other Overview fields remain editable.
 
 ### Fixes
 
 - FM24 Steam: the club **Transfer Budget** now reads and writes the value FM's finance screen shows (finance+0x7CC). The budget-record copy used before is not what FM displays, so edits to it did not show in game.
 - Make player profile layouts use available space: independently stacked attribute cards reduce gaps and scrolling; **Positions & Traits** sizes the pitch to the profile viewport and places traits beside it on wide views, with readable stacked layouts on narrow screens. Keep the existing schema-backed numeric editing and Undo behaviour.
 - FM27 Steam: favoured-club reasons read the right byte. **As a player** / **As a supporter** were wrong for some clubs (Mbappé's R. Madrid, Litmanen's Ajax).
+- Remove redundant inline UI instructions and the inert contract-type Apply button. Keep concise units and scope caveats in labels/tooltips; Best XI development research remains in the UI guide rather than the planner.
 
 ### Documentation
 

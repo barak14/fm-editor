@@ -989,11 +989,6 @@ impl eframe::App for FmEditorApp {
             .show(ctx, |ui| {
                 ui.add_space(8.0);
                 ui.heading(editor_title(self.attached_build, None));
-                ui.label(
-                    egui::RichText::new("YOUR SAVE · YOUR WORKSPACE")
-                        .small()
-                        .weak(),
-                );
                 ui.add_space(12.0);
 
                 // History + reload row — sits right under the title so
