@@ -24,6 +24,7 @@ pub fn show(
     addr: u64,
     wage_period: WagePeriod,
     face_pack_path: Option<&str>,
+    names: &mut crate::ui::name_picker::NamePicker,
 ) -> Vec<FieldEdit> {
     let mut edits = Vec::new();
     crate::ui::entity_header::show(
@@ -61,6 +62,7 @@ pub fn show(
                         &mut edits,
                         wage_period,
                         face_pack_path,
+                        names,
                     );
                 });
         }
@@ -101,6 +103,7 @@ fn show_overview(
     edits: &mut Vec<FieldEdit>,
     wage_period: WagePeriod,
     face_pack_path: Option<&str>,
+    names: &mut crate::ui::name_picker::NamePicker,
 ) {
     // Look up fields once from the schema; passing them by reference into
     // the widget helpers avoids every panel line hardcoding an offset.
@@ -150,6 +153,14 @@ fn show_overview(
             if let Some(languages) = player.languages.as_deref().filter(|l| !l.is_empty()) {
                 field_widget::info_label_wrapped(ui, "Languages", crate::person::format_languages(languages));
             }
+            edits.extend(crate::ui::name_picker::names_section(
+                schemas,
+                ui,
+                names,
+                &crate::person::PLAYER_NAME_SLOTS,
+                &mut player.raw,
+                addr,
+            ));
         });
 
         // Appearance (shown in the 3D match), when the schema maps it.
@@ -1753,6 +1764,7 @@ mod tests {
                         0x20000,
                         WagePeriod::Weekly,
                         None,
+                        &mut crate::ui::name_picker::NamePicker::default(),
                     );
                     assert!(edits.is_empty());
                 });
@@ -2203,6 +2215,7 @@ mod tests {
                                         0x20000,
                                         WagePeriod::Weekly,
                                         None,
+                                        &mut crate::ui::name_picker::NamePicker::default(),
                                     );
                                 });
                             },

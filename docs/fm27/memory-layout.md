@@ -646,6 +646,43 @@ session). Edits made Thu 16/7/2026 through the editor's UI; one day of holiday
   173,975,262 (fm-debug read 0x0A5EA6DE). Reloading the save from FM's menu
   replaced every sampled club, player and staff address and cleared Undo.
 
+### Name records and name editing (2026-11-01, Steam)
+
+Player +0x2D8 / +0x2E0 / +0x2E8 and staff +0x150 / +0x158 / +0x160 (the
+person block +0x50 / +0x58 / +0x60; player-coach and human-manager shifts
+apply) point at shared 16-byte name records: FmString pointer +0x00, u32 id
++0x08, u16 group +0x0C, u16 count +0x0E. One record serves everyone with that
+name in its group: Frank Wiblishauser, Fahrenhorst, Berghuis and Machiels all
+reach the same "Frank" FmString, two of them through the same record. The
+count is not a reference count. Of 150,898 records in use, 3,118 have a count
+below the number of people found pointing at them (Delfí: count 1, four
+people), and four have count 0 while in use. So re-pointing a person needs no
+count update, and the editor never changes it.
+
+The editor changes a name by writing the person's 8-byte record pointer to
+another record already in use (`src/person.rs`, `src/ui/name_picker.rs`).
+It never edits record text, which would rename everyone sharing it. Live
+checks:
+
+- Jamal Musiala, last name -> an existing "Webster" record: FM's search found
+  "Jamal Webster" (and no longer "Musiala") immediately, and his profile
+  showed "Jamal Webster", including Full Name. Undo restored the pointer;
+  FM kept showing the cached name until the next game day, as for any field.
+- Musiala -> Webster again and Carlo Cudicini (staff), first name ->
+  "Gianfranco": saved with FM's Save Game As ("fm-editor name test") and
+  reloaded. FM's search lists "Jamal Webster" (FC Bayern) and "Gianfranco
+  Cudicini" (Chelsea, Scout) in the reloaded save, so re-pointed names
+  survive serialization. Both renames are still in that test save file. The
+  original "AndrC) Webster - Spurs" save was not overwritten.
+
+Not checked live: the human manager's name slots (they use the existing
+shifted-field write redirect), clearing a common name, and people who also
+have a direct full-name FmString (player +0x2C8, staff +0x140). Musiala and
+Cudicini have none. For people who do, such as Mbappé ("Kylian Mbappé Lottin"),
+FM's "Full Name" row probably keeps that string, and the editor does not change it. FM only allows
+names that already exist in the save. A brand-new name would need a new
+record and string allocated in FM's memory, which the editor does not do.
+
 ### Player-coaches
 
 391 players in this save are player-coach objects (vtable game_plugin+0x4F75A08;
@@ -730,13 +767,6 @@ Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
   his tooltip was not read before the writes, so the test proves nothing either
   way. All values were restored. A mid-season save with
   tired and unfit players is needed.
-- Name editing. First, last and common names are pointers into shared
-  name records (one record serves every person with that name: Frank
-  Wiblishauser, Fahrenhorst, Berghuis and Machiels all reach the same
-  "Frank" FmString, two of them through the same sub-record). Editing a
-  record in place would rename every person who shares it, and a longer
-  string cannot be written in place, so a safe design (re-pointing to another
-  existing record, or allocating) must be chosen before any name write.
 - FM's staff "Preferred Jobs" list. It is not stored as job codes or
   role indices in the staff object or the objects it points to (searched to
   depth 2). It looks derived from the role ratings: one job family, rated

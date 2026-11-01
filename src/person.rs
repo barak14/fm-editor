@@ -1,5 +1,6 @@
-//! Person-block data shared by staff and players (spoken languages), read
-//! through the attached build's `PersonProfileLayout`.
+//! Person-block data shared by staff and players (spoken languages and the
+//! shared name records behind first, last and common names), read through
+//! the attached build's `PersonProfileLayout`.
 
 use crate::fields::PersonProfileLayout;
 use crate::process::FmProcess;
@@ -115,6 +116,154 @@ fn order_languages(
     out
 }
 
+/// One shared name record. People point at these instead of owning their
+/// name strings, so a name is changed by pointing the person at another
+/// existing record, never by editing a record's text (that would rename
+/// everyone who shares it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NameRecord {
+    pub addr: u64,
+    pub text: String,
+    /// People in the player and staff arrays found pointing at this record
+    /// when the index was built.
+    pub uses: u32,
+}
+
+/// Name-slot keys per entity, in display order: first, last, common.
+pub const PLAYER_NAME_SLOTS: [(&str, &str); 3] = [
+    ("p_name_first_sub", "First name"),
+    ("p_name_last_sub", "Last name"),
+    ("p_name_common_sub", "Common name"),
+];
+pub const STAFF_NAME_SLOTS: [(&str, &str); 3] = [
+    ("s_name_first_sub", "First name"),
+    ("s_name_last_sub", "Last name"),
+    ("s_name_common_sub", "Common name"),
+];
+
+/// Text of the name record at `record`, validated like every other pointer.
+pub fn read_name_record_text(fm: &FmProcess, record: u64) -> Option<String> {
+    if !valid(record) {
+        return None;
+    }
+    let text = fm.read_u64(record).ok()?;
+    fm.read_fm_name(text).ok()
+}
+
+/// Collect every name record that a player or staff member points at,
+/// deduplicated and sorted by text (then by use count, most used first).
+/// `None` when the build has no name layout or the arrays cannot be read.
+/// Unreadable people or records are skipped, never guessed.
+pub fn build_name_index(
+    fm: &FmProcess,
+    players: (u64, usize),
+    staff: (u64, usize),
+) -> Option<Vec<NameRecord>> {
+    let schema = fm.schemas();
+    schema.person_profile?;
+    let slots = |keys: &[(&str, &str); 3]| -> Option<Vec<usize>> {
+        keys.iter().map(|(k, _)| schema.offset_of(k)).collect()
+    };
+    let player_slots = slots(&PLAYER_NAME_SLOTS)?;
+    let staff_slots = slots(&STAFF_NAME_SLOTS)?;
+    let mut uses: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
+    let mut add = |base: u64, offsets: &[usize]| {
+        for &off in offsets {
+            if let Some(r) = base
+                .checked_add(off as u64)
+                .and_then(|a| fm.read_u64(a).ok())
+            {
+                if valid(r) {
+                    *uses.entry(r).or_default() += 1;
+                }
+            }
+        }
+    };
+    let pointers = |(data, count): (u64, usize)| -> Option<Vec<u64>> {
+        let bytes = fm.read_bytes(data, count.checked_mul(8)?).ok()?;
+        Some(
+            bytes
+                .chunks_exact(8)
+                .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
+                .collect(),
+        )
+    };
+    for p in pointers(players)? {
+        if !valid(p) {
+            continue;
+        }
+        let shift = crate::player::person_shift(fm, p);
+        let offsets: Vec<usize> = player_slots
+            .iter()
+            .map(|&o| crate::player::player_phys_offset(schema, o as u64, shift) as usize)
+            .collect();
+        add(p, &offsets);
+    }
+    for s in pointers(staff)? {
+        if !valid(s) {
+            continue;
+        }
+        let shift = crate::staff::identity_shift(fm, s);
+        let offsets: Vec<usize> = staff_slots.iter().map(|&o| o + shift).collect();
+        add(s, &offsets);
+    }
+    let mut out: Vec<NameRecord> = uses
+        .into_iter()
+        .filter_map(|(addr, uses)| {
+            Some(NameRecord {
+                addr,
+                text: read_name_record_text(fm, addr)?,
+                uses,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        a.text
+            .cmp(&b.text)
+            .then(b.uses.cmp(&a.uses))
+            .then(a.addr.cmp(&b.addr))
+    });
+    Some(out)
+}
+
+/// Records matching `query` (case-insensitive substring), exact matches
+/// first, then prefix matches, then the rest; at most `limit`. Several
+/// records can hold the same text (FM keeps them per name group); only the
+/// most used one is offered, so each spelling appears once.
+pub fn search_names<'a>(index: &'a [NameRecord], query: &str, limit: usize) -> Vec<&'a NameRecord> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return Vec::new();
+    }
+    let mut hits: Vec<(u8, &NameRecord)> = index
+        .iter()
+        .filter_map(|r| {
+            let t = r.text.to_lowercase();
+            let rank = if t == q {
+                0
+            } else if t.starts_with(&q) {
+                1
+            } else if t.contains(&q) {
+                2
+            } else {
+                return None;
+            };
+            Some((rank, r))
+        })
+        .collect();
+    hits.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then(b.1.uses.cmp(&a.1.uses))
+            .then(a.1.text.cmp(&b.1.text))
+    });
+    let mut seen = std::collections::HashSet::new();
+    hits.into_iter()
+        .filter(|(_, r)| seen.insert(r.text.as_str()))
+        .take(limit)
+        .map(|(_, r)| r)
+        .collect()
+}
+
 /// "Italian (Fluent), English (Good)" for display.
 pub fn format_languages(languages: &[Language]) -> String {
     languages
@@ -207,6 +356,29 @@ mod tests {
                 "level {level}"
             );
         }
+    }
+
+    #[test]
+    fn name_search_ranks_exact_then_prefix_then_substring() {
+        let rec = |addr, text: &str, uses| NameRecord {
+            addr,
+            text: text.into(),
+            uses,
+        };
+        let index = vec![
+            rec(1, "Ann", 3),
+            rec(2, "Hannah", 9),
+            rec(3, "Anna", 2),
+            rec(4, "Anna", 7),
+            rec(5, "Bob", 1),
+        ];
+        let got: Vec<u64> = search_names(&index, "ANN", 10)
+            .iter()
+            .map(|r| r.addr)
+            .collect();
+        assert_eq!(got, vec![1, 4, 2]);
+        assert_eq!(search_names(&index, "ann", 2).len(), 2);
+        assert!(search_names(&index, "  ", 10).is_empty());
     }
 
     #[test]

@@ -11,7 +11,7 @@ const VALUE_SIZE: [f32; 2] = [44.0, 22.0];
 
 /// A fixed label slot keeps profile values aligned without centering short labels.
 /// Truncated labels automatically show their full text on hover in egui.
-fn profile_label(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>) -> egui::Response {
+pub(crate) fn profile_label(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>) -> egui::Response {
     ui.allocate_ui_with_layout(
         egui::vec2(130.0, VALUE_SIZE[1]),
         egui::Layout::left_to_right(egui::Align::Center),

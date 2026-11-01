@@ -19,6 +19,7 @@ pub fn show(
     ui: &mut egui::Ui,
     staff: &mut StaffView,
     tab: &mut StaffTab,
+    names: &mut crate::ui::name_picker::NamePicker,
 ) -> Vec<FieldEdit> {
     let mut edits = Vec::new();
     header(schemas, today, ui, staff, "Staff");
@@ -36,7 +37,7 @@ pub fn show(
     ui.separator();
 
     egui::ScrollArea::vertical().show(ui, |ui| match tab {
-        StaffTab::Overview => show_overview(schemas, ui, staff, &mut edits),
+        StaffTab::Overview => show_overview(schemas, ui, staff, &mut edits, names),
         StaffTab::Contract => show_contract(schemas, ui, staff, &mut edits),
     });
 
@@ -86,6 +87,7 @@ fn identity(
     ui: &mut egui::Ui,
     staff: &mut StaffView,
     edits: &mut Vec<FieldEdit>,
+    names: &mut crate::ui::name_picker::NamePicker,
 ) {
     ui.strong("Identity");
     if let Some(dob) = schemas.field("s_dob") {
@@ -100,6 +102,15 @@ fn identity(
         field_widget::info_label(ui, "Place of Birth", birthplace);
     }
     profile_labels(schemas, ui, staff);
+    let addr = staff.record.addr;
+    edits.extend(crate::ui::name_picker::names_section(
+        schemas,
+        ui,
+        names,
+        &crate::person::STAFF_NAME_SLOTS,
+        &mut staff.record.raw,
+        addr,
+    ));
     ui.add_space(4.0);
 }
 
@@ -177,13 +188,14 @@ fn show_overview(
     ui: &mut egui::Ui,
     staff: &mut StaffView,
     edits: &mut Vec<FieldEdit>,
+    names: &mut crate::ui::name_picker::NamePicker,
 ) {
     let count = entity_header::column_count(ui.available_width());
     for chunk in [0, 1, 2].chunks(count) {
         ui.columns(chunk.len(), |cols| {
             for (col, group) in cols.iter_mut().zip(chunk) {
                 match group {
-                    0 => identity(schemas, col, staff, edits),
+                    0 => identity(schemas, col, staff, edits, names),
                     1 => categories(
                         schemas,
                         col,
@@ -241,6 +253,7 @@ pub fn show_manager(
     today: Option<crate::game_date::GameDate>,
     ui: &mut egui::Ui,
     staff: &mut StaffView,
+    names: &mut crate::ui::name_picker::NamePicker,
 ) -> Vec<FieldEdit> {
     let mut edits = Vec::new();
     header(schemas, today, ui, staff, "Human Manager");
@@ -271,7 +284,7 @@ pub fn show_manager(
             ui.columns(chunk.len(), |cols| {
                 for (col, &group) in cols.iter_mut().zip(chunk) {
                     if group == 0 {
-                        identity(schemas, col, staff, &mut edits);
+                        identity(schemas, col, staff, &mut edits, names);
                     }
                     categories(schemas, col, staff, groups[group], &mut edits);
                     if group == 0 {

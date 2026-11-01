@@ -277,6 +277,20 @@ pub(super) fn worker_loop(
                 }
             }
 
+            BridgeCmd::LoadNameIndex => {
+                let result = match (&fm, &cache) {
+                    (Some(f), Some(c)) => crate::person::build_name_index(
+                        f,
+                        (c.humans_data, c.humans_count),
+                        (c.staff_data, c.staff_count),
+                    )
+                    .map(std::sync::Arc::new)
+                    .ok_or_else(|| "Name records are not mapped for this build".to_string()),
+                    _ => Err("No save is loaded".to_string()),
+                };
+                let _ = tx.send(BridgeResult::NameIndex(result));
+            }
+
             BridgeCmd::LoadHumanManager => {
                 if let (Some(f), Some(_c)) = (&fm, &cache) {
                     match entity_load::load_human_manager(f) {

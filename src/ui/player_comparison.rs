@@ -485,6 +485,7 @@ mod tests {
             club_addr: None,
             nationality: None,
             birthplace: None,
+            languages: None,
             game_date: None,
             injuries: ListState::Unmapped,
             absences: ListState::Unmapped,

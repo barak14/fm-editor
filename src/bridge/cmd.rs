@@ -118,6 +118,8 @@ pub enum BridgeCmd {
     LoadStaff(u64, usize),
     LoadClub(u64, usize),
     LoadHumanManager,
+    /// Read-only scan of the shared name records people point at.
+    LoadNameIndex,
     /// Read-only preparation; never writes or mutates the displayed club buffer.
     PrepareClubPolicy {
         request_id: u64,
@@ -170,6 +172,8 @@ pub enum BridgeResult {
     CacheFailed(String),
     /// Cache load complete. The Arc is cheaply cloned into app state.
     CacheReady(Arc<EntityCache>),
+    /// Shared name records for the name pickers, or why they are unavailable.
+    NameIndex(Result<Arc<Vec<crate::person::NameRecord>>, String>),
     PlayerLoaded(PlayerRecord),
     StaffLoaded(StaffView),
     ClubLoaded(ClubView),

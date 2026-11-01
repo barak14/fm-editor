@@ -150,6 +150,8 @@ pub struct FmEditorApp {
     // Entity cache — built by the worker on connect, preserved across GameClosed.
     entity_cache: Option<Arc<EntityCache>>,
     cache_load_state: CacheLoadState,
+    /// Shared name records for the name pickers; tied to the loaded save.
+    names: crate::ui::name_picker::NamePicker,
 
     // Entity tabs
     open_tabs: Vec<EntityTab>,
@@ -225,6 +227,7 @@ impl FmEditorApp {
             advanced_open: false,
             advanced_snapshot: None,
             entity_cache: None,
+            names: Default::default(),
             cache_load_state: CacheLoadState::Idle,
             open_tabs: Vec::new(),
             active_tab: None,
@@ -310,6 +313,7 @@ impl FmEditorApp {
     /// read-only browsing).
     fn clear_cache(&mut self) {
         self.best_xi.clear();
+        self.names.clear();
         self.entity_cache = None;
         self.cache_load_state = CacheLoadState::Idle;
     }
@@ -379,6 +383,7 @@ impl FmEditorApp {
                     self.cache_load_state = CacheLoadState::Idle;
                     self.set_status(format!("Loading save failed: {e}"));
                 }
+                BridgeResult::NameIndex(result) => self.names.receive(result),
                 BridgeResult::CacheReady(arc) => {
                     self.entity_cache = Some(arc);
                     self.cache_load_state = CacheLoadState::Ready;
@@ -785,6 +790,9 @@ impl eframe::App for FmEditorApp {
 
         // Background housekeeping (runs before UI so results are fresh)
         self.process_results();
+        if self.names.take_load_request() {
+            self.bridge.send(BridgeCmd::LoadNameIndex);
+        }
         self.handle_auto_connect();
         let title = editor_title(self.attached_build, self.window_branch.as_deref());
         if ctx.input(|i| i.viewport().title.as_deref() != Some(title.as_str())) {
@@ -1439,7 +1447,7 @@ impl eframe::App for FmEditorApp {
                                     );
                                     let e = player_panel::show(
                                         schemas, self.game_date, ui, p, &mut self.player_tab, addr,
-                                        wage_period, face_pack_path.as_deref(),
+                                        wage_period, face_pack_path.as_deref(), &mut self.names,
                                     );
                                     edits.extend(e);
                                 } else {
@@ -1448,7 +1456,7 @@ impl eframe::App for FmEditorApp {
                             }
                             EntityTabType::Staff => {
                                 if let Some(s) = self.selected_staff.as_mut().filter(|s| s.record.addr == tab_addr) {
-                                    let e = staff_panel::show(schemas, self.game_date, ui, s, &mut self.staff_tab);
+                                    let e = staff_panel::show(schemas, self.game_date, ui, s, &mut self.staff_tab, &mut self.names);
                                     edits.extend(e);
                                 } else {
                                     ui.label("Staff details unavailable. Reload while the game is connected.");
@@ -1511,7 +1519,7 @@ impl eframe::App for FmEditorApp {
                             if self.manager_loading {
                                 ui.spinner();
                             } else if let Some(ref mut mgr) = self.manager_view {
-                                let e = staff_panel::show_manager(schemas, self.game_date, ui, mgr);
+                                let e = staff_panel::show_manager(schemas, self.game_date, ui, mgr, &mut self.names);
                                 if self.conn.is_writable() {
                                     edits.extend(e);
                                 }
