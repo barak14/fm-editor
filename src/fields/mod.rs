@@ -341,15 +341,18 @@ pub fn resolve_sub_ptr_mapped(
     sub_records: &[SubRecord],
     phys: &dyn Fn(u64) -> u64,
 ) -> Option<u64> {
-    if !(base_ptr > 0x10000 && base_ptr < 0x7FFFFFFFFFFF) { return None; }
+    if !(base_ptr > 0x10000 && base_ptr < 0x7FFFFFFFFFFF) {
+        return None;
+    }
     let sr = sub_records.iter().find(|s| s.id == target_id)?;
     let ptr_addr = match &sr.parent {
         SubRecordParent::Direct => base_ptr.checked_add(phys(sr.ptr_offset))?,
-        SubRecordParent::In(pid) => {
-            resolve_sub_ptr_mapped(fm, base_ptr, pid, sub_records, phys)?.checked_add(sr.ptr_offset)?
-        }
+        SubRecordParent::In(pid) => resolve_sub_ptr_mapped(fm, base_ptr, pid, sub_records, phys)?
+            .checked_add(sr.ptr_offset)?,
     };
-    if !(ptr_addr > 0x10000 && ptr_addr.checked_add(8)? < 0x7FFFFFFFFFFF) { return None; }
+    if !(ptr_addr > 0x10000 && ptr_addr.checked_add(8)? < 0x7FFFFFFFFFFF) {
+        return None;
+    }
     let ptr = fm.read_u64(ptr_addr).ok()?;
     (ptr > 0x10000 && ptr < 0x7FFFFFFFFFFF).then_some(ptr)
 }
@@ -735,7 +738,11 @@ mod schema_lookup_tests {
     #[test]
     fn current_date_rva_is_specific_to_the_verified_build() {
         assert_eq!(GameBuild::Fm27Steam.schemas().rva_current_date, 0x56AD378);
-        for build in [GameBuild::Fm27GamePass, GameBuild::Fm24Steam, GameBuild::Fm26Steam] {
+        for build in [
+            GameBuild::Fm27GamePass,
+            GameBuild::Fm24Steam,
+            GameBuild::Fm26Steam,
+        ] {
             assert_eq!(build.schemas().rva_current_date, 0, "{build:?}");
         }
     }
@@ -760,6 +767,28 @@ mod schema_lookup_tests {
             .schemas()
             .field("no_such_key")
             .is_none());
+    }
+
+    #[test]
+    fn fm26_squad_fields_resolve_to_contract_bytes() {
+        let schemas = GameBuild::Fm26Steam.schemas();
+        for (key, offset) in [("p_squad_status", 0x54), ("p_squad_number", 0x5D)] {
+            assert!(matches!(
+                schemas.field(key).unwrap().offset,
+                Some(FieldLocation::SubRecord {
+                    container: "contract",
+                    offset: actual,
+                    encoding: Encoding::Direct,
+                }) if actual == offset
+            ));
+        }
+        let contract = schemas
+            .player_sub_records
+            .iter()
+            .find(|s| s.id == "contract")
+            .unwrap();
+        assert!(matches!(contract.parent, SubRecordParent::Direct));
+        assert_eq!(contract.ptr_offset, 0x330);
     }
 
     #[test]
@@ -994,7 +1023,9 @@ mod player_schema_tests {
         // The u64 trait mask must fit inside the player buffer.
         assert!(0x368 + 8 <= schemas.player_struct_size);
         match schemas.field("c_transfer_budget").unwrap().offset.unwrap() {
-            FieldLocation::SubRecord { container, offset, .. } => {
+            FieldLocation::SubRecord {
+                container, offset, ..
+            } => {
                 assert_eq!((container, offset), ("finance", 0x7CC));
             }
             other => panic!("unexpected location {other:?}"),
@@ -1011,7 +1042,12 @@ mod player_schema_tests {
         for key in ["s_judge_staff", "s_data_analysis", "s_sports_science"] {
             assert!(schemas.offset_of(key).is_some(), "{key}");
         }
-        for key in ["s_versatility", "s_business", "s_interference", "s_resources"] {
+        for key in [
+            "s_versatility",
+            "s_business",
+            "s_interference",
+            "s_resources",
+        ] {
             assert_eq!(schemas.offset_of(key), None, "{key}");
         }
     }

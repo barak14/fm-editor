@@ -224,6 +224,28 @@ In a 2000-staff sample: ~28% use the direct FmString; ~72% have null FmString an
 | Danny Hesp | 0x22034073850 | null | "Danny" | "Hesp" | "Danny Hesp" |
 | Mauro Tassotti | 0x22034072AD0 | null | "Mauro" | "Tassotti" | "Mauro Tassotti" |
 
+## Contract sub-record (via ptr at player+0x330)
+
+FM26 26.3.2 Steam, 2026-10 patch: the schema loads the 196-byte contract
+sub-record through the pointer at player+0x330.
+
+| Sub-offset | Encoding | Field |
+|------------|----------|-------|
+| +0x20 | Raw u32 | Wage (existing mapping) |
+| +0x44 | Packed FM date (u32) | Signed |
+| +0x48 | Packed FM date (u32) | Expiry |
+| +0x54 | Direct u8 | Squad status |
+| +0x5D | Direct u8; 255 = none | Squad number |
+
+Read-only live verification on **2026-11-01**, Tottenham save at **7 Jul 2025**:
+Destiny Udogie (UID 43426047) reads status **3** (FM profile: **Regular Starter**)
+and number **13** (profile badge **13**); Radu Dragusin (UID 57178516) reads
+status **4** (**Squad Player**) and number **3** (badge **3**). These status codes
+match the editor's existing squad-status labels. The old squad-status mapping
+at **+0x24 was wrong**: it reads 11 for every player. Wage and dates are existing
+mappings, not newly verified by these two witnesses. **Live write verification
+is pending** for the corrected squad status and newly mapped squad number.
+
 ## Unmapped fields â€” worklist
 
 ### Player
@@ -262,6 +284,8 @@ Use these when verifying a new field offset. Always cross-reference at least 2 â
 | Name | Entity | Identifier | Used for |
 |------|--------|-----------|----------|
 | Harry Kane | Player | UID 28049320 | Attributes, positions, DOB, CA/PA, PPMs (6 traits) |
+| Destiny Udogie | Player | UID 43426047 | Contract squad status 3 (Regular Starter), squad number 13; read verified 2026-11-01 |
+| Radu Dragusin | Player | UID 57178516 | Contract squad status 4 (Squad Player), squad number 3; read verified 2026-11-01 |
 | Joshua Kimmich | Player | Name search | Positions, PPMs (7 traits + PPM50) |
 | Jari Litmanen | Player | Index 0 | Positions, DOB, PPMs (4 traits + PPM50) |
 | Josko Gvardiol | Player | DOB 23/1/2002 + DC=20 | Positions (DL/WBL) |

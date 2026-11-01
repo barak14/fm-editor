@@ -1,12 +1,15 @@
 //! Player field definitions for FM26. Aggregated into `fields::all_fields`
 //! via `fields::fm26::PLAYER_FIELDS`.
 
-use crate::fields::{direct, date, encoded, fm_string, pointer, raw, raw_u32, sub_date, sub_raw, sub_raw_u32, Field, SubRecord, SubRecordParent};
 use crate::fields::Category::*;
 use crate::fields::Entity::Player;
+use crate::fields::{
+    date, direct, encoded, fm_string, pointer, raw, raw_u32, sub_date, sub_direct, sub_raw,
+    sub_raw_u32, Field, SubRecord, SubRecordParent,
+};
 
-/// Player sub-records. Not yet loaded by PlayerRecord (player loading doesn't
-/// support sub-records yet), but the definitions capture the discovered offsets.
+/// Player sub-records loaded through the attached build's schema.
+#[rustfmt::skip]
 pub(crate) const PLAYER_SUB_RECORDS: &[SubRecord] = &[
     // Contract sub-record: 196 bytes reached via pointer at player+0x330.
     // Contains wage, squad status, contract type, start/expiry dates.
@@ -14,6 +17,7 @@ pub(crate) const PLAYER_SUB_RECORDS: &[SubRecord] = &[
     SubRecord { id: "contract", parent: SubRecordParent::Direct, ptr_offset: 0x330, size: 0xC4 },
 ];
 
+#[rustfmt::skip]
 pub(crate) const FIELDS: &[Field] = &[
         // =====================================================================
         // Technical
@@ -144,11 +148,16 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "p_club_ptr",       label: "Club Entity",       entity: Player, category: Internal,    offset: pointer(0x0128) },
 
         // ── Contract sub-record fields (at pointer from +0x330, 196 bytes) ────
-        // Not yet readable (PlayerRecord doesn't load sub-records), but offsets captured.
-        // Kane witnesses: wage=381198, squad_status=11, contract_type=1,
+        // Kane witnesses: wage=381198, contract_type=1,
         //   signed=2023-08-12, expiry=2027-06-30.
+        // FM26 26.3.2 Steam (2026-10 patch), read verified 2026-11-01:
+        //   Udogie (UID 43426047): status=3 Regular Starter, number=13;
+        //   Dragusin (UID 57178516): status=4 Squad Player, number=3.
+        // Status is at +0x54, not the old +0x24 (11 for every player).
+        // Number is a direct u8; 255 means none. Live write verification pending.
         Field { key: "p_contract_wage",    label: "Contract Wage",    entity: Player, category: Contract,   offset: sub_raw_u32("contract", 0x20) },
-        Field { key: "p_squad_status",     label: "Squad Status",     entity: Player, category: Contract,   offset: sub_raw("contract", 0x24)     },
+        Field { key: "p_squad_status",     label: "Squad Status",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x54)  },
+        Field { key: "p_squad_number",     label: "Squad Number",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x5D)  },
         Field { key: "p_contract_type",    label: "Contract Type",    entity: Player, category: Contract,   offset: sub_raw("contract", 0x26)     },
         Field { key: "p_contract_signed",  label: "Contract Signed",  entity: Player, category: Contract,   offset: sub_date("contract", 0x44)    },
         Field { key: "p_contract_expiry",  label: "Contract Expiry",  entity: Player, category: Contract,   offset: sub_date("contract", 0x48)    },
