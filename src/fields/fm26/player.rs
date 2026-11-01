@@ -154,7 +154,8 @@ pub(crate) const FIELDS: &[Field] = &[
         //   Udogie (UID 43426047): status=3 Regular Starter, number=13;
         //   Dragusin (UID 57178516): status=4 Squad Player, number=3.
         // Status is at +0x54, not the old +0x24 (11 for every player).
-        // Number is a direct u8; 255 means none. Live write verification pending.
+        // Number is a direct u8; 255 means none. Writes and Undo verified live
+        // 2026-11-01 (Udogie 13 -> 31, Regular Starter -> Squad Player).
         Field { key: "p_contract_wage",    label: "Contract Wage",    entity: Player, category: Contract,   offset: sub_raw_u32("contract", 0x20) },
         Field { key: "p_squad_status",     label: "Squad Status",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x54)  },
         Field { key: "p_squad_number",     label: "Squad Number",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x5D)  },

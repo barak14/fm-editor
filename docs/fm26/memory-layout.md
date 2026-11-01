@@ -243,8 +243,15 @@ and number **13** (profile badge **13**); Radu Dragusin (UID 57178516) reads
 status **4** (**Squad Player**) and number **3** (badge **3**). These status codes
 match the editor's existing squad-status labels. The old squad-status mapping
 at **+0x24 was wrong**: it reads 11 for every player. Wage and dates are existing
-mappings, not newly verified by these two witnesses. **Live write verification
-is pending** for the corrected squad status and newly mapped squad number.
+mappings, not newly verified by these two witnesses.
+
+Live write verification on **2026-11-01** (same build, throwaway save at
+11 Jul 2025, editor branch `fm26-squad-number`): Udogie's squad number 13 → 31
+and status Regular Starter → Squad Player through the editor. FM's player
+profile showed **31** and **Squad Player**. Undo restored contract+0x54 = 3 and
++0x5D = 13 in memory; after a save and reload FM showed **13** and **Regular
+Starter**. FM caches an already-opened player profile, so an edit may not show
+on a profile viewed earlier in the session until the game reloads.
 
 ## Unmapped fields — worklist
 
