@@ -11,7 +11,7 @@ use std::sync::Arc;
 use eframe::egui;
 
 use crate::fields::Field;
-use crate::person::{search_names, NameRecord};
+use crate::person::{NameRecord, search_names};
 use crate::ui::field_widget::FieldEdit;
 
 /// Most search results listed under a name slot.
@@ -193,7 +193,87 @@ fn slot_row(
         old_raw: raw.get(offset..end)?.to_vec(),
         new_raw: new_raw.clone(),
         description: format!("{label}: {current} \u{2192} {new_text}"),
+        presentation: Some(crate::edit_history::EditPresentation::new(
+            label, &current, &new_text,
+        )),
     };
     raw[offset..end].copy_from_slice(&new_raw);
     Some(edit)
+}
+
+#[cfg(test)]
+mod history_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn clearing_a_common_name_records_human_values_and_preserves_shared_text() {
+        let field = crate::game_version::GameBuild::Fm27Steam
+            .schemas()
+            .field("p_name_common_sub")
+            .unwrap();
+        let offset = field.offset.unwrap().offset() as usize;
+        let old = 0x30000u64;
+        let mut raw = vec![0; offset + 8];
+        raw[offset..].copy_from_slice(&old.to_le_bytes());
+        let mut picker = NamePicker::default();
+        picker.receive(Ok(Arc::new(vec![NameRecord {
+            addr: old,
+            text: "Existing name".into(),
+            uses: 1,
+        }])));
+        let ctx = egui::Context::default();
+        let mut clear_center = None;
+        let mut edits = Vec::new();
+        for frame in 0..4 {
+            let mut input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0, 200.0),
+                )),
+                ..Default::default()
+            };
+            if frame >= 2 {
+                let pos = clear_center.expect("Clear button is visible");
+                input.events = vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed: frame == 2,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ];
+            }
+            let output = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    edits.extend(slot_row(
+                        ui,
+                        &mut picker,
+                        field,
+                        "p_name_common_sub",
+                        "Common name",
+                        &mut raw,
+                        0x20000,
+                    ));
+                });
+            });
+            clear_center = output.shapes.iter().find_map(|shape| match &shape.shape {
+                egui::Shape::Text(t) if t.galley.text() == "Clear" => {
+                    Some(t.pos + t.galley.size() * 0.5)
+                }
+                _ => None,
+            });
+        }
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].addr, 0x20000 + offset as u64);
+        assert_eq!(edits[0].old_raw, old.to_le_bytes());
+        assert_eq!(edits[0].new_raw, 0u64.to_le_bytes());
+        let presentation = edits[0].presentation.as_ref().unwrap();
+        assert_eq!(presentation.field, "Common name");
+        assert_eq!(presentation.before, "Existing name");
+        assert_eq!(presentation.after, "—");
+        assert!(presentation.group.is_none());
+        assert_eq!(picker.text_of(old), Some("Existing name"));
+        assert_eq!(&raw[offset..], &0u64.to_le_bytes());
+    }
 }

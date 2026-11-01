@@ -805,6 +805,36 @@ On FM27 Steam, manager discovery now requires the already-mapped human-manager v
 
 Live feature UI: manual current Club ID 1751 returned 24 players; My clubs returned 41, including the reserve group and both incoming-loan witnesses. Counts are save-specific, not constants.
 
+## Edit history and grouped Undo verification (2026-11-01, Steam)
+
+FM27 Steam under Proton, observed module-header fingerprint
+`0x74A331ED3E28B06C`, on the separate **fm-editor name test** save at
+**Tue 14 Jul 2026**. This checks the history/Undo workflow using existing
+mappings; it adds no offsets and does not calibrate the global compatibility
+gate. All writes used the feature editor's UI and acknowledged bridge path.
+
+| Action | Applied evidence | Undo evidence |
+|--------|------------------|---------------|
+| Erling Haaland (29179241), Finishing | 19 (`5F`) → 18 (`58`); FM profile first opened after the edit showed 18 | One Undo restored exact original byte `5F`, independently read through fm-debug; report remained visible as Undone |
+| Manchester City (679), Youth Recruitment main + finance copy | Existing info+0x12D / finance+0x8A7 both changed 20/20 (`14`/`14`) → 3/3 (`03`/`03`); FM's first Facilities view showed **Basic** | A single logical Undo restored both exact `14` preimages; one history action retained both Apply and both Undo acknowledgements |
+| Haaland, one DOB calendar selection | 21 Jul 2000 (`CB 00 D0 07`) → 23 Jul 2001 (`CC 00 D1 07`), two physical date-word/year writes under one action; changing the calendar draft year alone emitted no write | One Undo restored the full exact original four-byte date; history retained both physical changes and attempts |
+
+Cristiano Ronaldo (735216) was also edited 19 (`5F`) → 18 (`58`) and restored
+exactly. His FM profile had already been viewed, so it kept showing cached 19;
+that screen is not evidence of the applied value. Haaland's later first-view
+check supplied the visible scalar-write evidence instead. FM's cached screens
+can likewise retain an applied value after Undo; restoration above was checked
+with fresh process reads, not inferred from a cached screen.
+
+Every test value was restored. No game save or day advance was performed.
+Desktop and 400px-wide history views, expanded physical-change details, search,
+profile navigation and retained Undone rows were exercised. Partial/refused/
+unconfirmed outcomes and interrupted-session handling were tested with simulated
+acknowledgements, not deliberately induced writes to the live game. Grouped
+writes are still non-atomic. FM24, FM26 and Game Pass were not live-verified for
+this new workflow. The older verification table below records the pre-grouped
+Undo implementation and should not be read as the current number of Undo steps.
+
 ## Live write verification (2026-10-31, Steam, Spurs save)
 
 FM27 Steam under Proton on a test save, run in the headless session

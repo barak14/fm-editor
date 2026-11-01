@@ -189,9 +189,10 @@ fn show_facilities(
         }
         if edits.len() > before {
             let new_val = edits[edits.len() - 1].new_raw[0];
-            if let Some(mirror) =
+            if let Some(mut mirror) =
                 mirror_u8_edit(schemas, club, &format!("{key}_fin"), label, new_val)
             {
+                group_facility_edits(club.addr, key, &mut edits[before], &mut mirror);
                 edits.push(mirror);
             }
         }
@@ -400,13 +401,46 @@ fn mirror_u8_edit(
         old_raw: vec![old],
         new_raw: vec![new_val],
         description: format!("{label} (finance copy): {old} \u{2192} {new_val}"),
+        presentation: Some(crate::edit_history::EditPresentation::new(
+            format!("{label} (finance copy)"),
+            old,
+            new_val,
+        )),
     })
+}
+
+fn group_facility_edits(
+    club_addr: u64,
+    key: &str,
+    primary: &mut FieldEdit,
+    mirror: &mut FieldEdit,
+) {
+    if let (Some(p), Some(m)) = (&mut primary.presentation, &mut mirror.presentation) {
+        let group = crate::edit_history::EditGroup::new(
+            format!("facility:{club_addr:x}:{key}"),
+            &p.field,
+            &p.before,
+            &p.after,
+        );
+        p.group = Some(group.clone());
+        m.group = Some(group);
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Sub-record edit helpers — offset is relative to the sub-record base, not
 // the top-level club struct.
 // ---------------------------------------------------------------------------
+
+// Generic u32 words with the high bit set have no verified signed money
+// interpretation. Keep their exact bits visible instead of asserting GBP units.
+fn u32_value(label: &str, value: u32) -> String {
+    if value & 0x8000_0000 != 0 {
+        format!("raw u32 {value} (0x{value:08X}; signedness unverified)")
+    } else {
+        field_widget::money_value(label, value)
+    }
+}
 
 /// Editable u32 field (money, counts, etc.). Double-click to type exact value.
 fn u32_drag(
@@ -450,6 +484,11 @@ fn u32_drag(
                 old_raw: old_bytes.to_vec(),
                 new_raw: new_bytes.to_vec(),
                 description: format!("{label}: {old_val} \u{2192} {new_val}"),
+                presentation: Some(crate::edit_history::EditPresentation::new(
+                    label,
+                    u32_value(label, old_val),
+                    u32_value(label, new_val),
+                )),
             });
         }
     }
@@ -507,6 +546,11 @@ fn f32_drag(
             old_raw: old_bytes.to_vec(),
             new_raw: new_bytes.to_vec(),
             description: format!("{label}: {old_val:.0} \u{2192} {val:.0}"),
+            presentation: Some(crate::edit_history::EditPresentation::new(
+                label,
+                field_widget::money_value(label, old_val),
+                field_widget::money_value(label, val),
+            )),
         });
     }
 }
@@ -564,6 +608,9 @@ fn u8_drag_1_20(
                 old_raw: vec![old],
                 new_raw: vec![new_val],
                 description: format!("{label}: {old} \u{2192} {new_val}"),
+                presentation: Some(crate::edit_history::EditPresentation::new(
+                    label, old, new_val,
+                )),
             });
         }
     }
@@ -572,6 +619,106 @@ fn u8_drag_1_20(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn u32_drag_high_bit_metadata_preserves_raw_bits_without_money_claim() {
+        fn text_position(shapes: &[egui::epaint::ClippedShape], text: &str) -> egui::Pos2 {
+            fn locate(shape: &egui::Shape, text: &str) -> Option<egui::Pos2> {
+                match shape {
+                    egui::Shape::Text(s) if s.galley.text() == text => {
+                        Some(s.pos + s.galley.size() / 2.0)
+                    }
+                    egui::Shape::Vec(shapes) => shapes.iter().find_map(|s| locate(s, text)),
+                    _ => None,
+                }
+            }
+            shapes.iter().find_map(|s| locate(&s.shape, text)).unwrap()
+        }
+        let ctx = egui::Context::default();
+        navigation::set_editing_enabled(&ctx, true);
+        let old = 0xFFFF_FF06u32;
+        let new = 250u32;
+        let mut raw = old.to_le_bytes();
+        let mut edits = Vec::new();
+        let mut frame = |events| {
+            ctx.run(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        u32_drag(ui, "Balance", &mut raw, 0, 0x20000, &mut edits);
+                    });
+                },
+            )
+        };
+        let output = frame(vec![]);
+        let pos = text_position(&output.shapes, &old.to_string());
+        frame(vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]);
+        frame(vec![egui::Event::Text(new.to_string())]);
+        frame(vec![egui::Event::Key {
+            key: egui::Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        assert_eq!(raw, new.to_le_bytes());
+        assert_eq!(edits.len(), 1);
+        let edit = &edits[0];
+        assert_eq!(edit.old_raw, old.to_le_bytes());
+        assert_eq!(edit.new_raw, new.to_le_bytes());
+        let p = edit.presentation.as_ref().unwrap();
+        assert_eq!(
+            p.before,
+            "raw u32 4294967046 (0xFFFFFF06; signedness unverified)"
+        );
+        assert!(!p.before.contains("GBP"));
+        assert_eq!(p.after, "250 GBP");
+        assert_eq!(u32_value("Wage Budget (p/w)", 500), "500 GBP/week");
+        assert!(u32_value("Balance", 0x8000_0000).contains("signedness unverified"));
+    }
+
+    #[test]
+    fn facility_mirror_group_preserves_each_physical_preimage() {
+        let make = |addr, old, field| FieldEdit {
+            addr,
+            old_raw: vec![old],
+            new_raw: vec![18],
+            description: "unchanged".into(),
+            presentation: Some(crate::edit_history::EditPresentation::new(field, old, 18)),
+        };
+        let mut primary = make(0x20000, 12, "Youth Coaching");
+        let mut mirror = make(0x30000, 9, "Youth Coaching (finance copy)");
+        group_facility_edits(0x10000, "c_youth_coach", &mut primary, &mut mirror);
+        let p = primary.presentation.as_ref().unwrap();
+        let m = mirror.presentation.as_ref().unwrap();
+        assert_eq!(p.group, m.group);
+        assert_eq!(p.group.as_ref().unwrap().before, "12");
+        assert_eq!(p.group.as_ref().unwrap().after, "18");
+        assert_eq!(m.before, "9");
+        assert_eq!(primary.old_raw, [12]);
+        assert_eq!(mirror.old_raw, [9]);
+        assert_eq!(primary.description, "unchanged");
+        let mut other = make(0x40000, 12, "Youth Coaching");
+        let mut other_mirror = make(0x50000, 9, "Youth Coaching (finance copy)");
+        group_facility_edits(0x60000, "c_youth_coach", &mut other, &mut other_mirror);
+        assert_ne!(p.group, other.presentation.unwrap().group);
+    }
 
     fn run_f32(value: f32, enabled: bool) -> (Vec<FieldEdit>, [u8; 4]) {
         let ctx = egui::Context::default();

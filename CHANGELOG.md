@@ -14,6 +14,8 @@
 - FM27 Steam: edit player and staff **first, last and common names** by picking an existing name from a search (names are shared records; the editor re-points the person and never changes a name's text). Verified in game, through Undo, and across Save As and reload.
 - FM27 Steam: player **Asking Price** read and write verified in game (-1 = Unspecified).
 - Player Overview: **Show potential attributes** previews estimated values read-only in the normal attribute categories, replacing the separate Positions & Traits projection list. Actual attributes and editing return when switched off; other Overview fields remain editable.
+- Add structured **Change history** with entity/field identity, before/after values, UTC submission time, labelled write/Undo outcomes, filters and expandable per-write attempts. Undone/failed actions and audit-only closed sessions remain visible in memory; old-session write/navigation authority is invalidated.
+- Treat facility mirror writes and one date-picker interaction as logical Undo actions. Track acknowledgements per physical write, report partial success and retry only the remaining confirmed Undo portions; keep unrelated controls separate.
 
 ### Fixes
 
@@ -21,6 +23,8 @@
 - Make player profile layouts use available space: independently stacked attribute cards reduce gaps and scrolling; **Positions & Traits** sizes the pitch to the profile viewport and places traits beside it on wide views, with readable stacked layouts on narrow screens. Keep the existing schema-backed numeric editing and Undo behaviour.
 - FM27 Steam: favoured-club reasons read the right byte. **As a player** / **As a supporter** were wrong for some clubs (Mbappé's R. Madrid, Litmanen's Ajax).
 - Remove redundant inline UI instructions and the inert contract-type Apply button. Keep concise units and scope caveats in labels/tooltips; Best XI development research remains in the UI guide rather than the planner.
+- Distinguish ordinary writes refused before writing from attempted writes whose completion is unconfirmed. Do not imply an API failure restored game memory; retain visible errors and refresh the active record.
+- Refuse queued ordinary writes after the worker observes a save unload or while a new attachment is still loading, before memory access; retain the existing per-write byte guard when ready.
 
 ### Documentation
 

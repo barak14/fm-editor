@@ -5,7 +5,7 @@ use eframe::egui;
 use crate::fields::{self, Category, Entity};
 use crate::player::{self, Absence, GameDate, Injury, ListState, PlayerRecord};
 use crate::ratings;
-use crate::settings::{WagePeriod, format_wage};
+use crate::settings::{format_wage, WagePeriod};
 use crate::ui::field_widget::{self, FieldEdit};
 
 #[derive(PartialEq)]
@@ -683,7 +683,24 @@ fn show_traits_checkboxes(
             old_raw: old_bytes.to_vec(),
             new_raw: new_bytes.to_vec(),
             description: desc,
+            presentation: Some(crate::edit_history::EditPresentation::new(
+                "Traits",
+                trait_names(old_mask),
+                trait_names(new_mask),
+            )),
         });
+    }
+}
+
+fn trait_names(mask: u64) -> String {
+    let names: Vec<_> = (0..64u8)
+        .filter(|bit| mask & (1u64 << bit) != 0)
+        .map(|bit| player::ppm_name(bit + 1))
+        .collect();
+    if names.is_empty() {
+        "None".into()
+    } else {
+        names.join(", ")
     }
 }
 
@@ -990,6 +1007,15 @@ fn heal_edit(injury: &Injury, date: Option<GameDate>) -> Option<FieldEdit> {
         ]
         .concat(),
         description: format!("Heal injury: {}", injury.name),
+        presentation: Some(crate::edit_history::EditPresentation::new(
+            format!("Heal injury: {}", injury.name),
+            format!(
+                "{} full / {} light days remaining",
+                injury.full_days - elapsed,
+                injury.light_days.saturating_sub(elapsed)
+            ),
+            "0 full / 0 light days remaining",
+        )),
     })
 }
 
@@ -1006,6 +1032,11 @@ fn lift_ban_edit(absence: &Absence, date: Option<GameDate>) -> Option<FieldEdit>
         old_raw: absence.days.to_le_bytes().to_vec(),
         new_raw: elapsed.to_le_bytes().to_vec(),
         description: "Lift ban".into(),
+        presentation: Some(crate::edit_history::EditPresentation::new(
+            "Ban",
+            format!("{} days remaining", absence.days - elapsed),
+            "0 days remaining",
+        )),
     })
 }
 
@@ -1122,6 +1153,11 @@ fn transfer_listing_edit(
         old_raw: old.to_vec(),
         new_raw: new,
         description: format!("Transfer listed: {listed}"),
+        presentation: Some(crate::edit_history::EditPresentation::new(
+            "Transfer listed",
+            raw[flags] & 1 != 0,
+            listed,
+        )),
     })
 }
 
@@ -1174,6 +1210,11 @@ fn show_listing(
                 old_raw: vec![flags],
                 new_raw: vec![new],
                 description: format!("Loan listed: {loan}"),
+                presentation: Some(crate::edit_history::EditPresentation::new(
+                    "Loan listed",
+                    flags & 2 != 0,
+                    loan,
+                )),
             });
         }
     }
@@ -1392,6 +1433,16 @@ mod tests {
     }
 
     #[test]
+    fn trait_metadata_uses_actual_trait_names() {
+        assert_eq!(trait_names(0), "None");
+        assert_eq!(trait_names(1), player::ppm_name(1));
+        assert_eq!(
+            trait_names(3),
+            format!("{}, {}", player::ppm_name(1), player::ppm_name(2))
+        );
+        assert_eq!(trait_names(1u64 << 63), player::ppm_name(64));
+    }
+    #[test]
     fn heal_and_lift_ban_only_shorten_durations() {
         let start = GameDate::from_raw((2025u32 << 16) | 131).unwrap(); // 11 May
         let now = GameDate::from_raw(0x07EA1AC2).unwrap(); // 13 Jul 2026, flags retained
@@ -1405,6 +1456,10 @@ mod tests {
         };
         let edit = heal_edit(&injury, Some(now)).unwrap();
         assert_eq!(edit.addr, injury.days_addr);
+        let presentation = edit.presentation.as_ref().unwrap();
+        assert_eq!(presentation.before, "70 full / 40 light days remaining");
+        assert_eq!(presentation.after, "0 full / 0 light days remaining");
+        assert!(presentation.group.is_none());
         assert_eq!(
             edit.old_raw,
             [498u16.to_le_bytes(), 468u16.to_le_bytes()].concat()
@@ -1460,6 +1515,11 @@ mod tests {
         raw[flags] = 0xA2;
         let edit = transfer_listing_edit(schemas, &raw, 0x50000, true, Some(now)).unwrap();
         assert_eq!(edit.addr, 0x50000 + date as u64);
+        let presentation = edit.presentation.as_ref().unwrap();
+        assert_eq!(presentation.field, "Transfer listed");
+        assert_eq!(presentation.before, "false");
+        assert_eq!(presentation.after, "true");
+        assert!(presentation.group.is_none());
         assert_eq!(edit.new_raw.len(), code + 1 - date);
         assert_eq!(&edit.new_raw[..4], &now.raw.to_le_bytes());
         assert_eq!(&edit.new_raw[4..flags - date], &raw[date + 4..flags]);

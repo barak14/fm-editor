@@ -8,6 +8,9 @@ use eframe::egui;
 
 use crate::bridge::{BridgeCmd, BridgeResult, ClubView, EntityCounts, ProcessBridge, StaffView};
 use crate::cache::{CachedClub, CachedPlayer, CachedStaff, EntityCache};
+use crate::edit_history::{
+    ActionDraft, ChangeDraft, ChangeHistory, EditPresentation, EntityKind, EntityRef,
+};
 use crate::game_version::GameBuild;
 use crate::player::PlayerRecord;
 use crate::process::RunningGame;
@@ -19,8 +22,7 @@ use crate::ui::pages::{
     staff_search::StaffSearchState,
 };
 use crate::ui::{club_panel, field_widget, pages, player_panel, staff_panel};
-use crate::undo::{UndoEntry, UndoStack};
-use crate::write_tracker::WriteTracker;
+use crate::undo::UndoEntry;
 
 // ---------------------------------------------------------------------------
 // Shared types used by UI modules
@@ -179,16 +181,15 @@ pub struct FmEditorApp {
     manager_view: Option<StaffView>,
     manager_loading: bool,
 
-    // Undo
-    undo_stack: UndoStack,
-    writes: WriteTracker,
+    // Audit reports and current-session chronological Undo authority.
+    change_history: ChangeHistory,
+    history_ui: crate::ui::edit_history::HistoryUi,
     write_error: Option<String>,
     policy_ui: crate::ui::club_policy::PolicyUi,
 
     // Status
     status_msg: Option<(String, Instant)>,
     entity_counts: Option<EntityCounts>,
-    show_history: bool,
 
     // User preferences
     settings: AppSettings,
@@ -208,6 +209,10 @@ impl FmEditorApp {
         cc.egui_ctx.set_zoom_factor(settings.scale.zoom_factor());
         egui_extras::install_image_loaders(&cc.egui_ctx);
 
+        Self::from_settings(settings)
+    }
+
+    fn from_settings(settings: AppSettings) -> Self {
         Self {
             active_page: Page::HumanManager,
             bridge: ProcessBridge::new(),
@@ -244,13 +249,12 @@ impl FmEditorApp {
             club_tab: club_panel::ClubTab::Overview,
             manager_view: None,
             manager_loading: false,
-            undo_stack: UndoStack::new(),
-            writes: WriteTracker::new(),
+            change_history: ChangeHistory::new(),
+            history_ui: Default::default(),
             write_error: None,
             policy_ui: Default::default(),
             status_msg: None,
             entity_counts: None,
-            show_history: false,
             settings,
             pending_scale_resize: None,
             #[cfg(debug_assertions)]
@@ -287,7 +291,7 @@ impl FmEditorApp {
     /// Wipe all entity state on disconnect / save-unload transitions.
     /// Does NOT touch the entity cache — call `clear_cache()` separately
     /// when stale data must be discarded (e.g. save unloaded).
-    fn clear_entity_state(&mut self) {
+    fn clear_entity_state(&mut self, reason: &str) {
         self.entity_counts = None;
         self.selected_player = None;
         self.selected_staff = None;
@@ -301,11 +305,44 @@ impl FmEditorApp {
         self.club_snapshots.clear();
         self.player_snapshots.clear();
         self.staff_snapshots.clear();
-        self.undo_stack.clear();
+        self.change_history.end_session(reason);
         self.policy_ui.reset();
         self.player_comparison.clear();
-        self.writes.clear();
         self.write_error = None;
+    }
+
+    fn handle_game_closed(&mut self) {
+        self.game_date = None;
+        // Ping has already detached the worker. FIFO results mean every write
+        // still pending here was queued after Ping and cannot have been attempted.
+        // Disable refreshes before completing refusals against retained snapshots.
+        if let ConnState::Ready(pid) = self.conn {
+            self.conn = ConnState::ReadOnly(pid);
+        }
+        let mut pending = self.change_history.pending_ids();
+        pending.sort_unstable_by(|a, b| b.cmp(a));
+        let queued = pending.len();
+        for id in pending {
+            self.complete_write(
+                id,
+                false,
+                Some("Game closed; queued command refused before any write was attempted".into()),
+                Some(false),
+            );
+        }
+        self.change_history
+            .end_session("Game closed; Undo addresses invalidated");
+        self.policy_ui.reset();
+        if queued > 0 {
+            self.write_error = Some(format!(
+                "Game closed: {queued} queued write part(s) refused before writing. Unconfirmed UI edits were restored; review Change history for confirmed parts."
+            ));
+        }
+        self.set_status(if queued > 0 {
+            format!("Game not running — browse only; {queued} queued write part(s) refused")
+        } else {
+            "Game not running — browse only".into()
+        });
     }
 
     /// Drop the entity cache — called when a save is unloaded or a new one
@@ -323,7 +360,7 @@ impl FmEditorApp {
             match result {
                 BridgeResult::Connected(pid, counts, game_date) => {
                     self.game_date = game_date;
-                    self.clear_entity_state();
+                    self.clear_entity_state("Save ready: previous editing context closed");
                     self.clear_cache();
                     self.conn = ConnState::Ready(pid);
                     let cache_total = counts.players + counts.staff + counts.clubs;
@@ -338,7 +375,7 @@ impl FmEditorApp {
                 BridgeResult::Attached(pid, build, game_date) => {
                     self.game_date = game_date;
                     self.conn = ConnState::WaitingForSave(pid);
-                    self.clear_entity_state();
+                    self.clear_entity_state("Reconnected or attached to a process/build");
                     self.clear_cache();
                     self.attached_build = Some(build);
                     self.game_choices.clear();
@@ -361,19 +398,11 @@ impl FmEditorApp {
                 BridgeResult::SaveUnloaded(pid) => {
                     self.game_date = None;
                     self.conn = ConnState::WaitingForSave(pid);
-                    self.clear_entity_state();
+                    self.clear_entity_state("Save unloaded or replaced");
                     self.clear_cache();
                     self.set_status("Save unloaded \u{2014} waiting for next save".into());
                 }
-                BridgeResult::GameClosed => {
-                    self.game_date = None;
-                    // Game exited while save was loaded — enter read-only.
-                    // Cache is preserved; entity_counts stays for the header.
-                    if let ConnState::Ready(pid) = self.conn {
-                        self.conn = ConnState::ReadOnly(pid);
-                    }
-                    self.set_status("Game not running \u{2014} browse only".into());
-                }
+                BridgeResult::GameClosed => self.handle_game_closed(),
                 BridgeResult::CacheProgress { done, total } => {
                     self.cache_load_state = CacheLoadState::Loading { done, total };
                 }
@@ -398,7 +427,7 @@ impl FmEditorApp {
                 BridgeResult::PingFail => {
                     self.game_date = None;
                     self.conn = ConnState::Disconnected;
-                    self.clear_entity_state();
+                    self.clear_entity_state("Connection lost");
                     self.clear_cache();
                     self.attached_build = None;
                     self.set_status("Disconnected".into());
@@ -603,6 +632,38 @@ impl FmEditorApp {
         }
     }
 
+    fn undo_unavailable_reason(&self) -> Option<String> {
+        match self.conn {
+            ConnState::Ready(_) => self.change_history.undo_reason(),
+            ConnState::WaitingForSave(_) => Some("Wait for a loaded save before undoing.".into()),
+            ConnState::ReadOnly(_) => {
+                Some("The game is closed. Old-session Undo cannot be reused.".into())
+            }
+            ConnState::Disconnected => {
+                Some("Connect to a game and load a save before undoing.".into())
+            }
+        }
+    }
+
+    fn open_edit_history_entity(&mut self, target: EntityRef) -> bool {
+        let entry = self.entity_cache.as_ref().and_then(|cache| {
+            self.conn
+                .is_ready()
+                .then(|| history_navigation_target(cache, self.attached_build, &target))
+                .flatten()
+        });
+        if let Some(entry) = entry {
+            self.activate_history_entry(entry.clone());
+            self.push_history(entry);
+            true
+        } else {
+            self.set_status(
+                "History target no longer matches the loaded save; no navigation performed.".into(),
+            );
+            false
+        }
+    }
+
     fn complete_write(
         &mut self,
         id: u64,
@@ -610,11 +671,13 @@ impl FmEditorApp {
         error: Option<String>,
         write_attempted: Option<bool>,
     ) {
-        let Some(completion) = self.writes.complete(id, success) else {
+        let Some(completion) =
+            self.change_history
+                .complete(id, success, error.clone(), write_attempted)
+        else {
             return;
         };
-        let policy_write = completion.entry.policy_guard.is_some();
-        if policy_write {
+        if completion.entry.policy_guard.is_some() {
             self.policy_ui.finished(
                 success,
                 error.as_deref(),
@@ -622,8 +685,6 @@ impl FmEditorApp {
                 write_attempted,
             );
         }
-        // Keep the edited player's list membership fresh even if the user
-        // navigated to another entity while this acknowledgement was pending.
         let list_players: std::collections::BTreeSet<_> = if completion.success
             && self.conn.is_ready()
         {
@@ -643,48 +704,63 @@ impl FmEditorApp {
             if let Some(warning) = &error {
                 self.write_error = Some(warning.clone());
             }
-            if completion.was_undo {
-                self.set_status(format!("Undone: {}", completion.entry.description));
-            } else {
-                self.undo_stack.push(completion.entry);
-            }
         } else {
-            let message = if policy_write && write_attempted == Some(false) {
+            let operation = if completion.was_undo {
+                "Undo"
+            } else {
+                "Change"
+            };
+            self.write_error = Some(if write_attempted == Some(false) {
                 format!(
-                    "Policy change refused before writing: {}. No memory write was attempted. The original Undo entry is retained after a refused Undo. Reload the untouched test backup before starting a new trial.",
-                    error.as_deref().unwrap_or("Unknown validation error")
-                )
-            } else if policy_write {
-                format!(
-                    "Policy write not confirmed: {}. No success is claimed. Displayed data will be refreshed; memory may already have changed. Inspect readback before retrying. The untouched backup is the recovery path.",
-                    error.as_deref().unwrap_or("Unknown error")
+                    "{operation} refused before writing: {}. No memory write was attempted for this part. Review Change history for any other parts that completed.",
+                    error.as_deref().unwrap_or("Validation failed")
                 )
             } else {
                 format!(
-                    "Write failed: {}. The unsuccessful change was not added to Undo; displayed bytes have been restored.",
-                    error.as_deref().unwrap_or("Unknown error")
+                    "{operation} unconfirmed: {}. Memory may already have changed. Inspect readback before retrying; only confirmed changes are eligible for Undo.",
+                    error.as_deref().unwrap_or("No acknowledgement of success")
                 )
-            };
-            self.write_error = Some(message);
-            if completion.was_undo {
-                self.undo_stack.push(completion.entry);
+            });
+        }
+        if completion.action_finished {
+            if let Some(message) = self
+                .change_history
+                .report(completion.action_id)
+                .map(|r| format!("{}: {} — {}", r.status.label(), r.entity.name, r.label))
+            {
+                self.set_status(message);
             }
         }
         for (addr, index) in list_players {
-            // The ordinary final-ack reload below already refreshes the active
-            // player. All other owners get an identity-bound background reload.
-            if self.writes.is_pending() || !self.is_active_entity(EntityTabType::Player, addr) {
+            if self.change_history.is_pending()
+                || !self.is_active_entity(EntityTabType::Player, addr)
+            {
                 self.bridge.send(BridgeCmd::LoadPlayer(addr, index));
             }
         }
-        if !self.writes.is_pending() {
+        if !self.change_history.is_pending() && self.conn.is_ready() {
             if let Some(tab_idx) = self.active_tab {
                 self.reload_tab(tab_idx);
-            } else if self.active_page == Page::HumanManager && self.conn.is_ready() {
+            } else if self.active_page == Page::HumanManager {
                 self.bridge.send(BridgeCmd::LoadHumanManager);
                 self.manager_loading = true;
             }
         }
+    }
+
+    fn rollback_unsubmitted_edits(&mut self, actions: Vec<ActionDraft>) {
+        // Widgets can touch the same bytes more than once within a frame.
+        // Reverse submission order restores the original, not an intermediate value.
+        for change in actions
+            .into_iter()
+            .flat_map(|a| a.changes)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+        {
+            self.reconcile_write_buffers(&change.entry, false, false);
+        }
+        self.write_error = Some("Changes were not submitted: wait for a writable connection and a loaded, identity-bound profile.".into());
     }
 
     fn restore_tab_snapshot(&mut self, tab_idx: usize) -> bool {
@@ -837,6 +913,8 @@ impl eframe::App for FmEditorApp {
         let mut undo_requested = !ctx.wants_keyboard_input()
             && ctx.input(|i| i.modifiers.ctrl && i.key_pressed(egui::Key::Z));
         let mut edits: Vec<field_widget::FieldEdit> = Vec::new();
+        let mut edit_entity: Option<EntityRef> = None;
+        let mut history_open_entity: Option<EntityRef> = None;
         let mut policy_action = None;
         let mut load_tab: Option<usize> = None;
         let mut clicked_player: Option<usize> = None;
@@ -942,7 +1020,10 @@ impl eframe::App for FmEditorApp {
         // without conflicting with the &mut self borrow the closures hold.
         let cache_arc = self.entity_cache.clone();
         navigation::publish_cache(ctx, cache_arc.clone());
-        navigation::set_editing_enabled(ctx, self.conn.is_writable() && !self.writes.is_pending());
+        navigation::set_editing_enabled(
+            ctx,
+            self.conn.is_writable() && !self.change_history.is_pending(),
+        );
         let wage_period = self.settings.wage_period;
         let face_pack_path = self.settings.face_pack_path.clone();
         let schemas = self.attached_build.map(GameBuild::schemas);
@@ -1244,7 +1325,7 @@ impl eframe::App for FmEditorApp {
         // ===== Central Panel =====
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| {
-                if self.writes.is_pending() {
+                if self.change_history.is_pending() {
                     ui.spinner();
                     ui.label("Applying changes to game memory…");
                 } else if self.conn.is_writable() {
@@ -1253,18 +1334,17 @@ impl eframe::App for FmEditorApp {
                     ui.label("Read-only — editing is disabled until a game and save are connected.");
                 }
                 ui.separator();
-                let undo_label = format!("Undo ({})", self.undo_stack.len());
-                let undo_hint = self.undo_stack.last()
-                    .map(|e| format!("Undo: {}", e.description))
-                    .unwrap_or_else(|| "No confirmed edits to undo".to_string());
-                if ui.add_enabled(
-                    self.conn.is_writable() && !self.writes.is_pending() && !self.undo_stack.is_empty(),
-                    egui::Button::new(undo_label),
-                ).on_hover_text(undo_hint).clicked() {
+                let undo_label = format!("Undo ({})", self.change_history.undo_len());
+                let undo_reason = self.undo_unavailable_reason();
+                let undo_hint = undo_reason.clone().unwrap_or_else(|| {
+                    format!("Undo latest: {}. Current bytes will be checked before writing.", self.change_history.undo_label().unwrap_or_default())
+                });
+                if ui.add_enabled(undo_reason.is_none(), egui::Button::new(undo_label))
+                    .on_hover_text(&undo_hint).on_disabled_hover_text(&undo_hint).clicked() {
                     undo_requested = true;
                 }
                 if ui.button("Change history").clicked() {
-                    self.show_history = !self.show_history;
+                    self.history_ui.open = !self.history_ui.open;
                 }
                 self.player_comparison.toolbar(ui);
             });
@@ -1435,10 +1515,11 @@ impl eframe::App for FmEditorApp {
                             EntityTabType::Player => {
                                 if let Some(p) = self.selected_player.as_mut().filter(|p| p.addr == tab_addr) {
                                     let addr = p.addr;
+                                    edit_entity = Some(history_player_entity(p));
                                     // Capture confirmed displayed data before any editable widgets run.
                                     self.player_comparison.controls(
                                         ui, p, self.game_date,
-                                        !self.writes.is_pending() && edits.is_empty(),
+                                        !self.change_history.is_pending() && edits.is_empty(),
                                     );
                                     let e = player_panel::show(
                                         schemas, self.game_date, ui, p, &mut self.player_tab, addr,
@@ -1451,6 +1532,7 @@ impl eframe::App for FmEditorApp {
                             }
                             EntityTabType::Staff => {
                                 if let Some(s) = self.selected_staff.as_mut().filter(|s| s.record.addr == tab_addr) {
+                                    edit_entity = Some(history_staff_entity(s, false));
                                     let e = staff_panel::show(schemas, self.game_date, ui, s, &mut self.staff_tab, &mut self.names);
                                     edits.extend(e);
                                 } else {
@@ -1459,9 +1541,10 @@ impl eframe::App for FmEditorApp {
                             }
                             EntityTabType::Club => {
                                 if let Some(c) = self.selected_club.as_mut().filter(|c| c.addr == tab_addr) {
+                                    edit_entity = self.attached_build.map(|build| history_club_entity(c, build));
                                     let (e,action) = club_panel::show(schemas,ui,c,&mut self.club_tab,&mut self.policy_ui,
                                         self.attached_build.is_some_and(|b|b.version()==crate::game_version::GameVersion::Fm27),
-                                        self.conn.is_writable() && !self.writes.is_pending() && edits.is_empty());
+                                        self.conn.is_writable() && !self.change_history.is_pending() && edits.is_empty());
                                     edits.extend(e);policy_action=action;
                                 } else {
                                     ui.label("Club details unavailable. Reload while the game is connected.");
@@ -1514,6 +1597,7 @@ impl eframe::App for FmEditorApp {
                             if self.manager_loading {
                                 ui.spinner();
                             } else if let Some(ref mut mgr) = self.manager_view {
+                                edit_entity = Some(history_staff_entity(mgr, true));
                                 let e = staff_panel::show_manager(schemas, self.game_date, ui, mgr, &mut self.names);
                                 if self.conn.is_writable() {
                                     edits.extend(e);
@@ -1529,19 +1613,27 @@ impl eframe::App for FmEditorApp {
 
         self.player_comparison.show(ctx);
 
-        // ===== Edit History window =====
-        if self.show_history {
-            egui::Window::new("Edit History")
-                .open(&mut self.show_history)
-                .show(ctx, |ui| {
-                    if self.undo_stack.is_empty() {
-                        ui.label("No edits yet.");
-                    } else {
-                        for entry in self.undo_stack.entries().iter().rev() {
-                            ui.label(&entry.description);
-                        }
-                    }
-                });
+        // Reports cannot write: only latest-action Undo and identity-checked navigation.
+        let undo_reason = self.undo_unavailable_reason();
+        let undo_label = self.change_history.undo_label();
+        let history_action = self.history_ui.show(
+            ctx,
+            self.change_history.reports(),
+            crate::ui::edit_history::HistoryUiContext {
+                current_session: self.change_history.session_id(),
+                current_entity: edit_entity.as_ref(),
+                undo_label: undo_label.as_deref(),
+                undo_reason: undo_reason.as_deref(),
+                navigation_enabled: self.conn.is_ready()
+                    && self.cache_load_state == CacheLoadState::Ready,
+            },
+        );
+        match history_action {
+            Some(crate::ui::edit_history::HistoryAction::UndoLatest) => undo_requested = true,
+            Some(crate::ui::edit_history::HistoryAction::OpenEntity(target)) => {
+                history_open_entity = Some(target)
+            }
+            None => {}
         }
 
         // ===== Advanced Search modal =====
@@ -1581,7 +1673,7 @@ impl eframe::App for FmEditorApp {
         // A write becomes undoable only after the worker confirms success.
         if let Some(action) = policy_action
             && self.conn.is_writable()
-            && !self.writes.is_pending()
+            && !self.change_history.is_pending()
             && edits.is_empty()
         {
             match action {
@@ -1593,42 +1685,80 @@ impl eframe::App for FmEditorApp {
                     identity,
                 }),
                 crate::ui::club_policy::Action::Apply(entry) => {
-                    for cmd in self.writes.submit(vec![entry]) {
-                        self.bridge.send(cmd);
+                    if let (Some(guard), Some(build)) =
+                        (entry.policy_guard.as_ref(), self.attached_build)
+                    {
+                        let identity = guard.identity();
+                        let name = self
+                            .entity_cache
+                            .as_ref()
+                            .and_then(|cache| {
+                                cache.clubs.iter().find(|c| {
+                                    c.addr == identity.address
+                                        && c.uid == identity.uid
+                                        && c.index == identity.index
+                                })
+                            })
+                            .map(|c| c.name.clone())
+                            .unwrap_or_else(|| format!("Club UID {}", identity.uid));
+                        let entity = EntityRef {
+                            kind: EntityKind::Club,
+                            build,
+                            address: identity.address,
+                            index: identity.index,
+                            uid: Some(identity.uid),
+                            name,
+                        };
+                        let presentation = EditPresentation::new(
+                            "Part Time offer policy",
+                            "Non-Contract offers only",
+                            "Part Time and Non-Contract offers",
+                        );
+                        let action = ActionDraft {
+                            label: presentation.field.clone(),
+                            before: presentation.before.clone(),
+                            after: presentation.after.clone(),
+                            changes: vec![ChangeDraft {
+                                entry,
+                                presentation,
+                            }],
+                        };
+                        for cmd in self.change_history.submit(entity, vec![action]) {
+                            self.bridge.send(cmd);
+                        }
+                    } else {
+                        let message = "Policy change refused: attachment or club identity is unavailable; no write was attempted.";
+                        self.policy_ui
+                            .finished(false, Some(message), false, Some(false));
+                        self.write_error = Some(message.into());
                     }
                 }
             }
         }
-        if undo_requested
-            && edits.is_empty()
-            && self.conn.is_writable()
-            && !self.writes.is_pending()
-        {
-            if let Some(entry) = self.undo_stack.pop() {
-                let cmd = self.writes.submit_undo(entry);
-                self.bridge.send(cmd);
+        if undo_requested && edits.is_empty() && self.undo_unavailable_reason().is_none() {
+            match self.change_history.undo_latest() {
+                Ok(commands) => {
+                    for cmd in commands {
+                        self.bridge.send(cmd);
+                    }
+                }
+                Err(reason) => self.write_error = Some(reason),
             }
         }
-        if self.conn.is_writable() && !self.writes.is_pending() && !edits.is_empty() {
-            let entity_name = self
-                .active_tab
-                .and_then(|i| self.open_tabs.get(i))
-                .map(|t| t.display_name.as_str())
-                .or_else(|| self.manager_view.as_ref().and_then(|m| m.name.as_deref()))
-                .unwrap_or("Entity");
-            let entries = edits
-                .into_iter()
-                .map(|edit| UndoEntry {
-                    description: format!("{entity_name}: {}", edit.description),
-                    addr: edit.addr,
-                    old_raw: edit.old_raw,
-                    new_raw: edit.new_raw,
-                    timestamp: Instant::now(),
-                    policy_guard: None,
-                })
-                .collect();
-            for cmd in self.writes.submit(entries) {
-                self.bridge.send(cmd);
+        if !edits.is_empty() {
+            let actions = history_actions(edits);
+            if self.conn.is_writable() && !self.change_history.is_pending() && edit_entity.is_some()
+            {
+                for cmd in self
+                    .change_history
+                    .submit(edit_entity.take().unwrap(), actions)
+                {
+                    self.bridge.send(cmd);
+                }
+            } else {
+                // Never leave unsubmitted optimistic bytes editable or send an
+                // identity-less edit to whichever tab is now active.
+                self.rollback_unsubmitted_edits(actions);
             }
         }
 
@@ -1642,6 +1772,11 @@ impl eframe::App for FmEditorApp {
             self.bridge.send(BridgeCmd::LoadEntityCache);
         }
 
+        if let Some(target) = history_open_entity {
+            if self.open_edit_history_entity(target) {
+                nav_page_clicked = false;
+            }
+        }
         if nav_page_clicked {
             self.active_tab = None;
             self.loading_entity = false;
@@ -2075,5 +2210,544 @@ mod title_tests {
             );
         }
         assert_eq!(editor_title(None, Some("preview")), "FM Editor [preview]");
+    }
+}
+
+fn history_player_entity(player: &PlayerRecord) -> EntityRef {
+    EntityRef {
+        kind: EntityKind::Player,
+        build: player.build,
+        address: player.addr,
+        index: player.index,
+        uid: player.field_u32("p_uid").filter(|id| *id != 0),
+        name: player
+            .name
+            .clone()
+            .unwrap_or_else(|| "Unknown player".into()),
+    }
+}
+
+fn history_staff_entity(staff: &StaffView, manager: bool) -> EntityRef {
+    EntityRef {
+        kind: if manager || staff.record.identity_shift != 0 {
+            EntityKind::HumanManager
+        } else {
+            EntityKind::Staff
+        },
+        build: staff.record.build,
+        address: staff.record.addr,
+        index: staff.record.index,
+        uid: staff.record.field_u32("s_id").filter(|id| *id != 0),
+        name: staff
+            .name
+            .clone()
+            .unwrap_or_else(|| "Unknown staff member".into()),
+    }
+}
+
+fn history_club_entity(club: &ClubView, build: GameBuild) -> EntityRef {
+    EntityRef {
+        kind: EntityKind::Club,
+        build,
+        address: club.addr,
+        index: club.index,
+        uid: (club.uid != 0).then_some(club.uid),
+        name: club.full_name.clone(),
+    }
+}
+
+/// A descriptive report address is never sufficient navigation authority.
+fn history_navigation_target(
+    cache: &EntityCache,
+    build: Option<GameBuild>,
+    target: &EntityRef,
+) -> Option<HistoryEntry> {
+    if build != Some(target.build) || !crate::player::is_valid_ptr(target.address) {
+        return None;
+    }
+    let uid = target.uid.filter(|id| *id != 0)?;
+    let (entity_type, name) =
+        match target.kind {
+            EntityKind::Player => {
+                let p = cache.players.iter().find(|p| {
+                    p.addr == target.address && p.index == target.index && p.uid == uid
+                })?;
+                (EntityTabType::Player, p.name.clone())
+            }
+            EntityKind::Staff | EntityKind::HumanManager => {
+                let s = cache.staff.iter().find(|s| {
+                    s.addr == target.address && s.index == target.index && s.uid == uid
+                })?;
+                (EntityTabType::Staff, s.name.clone())
+            }
+            EntityKind::Club => {
+                let c = cache.clubs.iter().find(|c| {
+                    c.addr == target.address && c.index == target.index && c.uid == uid
+                })?;
+                (EntityTabType::Club, c.name.clone())
+            }
+        };
+    Some(HistoryEntry {
+        entity_type,
+        addr: target.address,
+        index: target.index,
+        display_name: name,
+    })
+}
+
+fn history_raw_value(bytes: &[u8]) -> String {
+    let value = bytes
+        .iter()
+        .take(32)
+        .map(|b| format!("{b:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!(
+        "Raw bytes: {value}{}",
+        if bytes.len() > 32 { " …" } else { "" }
+    )
+}
+
+/// Only source-tagged parts share an action. Two unrelated controls committed
+/// in one frame remain separate chronological actions.
+fn history_actions(edits: Vec<field_widget::FieldEdit>) -> Vec<ActionDraft> {
+    let mut actions: Vec<ActionDraft> = Vec::new();
+    let mut groups: HashMap<(String, String, String, String), usize> = HashMap::new();
+    for edit in edits {
+        let field_widget::FieldEdit {
+            addr,
+            old_raw,
+            new_raw,
+            description,
+            presentation,
+        } = edit;
+        let presentation = presentation.unwrap_or_else(|| {
+            EditPresentation::new(
+                description.clone(),
+                history_raw_value(&old_raw),
+                history_raw_value(&new_raw),
+            )
+        });
+        let index = if let Some(group) = &presentation.group {
+            let key = (
+                group.key.clone(),
+                group.label.clone(),
+                group.before.clone(),
+                group.after.clone(),
+            );
+            if let Some(index) = groups.get(&key) {
+                *index
+            } else {
+                let index = actions.len();
+                actions.push(ActionDraft {
+                    label: group.label.clone(),
+                    before: group.before.clone(),
+                    after: group.after.clone(),
+                    changes: Vec::new(),
+                });
+                groups.insert(key, index);
+                index
+            }
+        } else {
+            let index = actions.len();
+            actions.push(ActionDraft {
+                label: presentation.field.clone(),
+                before: presentation.before.clone(),
+                after: presentation.after.clone(),
+                changes: Vec::new(),
+            });
+            index
+        };
+        actions[index].changes.push(ChangeDraft {
+            entry: UndoEntry {
+                description,
+                addr,
+                old_raw,
+                new_raw,
+                timestamp: Instant::now(),
+                policy_guard: None,
+            },
+            presentation,
+        });
+    }
+    actions
+}
+
+#[cfg(test)]
+mod edit_history_integration_tests {
+    use super::*;
+    use crate::edit_history::{ActionStatus, EditGroup};
+
+    fn test_app(bytes: &[u8]) -> FmEditorApp {
+        // No eframe context, disk preferences, attach, reads or writes to a game.
+        let mut app = FmEditorApp::from_settings(AppSettings::default());
+        app.auto_connect = false;
+        app.active_page = Page::ClubSearch;
+        app.conn = ConnState::Ready(123);
+        app.attached_build = Some(GameBuild::Fm27Steam);
+        let club = ClubView {
+            addr: 0x20000,
+            index: 7,
+            raw: bytes.to_vec(),
+            uid: 42,
+            full_name: "Club".into(),
+            short_name: "Club".into(),
+            info_raw: None,
+            info_addr: None,
+            finance_raw: None,
+            finance_addr: None,
+            stadium_raw: None,
+            senior_team_raw: None,
+            senior_team_addr: None,
+            budget_raw: None,
+            budget_addr: None,
+            nickname: None,
+            stadium_entity_raw: None,
+            stadium_name: None,
+            stadium_name2: None,
+            nation: None,
+        };
+        app.club_snapshots.insert(club.addr, club.clone());
+        app.selected_club = Some(club);
+        app
+    }
+
+    fn club_identity() -> EntityRef {
+        EntityRef {
+            kind: EntityKind::Club,
+            build: GameBuild::Fm27Steam,
+            address: 0x20000,
+            index: 7,
+            uid: Some(42),
+            name: "Club".into(),
+        }
+    }
+
+    fn submit_edits(app: &mut FmEditorApp, edits: Vec<field_widget::FieldEdit>) -> Vec<u64> {
+        app.change_history
+            .submit(club_identity(), history_actions(edits))
+            .into_iter()
+            .map(|cmd| match cmd {
+                BridgeCmd::WriteBytes { id, .. } => id,
+                _ => panic!("expected write command"),
+            })
+            .collect()
+    }
+
+    fn assert_club_bytes(app: &FmEditorApp, expected: &[u8]) {
+        assert_eq!(app.selected_club.as_ref().unwrap().raw, expected);
+        assert_eq!(app.club_snapshots[&0x20000].raw, expected);
+    }
+
+    #[test]
+    fn game_closed_restores_queued_scalar_and_ignores_late_acks_across_sessions() {
+        use crate::edit_history::AttemptOutcome;
+        let mut app = test_app(&[15]);
+        let id = submit_edits(&mut app, vec![change(0x20000, "Scalar", None)])[0];
+        app.handle_game_closed();
+        assert!(matches!(app.conn, ConnState::ReadOnly(123)));
+        assert_club_bytes(&app, &[12]);
+        assert!(!app.manager_loading);
+        assert!(!app.loading_entity);
+        assert!(!app.change_history.is_pending());
+        assert_eq!(app.change_history.undo_len(), 0);
+        let report = &app.change_history.reports()[0];
+        assert_eq!(report.status, ActionStatus::Refused);
+        assert_eq!(
+            report.changes[0].attempts[0].outcome,
+            AttemptOutcome::Refused
+        );
+        assert!(report.session_closed.is_some());
+        assert!(app.write_error.as_ref().unwrap().contains("queued"));
+        let summary = app.status_msg.as_ref().unwrap().0.clone();
+        app.complete_write(id, false, Some("No process".into()), Some(false));
+        app.complete_write(id, true, None, None);
+        assert_club_bytes(&app, &[12]);
+        assert_eq!(app.status_msg.as_ref().unwrap().0, summary);
+        // A new session may use the same object address, but never the old ID.
+        app.conn = ConnState::Ready(456);
+        let next = submit_edits(&mut app, vec![change(0x20000, "Next", None)])[0];
+        assert!(next > id);
+        app.complete_write(id, true, None, None);
+        assert!(app.change_history.is_pending());
+        assert_eq!(
+            app.change_history.reports()[0].status,
+            ActionStatus::Refused
+        );
+        assert_club_bytes(&app, &[12]);
+    }
+
+    #[test]
+    fn game_closed_preserves_confirmed_part_of_mixed_group() {
+        use crate::edit_history::AttemptOutcome;
+        let mut app = test_app(&[15, 15]);
+        let group = EditGroup::new("group", "Both", 12, 15);
+        let ids = submit_edits(
+            &mut app,
+            vec![
+                change(0x20000, "First", Some(group.clone())),
+                change(0x20001, "Second", Some(group)),
+            ],
+        );
+        app.complete_write(ids[0], true, None, None);
+        app.handle_game_closed();
+        assert_club_bytes(&app, &[15, 12]);
+        let report = &app.change_history.reports()[0];
+        assert_eq!(report.status, ActionStatus::PartiallyApplied);
+        assert_eq!(
+            report.changes[0].attempts[0].outcome,
+            AttemptOutcome::Confirmed
+        );
+        assert_eq!(
+            report.changes[1].attempts[0].outcome,
+            AttemptOutcome::Refused
+        );
+        assert!(report.session_closed.is_some());
+        assert_eq!(app.change_history.undo_len(), 0);
+    }
+
+    #[test]
+    fn game_closed_refuses_pending_undo_without_rolling_back_confirmed_display() {
+        use crate::edit_history::{AttemptOutcome, Operation};
+        let mut app = test_app(&[15]);
+        let id = submit_edits(&mut app, vec![change(0x20000, "Scalar", None)])[0];
+        app.complete_write(id, true, None, None);
+        assert_eq!(app.change_history.undo_len(), 1);
+        let commands = app.change_history.undo_latest().unwrap();
+        let BridgeCmd::WriteBytes { id: undo_id, .. } = commands[0] else {
+            panic!()
+        };
+        app.handle_game_closed();
+        assert_club_bytes(&app, &[15]);
+        let report = &app.change_history.reports()[0];
+        assert_eq!(report.status, ActionStatus::UndoRefused);
+        let attempt = report.changes[0].attempts.last().unwrap();
+        assert_eq!(attempt.operation, Operation::Undo);
+        assert_eq!(attempt.outcome, AttemptOutcome::Refused);
+        assert!(report.session_closed.is_some());
+        assert_eq!(app.change_history.undo_len(), 0);
+        app.complete_write(undo_id, true, None, None);
+        assert_club_bytes(&app, &[15]);
+        assert_eq!(
+            app.change_history.reports()[0].status,
+            ActionStatus::UndoRefused
+        );
+    }
+
+    #[test]
+    fn game_closed_rolls_back_overlapping_queued_edits_in_reverse_id_order() {
+        let mut app = test_app(&[18]);
+        let first = change(0x20000, "First", None);
+        let mut second = change(0x20000, "Second", None);
+        second.old_raw = vec![15];
+        second.new_raw = vec![18];
+        submit_edits(&mut app, vec![first, second]);
+        app.handle_game_closed();
+        assert_club_bytes(&app, &[12]);
+        assert!(
+            app.change_history
+                .reports()
+                .iter()
+                .all(|r| r.status == ActionStatus::Refused)
+        );
+    }
+
+    #[test]
+    fn generic_session_clear_keeps_unknown_audit_and_discards_selected_snapshots() {
+        use crate::edit_history::AttemptOutcome;
+        for reason in [
+            "Save unloaded or replaced",
+            "Reconnected or attached to a process/build",
+            "Lost connection",
+        ] {
+            let mut app = test_app(&[15]);
+            let id = submit_edits(&mut app, vec![change(0x20000, "Scalar", None)])[0];
+            app.clear_entity_state(reason);
+            assert!(app.selected_club.is_none());
+            assert!(app.selected_player.is_none());
+            assert!(app.selected_staff.is_none());
+            assert!(app.club_snapshots.is_empty());
+            assert!(app.player_snapshots.is_empty());
+            assert!(app.staff_snapshots.is_empty());
+            assert_eq!(app.change_history.undo_len(), 0);
+            assert!(!app.change_history.is_pending());
+            let report = &app.change_history.reports()[0];
+            assert_eq!(report.status, ActionStatus::Unconfirmed);
+            assert_eq!(
+                report.changes[0].attempts[0].outcome,
+                AttemptOutcome::Interrupted
+            );
+            assert_eq!(report.session_closed.as_deref(), Some(reason));
+            app.complete_write(id, false, Some("No process".into()), Some(false));
+            assert_eq!(
+                app.change_history.reports()[0].changes[0].attempts[0].outcome,
+                AttemptOutcome::Interrupted
+            );
+        }
+    }
+
+    #[test]
+    fn unsubmitted_optimistic_edits_restore_original_bytes_without_audit_or_authority() {
+        let mut app = test_app(&[18]);
+        let first = change(0x20000, "First", None);
+        let mut second = change(0x20000, "Second", None);
+        second.old_raw = vec![15];
+        second.new_raw = vec![18];
+        app.rollback_unsubmitted_edits(history_actions(vec![first, second]));
+        assert_club_bytes(&app, &[12]);
+        assert!(app.change_history.reports().is_empty());
+        assert!(!app.change_history.is_pending());
+        assert_eq!(app.change_history.undo_len(), 0);
+        assert!(app.write_error.as_ref().unwrap().contains("not submitted"));
+    }
+
+    fn change(addr: u64, field: &str, group: Option<EditGroup>) -> field_widget::FieldEdit {
+        field_widget::FieldEdit {
+            addr,
+            old_raw: vec![12],
+            new_raw: vec![15],
+            description: field.into(),
+            presentation: Some(EditPresentation {
+                field: field.into(),
+                before: "12".into(),
+                after: "15".into(),
+                group,
+            }),
+        }
+    }
+
+    #[test]
+    fn explicit_groups_are_one_action_but_unrelated_controls_are_not_frame_grouped() {
+        let group = EditGroup::new("facility:123:youth", "Youth recruitment", 12, 15);
+        let actions = history_actions(vec![
+            change(0x20000, "Primary", Some(group.clone())),
+            change(0x30000, "Mirror", Some(group)),
+            change(0x40000, "Passing", None),
+            change(0x50000, "Finishing", None),
+        ]);
+        assert_eq!(actions.len(), 3);
+        assert_eq!(actions[0].changes.len(), 2);
+        assert_eq!(actions[0].label, "Youth recruitment");
+        assert_eq!(actions[1].label, "Passing");
+        assert_eq!(actions[2].label, "Finishing");
+        let mut history = ChangeHistory::new();
+        let entity = EntityRef {
+            kind: EntityKind::Club,
+            build: GameBuild::Fm27Steam,
+            address: 0x20000,
+            index: 0,
+            uid: Some(42),
+            name: "Club".into(),
+        };
+        let commands = history.submit(entity, actions);
+        for command in commands {
+            let BridgeCmd::WriteBytes { id, .. } = command else {
+                panic!()
+            };
+            history.complete(id, true, None, None).unwrap();
+        }
+        assert_eq!(history.undo_len(), 3);
+        assert_eq!(history.reports()[0].status, ActionStatus::Applied);
+        // Undo the two independent controls first, then both facility copies.
+        for expected_parts in [1, 1, 2] {
+            let commands = history.undo_latest().unwrap();
+            assert_eq!(commands.len(), expected_parts);
+            for command in commands {
+                let BridgeCmd::WriteBytes { id, .. } = command else {
+                    panic!()
+                };
+                history.complete(id, true, None, None).unwrap();
+            }
+        }
+        assert_eq!(history.undo_len(), 0);
+        assert_eq!(history.reports().len(), 3);
+        assert!(
+            history
+                .reports()
+                .iter()
+                .all(|r| r.status == ActionStatus::Undone)
+        );
+    }
+
+    #[test]
+    fn unformatted_fallback_is_labelled_raw_and_inconsistent_group_summaries_do_not_merge() {
+        let mut raw = change(0x20000, "Custom", None);
+        raw.presentation = None;
+        let first = EditGroup::new("same key", "Date", "1 Jan 2026", "2 Jan 2026");
+        let other = EditGroup::new("same key", "Date", "2 Jan 2026", "3 Jan 2026");
+        let actions = history_actions(vec![
+            raw,
+            change(0x30000, "Day", Some(first)),
+            change(0x30002, "Year", Some(other)),
+        ]);
+        assert_eq!(actions.len(), 3);
+        assert_eq!(actions[0].before, "Raw bytes: 0C");
+        assert_eq!(actions[0].after, "Raw bytes: 0F");
+    }
+
+    #[test]
+    fn history_navigation_requires_current_build_and_exact_cached_object_identity() {
+        let cache = Arc::new(EntityCache {
+            players: vec![],
+            staff: vec![],
+            my_clubs: None,
+            clubs: vec![CachedClub {
+                addr: 0x20000,
+                index: 7,
+                uid: 42,
+                name: "Current name".into(),
+                full_name: "Full current name".into(),
+                gender: 0,
+                transfer_budget: None,
+                nation_id: None,
+                status: None,
+                reputation: None,
+            }],
+            club_names: HashMap::new(),
+        });
+        let target = EntityRef {
+            kind: EntityKind::Club,
+            build: GameBuild::Fm27Steam,
+            address: 0x20000,
+            index: 7,
+            uid: Some(42),
+            name: "Old name".into(),
+        };
+        let resolved = history_navigation_target(&cache, Some(target.build), &target).unwrap();
+        assert_eq!(resolved.display_name, "Current name");
+        let mut app = test_app(&[12]);
+        app.entity_cache = Some(cache.clone());
+        for state in [
+            ConnState::ReadOnly(123),
+            ConnState::WaitingForSave(123),
+            ConnState::Disconnected,
+        ] {
+            app.conn = state;
+            assert!(!app.open_edit_history_entity(target.clone()));
+            assert!(app.open_tabs.is_empty());
+            assert!(app.active_tab.is_none());
+            assert!(!app.loading_entity);
+            assert_club_bytes(&app, &[12]);
+        }
+        let wrong = EntityRef {
+            address: target.address + 8,
+            ..target.clone()
+        };
+        assert!(history_navigation_target(&cache, Some(target.build), &wrong).is_none());
+        assert!(history_navigation_target(&cache, Some(GameBuild::Fm26Steam), &target).is_none());
+        for (uid, index, kind) in [
+            (Some(43), 7, EntityKind::Club),
+            (None, 7, EntityKind::Club),
+            (Some(42), 8, EntityKind::Club),
+            (Some(42), 7, EntityKind::Player),
+        ] {
+            let wrong = EntityRef {
+                uid,
+                index,
+                kind,
+                ..target.clone()
+            };
+            assert!(history_navigation_target(&cache, Some(target.build), &wrong).is_none());
+        }
     }
 }

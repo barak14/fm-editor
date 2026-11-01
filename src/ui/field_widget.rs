@@ -1,9 +1,10 @@
 //! Aligned profile field rows with colored numeric editors and attribute grids.
 
+use crate::edit_history::{EditGroup, EditPresentation};
 use eframe::egui;
 
 use crate::fields::{Category, Encoding, Entity, Field};
-use crate::settings::{Theme, theme_data_id};
+use crate::settings::{theme_data_id, Theme};
 
 use super::navigation;
 
@@ -38,6 +39,7 @@ pub struct FieldEdit {
     pub old_raw: Vec<u8>,
     pub new_raw: Vec<u8>,
     pub description: String,
+    pub presentation: Option<crate::edit_history::EditPresentation>,
 }
 
 /// Foreground text colour for a 1-20 attribute value, tuned for readability
@@ -175,6 +177,7 @@ pub fn attr_edit(
                 old_raw: vec![old_raw_byte],
                 new_raw: vec![new_raw_byte],
                 description: format!("{}: {} \u{2192} {}", field.label, displayed, new_displayed),
+                presentation: Some(EditPresentation::new(field.label, displayed, new_displayed)),
             });
         }
     }
@@ -267,6 +270,7 @@ fn attr_cell_compact_inner(
                 old_raw: vec![old_raw_byte],
                 new_raw: vec![new_raw_byte],
                 description: format!("{}: {} \u{2192} {}", field.label, displayed, new_displayed),
+                presentation: Some(EditPresentation::new(field.label, displayed, new_displayed)),
             });
         }
     }
@@ -402,6 +406,7 @@ pub fn raw_u8_edit(
                 old_raw: vec![old],
                 new_raw: vec![new_val],
                 description: format!("{}: {} \u{2192} {}", label, old, new_val),
+                presentation: Some(EditPresentation::new(label, old, new_val)),
             });
         }
     }
@@ -456,6 +461,7 @@ pub fn raw_u16_edit(
                 old_raw: old_bytes.to_vec(),
                 new_raw: new_bytes.to_vec(),
                 description: format!("{}: {} \u{2192} {}", label, old_val, new_val),
+                presentation: Some(EditPresentation::new(label, old_val, new_val)),
             });
         }
     }
@@ -507,6 +513,11 @@ pub fn raw_u32_edit(
                 old_raw: old_bytes.to_vec(),
                 new_raw: new_bytes.to_vec(),
                 description: format!("{}: {} \u{2192} {}", label, old_val, new_val),
+                presentation: Some(EditPresentation::new(
+                    label,
+                    money_value(label, old_val),
+                    money_value(label, new_val),
+                )),
             });
         }
     }
@@ -565,6 +576,11 @@ pub fn ca_pa_edit(
                         old_raw: vec![old_ca],
                         new_raw: vec![new_val],
                         description: format!("CA: {} \u{2192} {}", old_ca, new_val),
+                        presentation: Some(EditPresentation::new(
+                            "Current Ability",
+                            old_ca,
+                            new_val,
+                        )),
                     });
                 }
             }
@@ -596,6 +612,11 @@ pub fn ca_pa_edit(
                         old_raw: vec![old_pa],
                         new_raw: vec![new_val],
                         description: format!("PA: {} \u{2192} {}", old_pa, new_val),
+                        presentation: Some(EditPresentation::new(
+                            "Potential Ability",
+                            old_pa,
+                            new_val,
+                        )),
                     });
                 }
             }
@@ -975,9 +996,11 @@ fn date_edit_inner(
     if changed {
         let new_year = yr.clamp(min_year, max_year) as u16;
         let new_doy = day_month_to_doy(new_year, day.clamp(1, 31), month.clamp(1, 12));
+        let (new_day, new_month) = doy_to_day_month(new_year, new_doy);
 
         let new_doy_bytes = replace_doy(doy_word, new_doy).to_le_bytes();
         let new_year_bytes = new_year.to_le_bytes();
+        let group = date_group(label, entity_addr, doy_offset, year, doy, new_year, new_doy);
 
         if new_doy_bytes != old_doy_bytes {
             raw[doy_offset] = new_doy_bytes[0];
@@ -988,7 +1011,15 @@ fn date_edit_inner(
                 new_raw: new_doy_bytes.to_vec(),
                 description: format!(
                     "{label} day: {}/{} \u{2192} {}/{}",
-                    orig_day, orig_month, day, month
+                    orig_day, orig_month, new_day, new_month
+                ),
+                presentation: Some(
+                    EditPresentation::new(
+                        format!("{label} day"),
+                        format!("{orig_day}/{orig_month}"),
+                        format!("{new_day}/{new_month}"),
+                    )
+                    .in_group(group.clone()),
                 ),
             });
         }
@@ -1000,6 +1031,10 @@ fn date_edit_inner(
                 old_raw: old_year_bytes.to_vec(),
                 new_raw: new_year_bytes.to_vec(),
                 description: format!("{label} year: {} \u{2192} {}", orig_year, yr),
+                presentation: Some(
+                    EditPresentation::new(format!("{label} year"), orig_year, new_year)
+                        .in_group(group),
+                ),
             });
         }
     }
@@ -1050,6 +1085,7 @@ pub fn choice_u8_edit(
         old_raw: vec![old],
         new_raw: vec![new],
         description: format!("{label}: {old_name} \u{2192} {new_name}"),
+        presentation: Some(EditPresentation::new(label, old_name, new_name)),
     })
 }
 
@@ -1114,6 +1150,7 @@ pub fn optional_u8_edit(
         old_raw: vec![old],
         new_raw: vec![new],
         description: format!("{label}: {} \u{2192} {}", show(old), show(new)),
+        presentation: Some(EditPresentation::new(label, show(old), show(new))),
     })
 }
 
@@ -1197,7 +1234,51 @@ pub fn money_edit_at(
         old_raw: old.to_le_bytes().to_vec(),
         new_raw: new.to_le_bytes().to_vec(),
         description: format!("{label}: {} \u{2192} {}", show(old), show(new)),
+        presentation: Some(EditPresentation::new(
+            label,
+            optional_money_value(label, old, allow_unset),
+            optional_money_value(label, new, allow_unset),
+        )),
     })
+}
+
+/// Memory money values are GBP, irrespective of the display currency/period.
+pub(super) fn money_value(label: &str, value: impl std::fmt::Display) -> String {
+    let unit = if label.to_ascii_lowercase().contains("wage") || label.contains("(p/w)") {
+        "GBP/week"
+    } else {
+        "GBP"
+    };
+    format!("{value} {unit}")
+}
+
+fn optional_money_value(label: &str, value: i32, allow_unset: bool) -> String {
+    if value == -1 && allow_unset {
+        "Not set".into()
+    } else {
+        money_value(label, value)
+    }
+}
+
+fn date_group(
+    label: &str,
+    address: u64,
+    offset: usize,
+    year: u16,
+    doy: u16,
+    new_year: u16,
+    new_doy: u16,
+) -> EditGroup {
+    let show = |year, doy| {
+        let (day, month) = doy_to_day_month(year, doy);
+        format!("{day:02}/{month:02}/{year}")
+    };
+    EditGroup::new(
+        format!("date:{address:x}:{offset}"),
+        label,
+        show(year, doy),
+        show(new_year, new_doy),
+    )
 }
 
 fn doy_to_day_month(year: u16, doy: u16) -> (i32, i32) {
@@ -1262,6 +1343,153 @@ pub fn info_label_wrapped(ui: &mut egui::Ui, label: &str, value: impl std::fmt::
 
 #[cfg(test)]
 mod tests {
+    fn metadata_frame(
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+        mut render: impl FnMut(&mut egui::Ui) -> Option<FieldEdit>,
+    ) -> (egui::FullOutput, Option<FieldEdit>) {
+        let mut edit = None;
+        let output = ctx.run(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    edit = render(ui);
+                });
+            },
+        );
+        (output, edit)
+    }
+
+    #[test]
+    fn choice_metadata_uses_option_labels_not_codes() {
+        let ctx = egui::Context::default();
+        navigation::set_editing_enabled(&ctx, true);
+        let mut raw = [1];
+        let field = field(Encoding::Direct, 0);
+        let mut render = |ui: &mut egui::Ui| {
+            choice_u8_edit(
+                ui,
+                "Status",
+                &mut raw,
+                &field,
+                0x20000,
+                &[(1, "First Team"), (2, "Backup")],
+            )
+        };
+        let (output, edit) = metadata_frame(&ctx, vec![], &mut render);
+        assert!(edit.is_none());
+        let (_, edit) = metadata_frame(&ctx, click_text(&output, "First Team"), &mut render);
+        assert!(edit.is_none());
+        let (output, _) = metadata_frame(&ctx, vec![], &mut render);
+        let (_, edit) = metadata_frame(&ctx, click_text(&output, "Backup"), &mut render);
+        let edit = edit.unwrap();
+        assert_eq!(edit.old_raw, [1]);
+        assert_eq!(edit.new_raw, [2]);
+        assert_eq!(
+            edit.presentation.unwrap(),
+            EditPresentation::new("Status", "First Team", "Backup")
+        );
+    }
+
+    #[test]
+    fn money_commit_metadata_keeps_unset_and_gbp_values() {
+        for (label, old, allow_unset, text, expected) in [
+            ("Asking Price", -1, true, "250", "250 GBP"),
+            ("Asking Price", 250, true, "Not set", "Not set"),
+            ("Wage", 120, false, "200", "200 GBP/week"),
+        ] {
+            let ctx = egui::Context::default();
+            navigation::set_editing_enabled(&ctx, true);
+            let mut render =
+                |ui: &mut egui::Ui| money_edit_at(ui, label, old, 0x20000, allow_unset);
+            let (output, edit) = metadata_frame(&ctx, vec![], &mut render);
+            assert!(edit.is_none());
+            let displayed = if old == -1 {
+                "Not set".into()
+            } else {
+                format!("£{old}")
+            };
+            for events in [
+                click_text(&output, &displayed),
+                vec![egui::Event::Text(text.into())],
+            ] {
+                assert!(metadata_frame(&ctx, events, &mut render).1.is_none());
+            }
+            let (_, edit) = metadata_frame(&ctx, compact_enter(), &mut render);
+            let edit = edit.expect("money commit");
+            let presentation = edit.presentation.unwrap();
+            assert_eq!(
+                presentation.before,
+                optional_money_value(label, old, allow_unset)
+            );
+            assert_eq!(presentation.after, expected);
+            assert!(presentation.group.is_none());
+        }
+    }
+
+    #[test]
+    fn money_metadata_uses_stored_units_and_preserves_signed_and_unset_values() {
+        assert_eq!(money_value("Weekly Wage", 12000), "12000 GBP/week");
+        assert_eq!(money_value("Wage Budget (p/w)", 50000), "50000 GBP/week");
+        assert_eq!(money_value("Balance", -250), "-250 GBP");
+        assert_eq!(optional_money_value("Asking Price", -1, true), "Not set");
+        assert_eq!(optional_money_value("Value", -1, false), "-1 GBP");
+        assert_eq!(optional_money_value("Value", 0, true), "0 GBP");
+    }
+
+    #[test]
+    fn one_calendar_selection_groups_day_and_year_with_full_dates() {
+        let ctx = egui::Context::default();
+        navigation::set_editing_enabled(&ctx, true);
+        let mut raw = [1, 0x1A, 208, 7]; // flags | 1 Jan 2000
+        let original = raw;
+        let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
+        date_frame(&ctx, &mut raw, 100, true, click_text(&output, "Calendar"));
+        ctx.data_mut(|d| {
+            d.insert_temp(
+                calendar_id(100, 0),
+                CalendarDraft {
+                    year: 2001,
+                    month: 2,
+                    year_text: "2001".into(),
+                },
+            )
+        });
+        let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
+        let (_, edits) = date_frame(&ctx, &mut raw, 100, true, click_text(&output, "2"));
+        assert_eq!(edits.len(), 2);
+        assert_eq!(edits[0].old_raw, original[..2]);
+        assert_eq!(edits[0].new_raw, (0x1A00u16 | 33).to_le_bytes());
+        assert_eq!(edits[1].old_raw, original[2..]);
+        assert_eq!(edits[1].new_raw, 2001u16.to_le_bytes());
+        let day = edits[0].presentation.as_ref().unwrap();
+        let year = edits[1].presentation.as_ref().unwrap();
+        assert_eq!(day.group, year.group);
+        let group = day.group.as_ref().unwrap();
+        assert_eq!(group.before, "01/01/2000");
+        assert_eq!(group.after, "02/02/2001");
+        assert_eq!(year.before, "2000");
+        assert_eq!(year.after, "2001");
+        assert_ne!(
+            group.key,
+            date_group("Other", 200, 0, 2000, 1, 2001, 33).key
+        );
+    }
+
+    #[test]
+    fn unrelated_presentations_have_no_implicit_group() {
+        for field in [
+            "Current Ability",
+            "Potential Ability",
+            "Transfer listed",
+            "Loan listed",
+        ] {
+            assert!(EditPresentation::new(field, 1, 2).group.is_none());
+        }
+    }
     #[test]
     fn calendar_math_and_range_boundaries() {
         for (year, february) in [(1900, 28), (2000, 29), (2024, 29), (2100, 28)] {
@@ -1344,6 +1572,44 @@ mod tests {
     }
 
     #[test]
+    fn typed_february_day_metadata_matches_clamped_bytes() {
+        for (year, last_day) in [(2023u16, 28), (2024u16, 29)] {
+            let ctx = egui::Context::default();
+            navigation::set_editing_enabled(&ctx, true);
+            let old_word = 0x1A00u16 | day_month_to_doy(year, 27, 2);
+            let new_word = 0x1A00u16 | day_month_to_doy(year, last_day, 2);
+            let mut raw = [0; 4];
+            raw[..2].copy_from_slice(&old_word.to_le_bytes());
+            raw[2..].copy_from_slice(&year.to_le_bytes());
+            let (output, edits) = date_frame(&ctx, &mut raw, 0x20000, true, vec![]);
+            assert!(edits.is_empty());
+            for events in [
+                click_text(&output, "27"),
+                vec![egui::Event::Text("31".into())],
+            ] {
+                let (_, edits) = date_frame(&ctx, &mut raw, 0x20000, true, events);
+                assert!(edits.is_empty());
+                assert_eq!(&raw[..2], &old_word.to_le_bytes());
+            }
+            let (_, edits) = date_frame(&ctx, &mut raw, 0x20000, true, compact_enter());
+            assert_eq!(edits.len(), 1);
+            let edit = &edits[0];
+            assert_eq!(edit.addr, 0x20000);
+            assert_eq!(edit.old_raw, old_word.to_le_bytes());
+            assert_eq!(edit.new_raw, new_word.to_le_bytes());
+            assert_eq!(&raw[..2], &new_word.to_le_bytes());
+            assert_eq!(&raw[2..], &year.to_le_bytes());
+            assert_eq!(edit.description, format!("DOB day: 27/2 → {last_day}/2"));
+            let presentation = edit.presentation.as_ref().unwrap();
+            assert_eq!(presentation.before, "27/2");
+            assert_eq!(presentation.after, format!("{last_day}/2"));
+            let group = presentation.group.as_ref().unwrap();
+            assert_eq!(group.before, format!("27/02/{year}"));
+            assert_eq!(group.after, format!("{last_day}/02/{year}"));
+        }
+    }
+
+    #[test]
     fn calendar_browsing_cancel_and_selection_use_existing_edits() {
         let ctx = egui::Context::default();
         navigation::set_editing_enabled(&ctx, true);
@@ -1366,11 +1632,9 @@ mod tests {
         let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
         date_frame(&ctx, &mut raw, 100, true, click_text(&output, "Calendar"));
         let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
-        assert!(
-            text_shapes(&output.shapes)
-                .iter()
-                .any(|s| s.galley.text() == "[1]")
-        );
+        assert!(text_shapes(&output.shapes)
+            .iter()
+            .any(|s| s.galley.text() == "[1]"));
         let (_, edits) = date_frame(&ctx, &mut raw, 100, true, click_text(&output, "2"));
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].addr, 100);
@@ -1403,10 +1667,9 @@ mod tests {
             let (_, edits) = date_frame(&ctx, &mut raw, 200, ancestor, vec![]);
             assert!(edits.is_empty());
             assert_eq!(raw, original);
-            assert!(
-                ctx.data_mut(|d| d.get_temp::<CalendarDraft>(calendar_id(200, 0)))
-                    .is_none()
-            );
+            assert!(ctx
+                .data_mut(|d| d.get_temp::<CalendarDraft>(calendar_id(200, 0)))
+                .is_none());
             let (_, edits) = date_frame(&ctx, &mut raw, 100, ancestor, vec![]);
             assert!(edits.is_empty());
             if !editing || !ancestor {
@@ -1423,11 +1686,9 @@ mod tests {
             let (output, edits) = date_frame(&ctx, &mut raw, 100, true, vec![]);
             assert!(edits.is_empty());
             assert_eq!(raw, original);
-            assert!(
-                !text_shapes(&output.shapes)
-                    .iter()
-                    .any(|s| s.galley.text() == "Calendar")
-            );
+            assert!(!text_shapes(&output.shapes)
+                .iter()
+                .any(|s| s.galley.text() == "Calendar"));
         }
     }
 
@@ -1704,6 +1965,11 @@ mod tests {
                         assert_eq!(edit.new_raw, [new_byte]);
                         assert_eq!(edit.description, "Test value: 10 → 17");
                         assert_eq!(raw, [0xAA, new_byte, 0xBB]);
+                        let presentation = edit.presentation.as_ref().unwrap();
+                        assert_eq!(presentation.field, "Test value");
+                        assert_eq!(presentation.before, "10");
+                        assert_eq!(presentation.after, "17");
+                        assert!(presentation.group.is_none());
                         let (_, edit) =
                             compact_frame(&ctx, editor, &field, &mut raw, ancestor, vec![]);
                         assert!(
@@ -1785,10 +2051,14 @@ mod tests {
                         assert!(
                             raw_u32_edit(ui, &field(Encoding::RawU32, 0), &mut raw, 0).is_none()
                         );
-                        assert!(
-                            ca_pa_edit(ui, &mut raw, &attribute, &field(Encoding::Direct, 1), 0)
-                                .is_empty()
-                        );
+                        assert!(ca_pa_edit(
+                            ui,
+                            &mut raw,
+                            &attribute,
+                            &field(Encoding::Direct, 1),
+                            0
+                        )
+                        .is_empty());
                         assert!(
                             dob_edit(ui, &mut dob, &field(Encoding::DateDayYear, 0), 0).is_empty()
                         );

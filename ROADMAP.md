@@ -35,7 +35,7 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 - **Global entity search / quick switcher** — Find players, staff, clubs and, once supported, nations and stadiums from any view, with keyboard navigation.
 - **Navigation continuity** — Preserve result selection, scroll position and profile section when moving between entities; build on existing Back/Forward and retained filters.
 - **Theme refinement** — Carry existing Dark, Light and Dark Blue choices into the new visual system; preserve UI scaling and display preferences.
-- **Session change history** — Extend confirmed-write undo with a browsable history, per-field before/after values, pending-edit discard, and clear pending/applied/failed states. Do not imply history survives reconnecting to a different save.
+- **Session change history** — *Progress:* structured in-memory audit rows show entity/field identity, human before/after values, attempts, warnings and pending/applied/refused/unconfirmed/undone states. Logical date/mirror actions support chronological Undo with partial-failure reporting. Closed-session reports have no reusable Undo or navigation authority. Redo, export, and pending-edit discard with staged Apply remain future work; history is not persisted across editor restarts.
 
 ## List Views / Columns
 

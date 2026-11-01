@@ -339,7 +339,8 @@ pub(super) fn worker_loop(
                                 .map_err(|e| (e.message, Some(e.write_attempted)))
                         }
                     }
-                    Some(f) => checked_write(
+                    Some(f) => checked_write_ready(
+                        cache.is_some(),
                         addr,
                         &expected,
                         &data,
@@ -347,11 +348,8 @@ pub(super) fn worker_loop(
                         |at, bytes| f.write_bytes(at, bytes),
                     )
                     .map(|()| None)
-                    .map_err(|e| (e, None)),
-                    None => Err((
-                        "Cannot write: no process attached".to_owned(),
-                        policy_guard.as_ref().map(|_| false),
-                    )),
+                    .map_err(|e| (e.message, Some(e.write_attempted))),
+                    None => Err(("Cannot write: no process attached".to_owned(), Some(false))),
                 };
                 let response = match result {
                     Ok(warning) => BridgeResult::WriteOk { id, warning },
@@ -453,6 +451,39 @@ pub(super) fn worker_loop(
     }
 }
 
+#[derive(Debug)]
+struct CheckedWriteError {
+    message: String,
+    write_attempted: bool,
+}
+
+impl CheckedWriteError {
+    fn refused(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            write_attempted: false,
+        }
+    }
+}
+
+/// A queued command must not outlive the worker's observed save context.
+/// SaveUnloaded clears the cache before the next command is processed.
+fn checked_write_ready(
+    save_ready: bool,
+    addr: u64,
+    expected: &[u8],
+    data: &[u8],
+    read: impl FnOnce(u64, usize) -> Result<Vec<u8>, String>,
+    write: impl FnOnce(u64, &[u8]) -> Result<(), String>,
+) -> Result<(), CheckedWriteError> {
+    if !save_ready {
+        return Err(CheckedWriteError::refused(
+            "Cannot write: the save is not ready or was unloaded; load a profile again before editing",
+        ));
+    }
+    checked_write(addr, expected, data, read, write)
+}
+
 /// A best-effort compare-before-write check, not an atomic operation across
 /// processes: FM can still update memory between the read and the write.
 fn checked_write(
@@ -461,22 +492,28 @@ fn checked_write(
     data: &[u8],
     read: impl FnOnce(u64, usize) -> Result<Vec<u8>, String>,
     write: impl FnOnce(u64, &[u8]) -> Result<(), String>,
-) -> Result<(), String> {
+) -> Result<(), CheckedWriteError> {
     if expected.len() != data.len() || data.is_empty() {
-        return Err(
-            "Cannot write: expected bytes and data must have the same non-zero length".into(),
-        );
+        return Err(CheckedWriteError::refused(
+            "Cannot write: expected bytes and data must have the same non-zero length",
+        ));
     }
     let last = addr.checked_add(data.len() as u64 - 1);
     if !crate::player::is_valid_ptr(addr) || !last.is_some_and(crate::player::is_valid_ptr) {
-        return Err("Cannot write: invalid memory range; reload the player and retry".into());
+        return Err(CheckedWriteError::refused(
+            "Cannot write: invalid memory range; reload the player and retry",
+        ));
     }
     let changed = "Memory changed since it was read (FM updated it or the record moved); reload the player and retry";
-    let current = read(addr, data.len()).map_err(|error| format!("{changed}: {error}"))?;
+    let current = read(addr, data.len())
+        .map_err(|error| CheckedWriteError::refused(format!("{changed}: {error}")))?;
     if current != expected {
-        return Err(changed.into());
+        return Err(CheckedWriteError::refused(changed));
     }
-    write(addr, data)
+    write(addr, data).map_err(|message| CheckedWriteError {
+        message,
+        write_attempted: true,
+    })
 }
 
 #[cfg(test)]
@@ -590,12 +627,43 @@ mod tests {
     }
 
     #[test]
+    fn queued_write_requires_a_ready_save_before_any_memory_access() {
+        let error = checked_write_ready(
+            false,
+            0x20000,
+            &[1],
+            &[2],
+            |_, _| panic!("must not read after the save unloads"),
+            |_, _| panic!("must not write after the save unloads"),
+        )
+        .unwrap_err();
+        assert!(!error.write_attempted);
+        assert!(error.message.contains("save is not ready"));
+        let wrote = std::cell::Cell::new(false);
+        checked_write_ready(
+            true,
+            0x20000,
+            &[1],
+            &[2],
+            |_, _| Ok(vec![1]),
+            |_, bytes| {
+                assert_eq!(bytes, &[2]);
+                wrote.set(true);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(wrote.get());
+    }
+
+    #[test]
     fn checked_write_refuses_changed_unreadable_or_invalid_memory_without_writing() {
         let refuse_write = |_, _: &[u8]| -> Result<(), String> { panic!("must not write") };
         for actual in [vec![9, 2], vec![1]] {
             let error = checked_write(0x20000, &[1, 2], &[3, 4], |_, _| Ok(actual), refuse_write)
                 .unwrap_err();
-            assert!(error.contains("Memory changed since it was read"));
+            assert!(!error.write_attempted);
+            assert!(error.message.contains("Memory changed since it was read"));
         }
         let error = checked_write(
             0x20000,
@@ -605,7 +673,8 @@ mod tests {
             refuse_write,
         )
         .unwrap_err();
-        assert!(error.contains("reload the player and retry"));
+        assert!(!error.write_attempted);
+        assert!(error.message.contains("reload the player and retry"));
         for (addr, expected, data) in [
             (0x20000, vec![1], vec![3, 4]),
             (0x20000, vec![], vec![]),
@@ -613,17 +682,30 @@ mod tests {
             (0x10000, vec![1], vec![3]),
             (0x7FFF_FFFF_FFFE, vec![1, 2], vec![3, 4]),
         ] {
-            assert!(
-                checked_write(
-                    addr,
-                    &expected,
-                    &data,
-                    |_, _| panic!("must not read"),
-                    refuse_write
-                )
-                .is_err()
-            );
+            let error = checked_write(
+                addr,
+                &expected,
+                &data,
+                |_, _| panic!("must not read"),
+                refuse_write,
+            )
+            .unwrap_err();
+            assert!(!error.write_attempted);
         }
+    }
+
+    #[test]
+    fn checked_write_api_error_is_attempted() {
+        let error = checked_write(
+            0x20000,
+            &[1],
+            &[2],
+            |_, _| Ok(vec![1]),
+            |_, _| Err("write failed".into()),
+        )
+        .unwrap_err();
+        assert!(error.write_attempted);
+        assert_eq!(error.message, "write failed");
     }
 
     #[test]
@@ -648,7 +730,7 @@ mod tests {
                 write_attempted,
             } => {
                 assert_eq!(id, 42);
-                assert_eq!(write_attempted, None);
+                assert_eq!(write_attempted, Some(false));
                 assert!(error.contains("no process attached"));
             }
             _ => panic!("expected a write failure acknowledgement"),

@@ -119,11 +119,41 @@ The banner distinguishes **Editing live**, **Applying changes**, and **Read-only
 - Numeric fields can be clicked to type exact values, or dragged where supported.
 - Date rows also offer **Calendar**: browse months, type a year or use year controls, then choose a day. The current date is marked with brackets as well as styling. Browsing or cancelling does not write anything; choosing a day uses the same live editing and undo path as direct entry. Calendar controls are unavailable in read-only mode.
 - Editing is disabled while disconnected/read-only or awaiting write acknowledgements. Tabs and relationship navigation remain usable.
-- **Undo** (Ctrl+Z when not editing text) applies to confirmed writes only. Its tooltip names the next entity/field change.
-- Failed writes produce a persistent, dismissible error, restore the unsuccessful edit's local bytes, and refresh the active view when connected. Failed undo remains available to retry.
-- Undo history is cleared when the save is unloaded or replaced, or when the editor reconnects, because previous memory addresses cannot safely be reused. The editor recognises the save by its club objects' addresses, so FM adding or removing records while the game advances keeps Undo available. The status bar shows the new counts, and **Reload Save** adds the new records to search.
-- Immediately before each edit or Undo, the worker checks that memory still matches the bytes that were read. Changed or unreadable memory refuses the write with a reload/retry message; failed Undo stays available. This is a read-before-write guard, not an atomic lock on FM's memory.
+- **Undo** (Ctrl+Z when not editing text) reverses the latest logical action with confirmed changes. Its tooltip names the entity/action and explains when Undo is unavailable. Only acknowledged writes are eligible; there is no arbitrary-row Undo or force option.
+- One date-picker interaction or facility edit with a finance mirror is one action. Separate controls are not grouped just because they change in the same frame. Compound writes are not atomic: each part has its own byte guard and acknowledgement, and partial success is shown honestly.
+- Undo reverses the remaining confirmed parts of that action in reverse write order. A refused or unconfirmed Undo stays retryable; parts already restored are not written again. An initially unconfirmed write is not silently made undoable. Undo cannot reverse contracts or other gameplay consequences created by FM.
+- A refusal before writing is distinguished from an unconfirmed attempted write. Errors remain visible and the active record is refreshed. An unconfirmed write may already have changed memory; a refreshed display is not a claim that the old value was restored.
+- Executable Undo state is invalidated when the game closes, the save is unloaded/replaced, or the editor reconnects. Audit-only reports remain available in the running editor under **Include previous closed sessions**, without write or profile-navigation authority. Nothing is persisted across editor restarts.
+- The editor recognises save identity by club-object addresses. FM adding/removing records, or **Reload Save** refreshing the same save's cache, does not by itself invalidate Undo. A detected save replacement does. Before each edit or Undo, changed/unreadable bytes refuse the write; this is a read-before-write guard, not an atomic FM transaction.
+- The worker also refuses queued ordinary writes while its save context is unloaded/loading, before reading or writing bytes. An attached process alone is not permission to write.
 - Unsupported trait fields, incomplete buffers and invalid stored ticket prices are not editable. Rendering them must not clamp and write game memory without input.
+
+FM may cache its own displayed profiles: navigating away and back need not
+refresh an externally edited value or an Undo. Do not infer memory state from a
+cached FM screen. See the [FM27 history/Undo verification and cache caveat](fm27/memory-layout.md#edit-history-and-grouped-undo-verification-2026-11-01-steam).
+
+### Change history
+
+**Change history** opens a resizable audit window, separate from the Undo stack.
+Rows show submission date/time (**UTC**), entity type/name/UID, field or action,
+human-readable before/after values and a labelled status. Statuses include
+**Applying**, **Applied**, **Partially applied**, **Refused**, **Unconfirmed**,
+**Undoing**, **Undone** and incomplete/refused/unconfirmed Undo outcomes.
+Undone actions and failed attempts stay visible rather than disappearing.
+
+Search by entity, UID, field, value or message; filter by status or the currently
+opened entity, and optionally include closed sessions. Expand **Details** for
+physical changes, individual Apply/Undo attempts, acknowledgement warnings,
+failure reasons and technical byte/address information. **Open profile** is
+available only for the current session and is revalidated against exact cached
+build/type/address/index/UID identity; names alone never select a destination.
+
+**Undo latest** uses the same chronological command as the toolbar, not the row
+being viewed. Up to 100 logical actions retain Undo authority; the in-memory
+audit retains up to 500 settled reports, protecting pending operations from
+eviction. Old sessions contain reports, never reusable Undo payloads. This first
+version has no Redo, export, replay, history-delete action or staged Apply.
+Narrow windows use stacked rows instead of squeezing a wide table.
 
 Read-only sections/tabs are labelled. Player attributes use independently stacked
 category cards in four columns on wide views, or two/one on narrower views. Short
