@@ -4,8 +4,8 @@
 use crate::fields::Category::*;
 use crate::fields::Entity::Player;
 use crate::fields::{
-    date, direct, encoded, fm_string, pointer, raw, raw_u32, sub_date, sub_direct, sub_raw,
-    sub_raw_u32, Field, SubRecord, SubRecordParent,
+    date, direct, encoded, fm_string, pointer, raw, raw_u32, sub_date, sub_direct, sub_fm_string,
+    sub_raw, sub_raw_u32, Field, SubRecord, SubRecordParent,
 };
 
 /// Player sub-records loaded through the attached build's schema.
@@ -15,6 +15,13 @@ pub(crate) const PLAYER_SUB_RECORDS: &[SubRecord] = &[
     // Contains wage, squad status, contract type, start/expiry dates.
     // Discovered 2026-04-17 from a memory snapshot of Kane's player entity.
     SubRecord { id: "contract", parent: SubRecordParent::Direct, ptr_offset: 0x330, size: 0xC4 },
+    // Team the player plays for (player+0x130); the team's club is at
+    // team+0x30, the same chain as FM24/FM27. Verified 2026-11-01 (26.3.2,
+    // 2026-10 patch) against FM's profiles: Destiny Udogie -> Brighton,
+    // Ferdi Kadioglu -> Tottenham, Jere Uronen -> Atromitos (on loan from AIK),
+    // Alejo Veliz -> Rosario Central (on loan from Tottenham).
+    SubRecord { id: "team",     parent: SubRecordParent::Direct,     ptr_offset: 0x130, size: 0xB0 },
+    SubRecord { id: "club",     parent: SubRecordParent::In("team"), ptr_offset: 0x30,  size: 0xD0 },
 ];
 
 #[rustfmt::skip]
@@ -191,7 +198,7 @@ pub(crate) const FIELDS: &[Field] = &[
 
         // Other
         Field { key: "p_uid",          label: "UID",              entity: Player, category: General,     offset: raw(0x0294) },
-        Field { key: "p_current_club", label: "Current Club",     entity: Player, category: General,     offset: None },
+        Field { key: "p_current_club", label: "Current Club",     entity: Player, category: General,     offset: sub_fm_string("club", 0xC0) },
         Field { key: "p_traits",       label: "Traits (PPMs)",    entity: Player, category: Traits,      offset: raw(0x0348) }, // 64-bit bitmask, bit = PPM_ID - 1
         // FM27 listing metadata has not been mapped on FM26.
         Field { key: "p_list_flags",   label: "Listing Flags",    entity: Player, category: Contract,    offset: None },

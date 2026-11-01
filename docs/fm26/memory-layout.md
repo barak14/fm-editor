@@ -253,11 +253,31 @@ profile showed **31** and **Squad Player**. Undo restored contract+0x54 = 3 and
 Starter**. FM caches an already-opened player profile, so an edit may not show
 on a profile viewed earlier in the session until the game reloads.
 
+## Current club (players and staff)
+
+FM26 26.3.2 Steam, 2026-10 patch, the same chains as FM27. Every hop is a
+little-endian u64 pointer; the club's full name is the FmString at club+0xC0.
+
+| Entity | Chain |
+|--------|-------|
+| Player | player+0x130 → team; team+0x30 → club |
+| Staff | staff+0x1A8 → contract (contract+0x08 points back at staff+0x100); contract+0x10 → team; team+0x30 → club. The human manager uses the same offsets from base + 0x350 |
+
+Read-only verification on **2026-11-01** against FM's own profiles (throwaway
+Tottenham save, 11 Jul 2025): Destiny Udogie → Brighton, Ferdi Kadıoğlu →
+Tottenham, Jere Uronen → Atromitos (on loan from AIK) and Alejo Veliz →
+Rosario Central (on loan from Tottenham) for players; Pep Guardiola → Man City,
+Unai Emery → Aston Villa and the human manager → Tottenham for staff. Of
+193,051 staff, 115,460 have a contract whose back-pointer matches and whose
+team resolves to a club; the other 77,591 have no contract pointer and show no
+club. The editor showed "Brighton & Hove Albion" for Udogie, "Manchester City"
+for Guardiola and "Tottenham Hotspur" for the manager. Owning club (contract
+team) and My clubs stay FM27-only.
+
 ## Unmapped fields — worklist
 
 ### Player
 - **Sharpness, Fitness, Fatigue** — dynamic condition values. Need in-game values to triangulate (varies day-to-day).
-- **Current club resolved name** — accessible via player+0x130 → sub+0x00C (u32 club UID), but the club lookup isn't wired into the player UI yet.
 
 ### Staff
 - **Formation preferences (8 x u8 at +0x0DF..+0x0E6)** — stored as formation IDs (direct, ~0-64 range). Order is [Pref In, 2nd In, Def In, Att In, Pref Out, 2nd Out, Def Out, Att Out]. Confirmed ID 4 = "4-3-3 DM Wide" via Spinelli/Lisboa. Some formation variants (e.g. "4-4-2 2DM" / "4-4-2 Narrow Diamond") may share IDs — needs full formation ID table.

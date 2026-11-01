@@ -792,6 +792,42 @@ mod schema_lookup_tests {
     }
 
     #[test]
+    fn fm26_resolves_player_and_staff_clubs_through_teams() {
+        let schemas = GameBuild::Fm26Steam.schemas();
+        let find = |subs: &'static [SubRecord], id: &str| subs.iter().find(|s| s.id == id).unwrap();
+        let team = find(schemas.player_sub_records, "team");
+        assert!(matches!(team.parent, SubRecordParent::Direct));
+        assert_eq!(team.ptr_offset, 0x130);
+        let club = find(schemas.player_sub_records, "club");
+        assert!(matches!(club.parent, SubRecordParent::In("team")));
+        assert_eq!(club.ptr_offset, 0x30);
+
+        let contract = find(schemas.staff_sub_records, "contract");
+        assert!(matches!(contract.parent, SubRecordParent::Direct));
+        assert_eq!(contract.ptr_offset, 0x1A8);
+        let team = find(schemas.staff_sub_records, "team");
+        assert!(matches!(team.parent, SubRecordParent::In("contract")));
+        assert_eq!(team.ptr_offset, 0x10);
+        let club = find(schemas.staff_sub_records, "club");
+        assert!(matches!(club.parent, SubRecordParent::In("team")));
+        assert_eq!(club.ptr_offset, 0x30);
+
+        for key in ["p_current_club", "s_club"] {
+            assert!(
+                matches!(
+                    schemas.field(key).unwrap().offset,
+                    Some(FieldLocation::SubRecord {
+                        container: "club",
+                        offset: 0xC0,
+                        ..
+                    })
+                ),
+                "{key}"
+            );
+        }
+    }
+
+    #[test]
     fn int_fields_read_at_their_encoding_width() {
         // FM24 stores international caps as a u8 followed by U21 caps; FM27
         // widens caps to u16. Reading by encoding must not run into the next byte.

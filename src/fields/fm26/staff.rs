@@ -1,9 +1,23 @@
 //! Staff field definitions for FM26. Aggregated into `fields::all_fields`
 //! via `fields::fm26::STAFF_FIELDS`.
 
-use crate::fields::{date, direct, encoded, fm_string, pointer, raw, raw_capped, role_index, Field};
+use crate::fields::{date, direct, encoded, fm_string, pointer, raw, raw_capped, role_index, sub_fm_string, Field, SubRecord, SubRecordParent};
 use crate::fields::Category::*;
 use crate::fields::Entity::Staff;
+
+/// Staff sub-records, resolved from the staff base (the human manager's from
+/// base + `HUMAN_MANAGER_SHIFT`, where his identity block lives). Same chain as
+/// FM27. Verified 2026-11-01 (26.3.2, 2026-10 patch): of 193,051 staff,
+/// 115,460 have a contract at +0x1A8 whose +0x08 points back at staff+0x100 and
+/// whose team resolves to a club; the other 77,591 have no contract pointer.
+/// FM's staff profiles: Pep Guardiola -> Man City, Unai Emery -> Aston Villa;
+/// the human manager (test save) -> Tottenham.
+#[rustfmt::skip]
+pub(crate) const STAFF_SUB_RECORDS: &[SubRecord] = &[
+    SubRecord { id: "contract", parent: SubRecordParent::Direct,         ptr_offset: 0x1A8, size: 0x60 },
+    SubRecord { id: "team",     parent: SubRecordParent::In("contract"), ptr_offset: 0x10,  size: 0xB0 },
+    SubRecord { id: "club",     parent: SubRecordParent::In("team"),     ptr_offset: 0x30,  size: 0xD0 },
+];
 
 pub(crate) const FIELDS: &[Field] = &[
         // =====================================================================
@@ -74,7 +88,7 @@ pub(crate) const FIELDS: &[Field] = &[
 
         // General
         Field { key: "s_nationality",     label: "Nationality",     entity: Staff, category: General,  offset: None },
-        Field { key: "s_club",            label: "Club",            entity: Staff, category: General,  offset: None },
+        Field { key: "s_club",            label: "Club",            entity: Staff, category: General,  offset: sub_fm_string("club", 0xC0) },
         Field { key: "s_name",            label: "Name",            entity: Staff, category: General,  offset: fm_string(0x140) },
         // Name sub-record pointers — ~72% of staff have null s_name FmString;
         // their names live in these two 5×24-byte candidate blocks.

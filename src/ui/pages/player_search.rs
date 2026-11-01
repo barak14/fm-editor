@@ -993,9 +993,12 @@ mod club_filter_tests {
         assert!(state.validation_error().is_none());
         assert!(filter(GameBuild::Fm27Steam.schemas(), None, &rows, &state).is_empty());
         state.club_id = "1751".into();
-        for build in [GameBuild::Fm26Steam, GameBuild::Fm27GamePass] {
-            assert!(filter(build.schemas(), None, &rows, &state).is_empty());
-        }
+        // FM26 maps the current club (player+0x130 -> team+0x30) since 2026-11-01.
+        assert_eq!(
+            filter(GameBuild::Fm26Steam.schemas(), None, &rows, &state).len(),
+            1
+        );
+        assert!(filter(GameBuild::Fm27GamePass.schemas(), None, &rows, &state).is_empty());
     }
     #[test]
     fn inactive_manual_id_is_preserved_and_not_validated_or_counted() {

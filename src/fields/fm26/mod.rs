@@ -17,6 +17,7 @@ pub(crate) use player::FIELDS as PLAYER_FIELDS;
 pub(crate) use player::PLAYER_SUB_RECORDS;
 pub(crate) use stadium::FIELDS as STADIUM_FIELDS;
 pub(crate) use staff::FIELDS as STAFF_FIELDS;
+pub(crate) use staff::STAFF_SUB_RECORDS;
 
 use crate::fields::VersionedSchemas;
 
@@ -52,7 +53,7 @@ pub static FM26: VersionedSchemas = VersionedSchemas {
     stadium_fields: STADIUM_FIELDS,
 
     player_sub_records: PLAYER_SUB_RECORDS,
-    staff_sub_records: &[],
+    staff_sub_records: STAFF_SUB_RECORDS,
     club_sub_records: CLUB_SUB_RECORDS,
     stadium_sub_records: &[],
     player_lists: None,
