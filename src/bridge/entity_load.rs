@@ -305,7 +305,7 @@ pub fn find_human_manager(fm: &FmProcess) -> Result<u64, String> {
         .and_then(|f| f.offset)
         .map(|l| l.offset() as usize)
         .unwrap_or(0);
-    // FM27 has no mapped role-ratings pointer; skip that check there.
+    // Skip the role check when the schema leaves the pointer unmapped.
     let role_offset_std = schema
         .field("s_role_ptr")
         .and_then(|f| f.offset)

@@ -1,8 +1,8 @@
 //! Staff field definitions for FM27. Aggregated into `fields::all_fields`
 //! via `fields::fm27::STAFF_FIELDS`.
 //!
-//! UNVERIFIED: copied from the FM26 schema as the FM27 starting point.
-//! Every offset below must be re-verified against FM27 witnesses.
+//! Started as a copy of the FM26 schema. Verified FM27 coverage and
+//! witnesses are listed per field and in docs/fm27/memory-layout.md.
 
 use crate::fields::{date, direct, encoded, fm_string, pointer, raw, raw_capped, role_index, sub_date, sub_direct, sub_fm_string, sub_raw_u32, Field, SubRecord, SubRecordParent};
 use crate::fields::Category::*;
@@ -116,18 +116,38 @@ pub(crate) const FIELDS: &[Field] = &[
         // García (common "Luis Enrique"), Joaquim Silva ("Quim"), Jon Pérez
         // Alonso ("Bolo").
         Field { key: "s_name_common_sub", label: "Name Common Sub", entity: Staff, category: Internal, offset: pointer(0x160) },
+        // CA / PA (u16, 1-200) and reputations (u16, 0-10000) sit at the FM26
+        // offsets. FM27 does not display staff CA/PA, so these are checked in
+        // memory only: all 49,195 AI staff read CA and PA in 1..=200 with
+        // CA <= PA (Guardiola 190/200, Arteta 173/180, Flick 165/165).
         Field { key: "s_ca",           label: "Current Ability",  entity: Staff, category: Ability,      offset: raw_capped(0x0DA, 200) },
         Field { key: "s_pa",           label: "Potential Ability", entity: Staff, category: Ability,     offset: raw_capped(0x0DC, 200) },
         Field { key: "s_id",           label: "Staff ID",         entity: Staff, category: General,      offset: raw(0x10C) },
+        // Witnesses matching FM's profile: Guardiola 18/1/1971, Flick 5/3/1965,
+        // Cudicini 6/9/1973, Bruno (Saltor) 1/10/1980, Thorrington 17/10/1979.
         Field { key: "s_dob",          label: "Date of Birth",    entity: Staff, category: General,      offset: date(0x188) },
-        // FM26's role-ratings pointer (+0x1D0) holds an unaligned non-pointer
-        // value on FM27 (0x263009D03 for the manager); role ratings unmapped.
-        Field { key: "s_role_ptr",     label: "Role Ratings",     entity: Staff, category: General,      offset: None },
+        // Role-ratings pointer. FM27 packs the 15-byte records back to back,
+        // so most pointers are not 8-byte aligned (e.g. 0x12E44004F); that is
+        // why this read as "not a pointer" at first. 46,384 staff point at a
+        // 15-byte record with every byte in 1..=20 and 2,812 are null. The
+        // human manager's pointer is at +0x510 (0x1D0 + HUMAN_MANAGER_SHIFT).
+        Field { key: "s_role_ptr",     label: "Role Ratings",     entity: Staff, category: General,      offset: pointer(0x1D0) },
 
         // =====================================================================
         // Staff Roles (15-byte sub-record reached via s_role_ptr)
         // Each entry's offset field is the byte index (0–14), not a memory offset.
         // Rendered by `roles_column`; declaration order = FMSE display order.
+        // Same index order as FM26. Checked against the contract job code of
+        // every employed staff member (the index rated 18+ for the job):
+        // Manager 16 -> 0, Coach 2 -> 2, Physio 12 -> 3, Scout 14 -> 4,
+        // GK coach 34 -> 5, Fitness coach 26 -> 6, Set piece coach 22 -> 7,
+        // DoF 10 -> 9, Head of Youth Dev 64 -> 10, Loan manager 86 -> 11,
+        // Data analysts 58/60/62 -> 12, Sports scientists 40/48 -> 13,
+        // Technical director 88 -> 14. Index 8 is 20 for all 542 job-4
+        // staff (chairmen/board, e.g. Khaldoon Al Mubarak, Joan Laporta);
+        // it is left unlabelled as on FM26. FM's "Preferred Jobs" icons are
+        // green for roles rated 10+ and grey for 1 (Guardiola, Flick,
+        // Cudicini, Bruno, Thorrington).
         // =====================================================================
         Field { key: "s_role_manager",    label: "Manager",            entity: Staff, category: StaffRole, offset: role_index(0) },
         Field { key: "s_role_asst_mgr",   label: "Asst Manager",       entity: Staff, category: StaffRole, offset: role_index(1) },
@@ -144,7 +164,11 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "s_role_sports_sci", label: "Sports Scientist",   entity: Staff, category: StaffRole, offset: role_index(13) },
         Field { key: "s_role_tech_dir",   label: "Technical Director", entity: Staff, category: StaffRole, offset: role_index(14) },
 
-        // Reputation (person-base embedded block, matching player layout)
+        // Reputation (person-base embedded block, matching player layout).
+        // FM shows one word, not numbers; it ranks with world/home rep:
+        // Bruno 5500/1250 and Thorrington 5750/2250 "Obscure", Cudicini
+        // 6520/3260 "Local", Flick 8300/8100 "Continental", Guardiola
+        // 9500/9500 "Global". Band edges are not known.
         Field { key: "s_home_rep",     label: "Home Rep",         entity: Staff, category: Reputation,   offset: raw_capped(0x0D4, 10000) },
         Field { key: "s_current_rep",  label: "Current Rep",      entity: Staff, category: Reputation,   offset: raw_capped(0x0D6, 10000) },
         Field { key: "s_world_rep",    label: "World Rep",        entity: Staff, category: Reputation,   offset: raw_capped(0x0D8, 10000) },
@@ -171,7 +195,8 @@ pub(crate) const FIELDS: &[Field] = &[
 /// Witness: the test save's human manager (staff id 2002106549) has
 /// id at +0x44C/+0x450, name FmString at +0x480, personality at +0x4B0 and
 /// DOB at +0x4C8; at 0x350 the same slots hold zeros and garbage. The role
-/// sub-record pointer (+0x1D0 + shift) is not verified.
+/// sub-record pointer is at +0x510 (0x1D0 + shift): André Webster's reads
+/// Manager 20.
 pub const HUMAN_MANAGER_SHIFT: usize = 0x340;
 
 /// Staff field offset ranges that live at `offset + HUMAN_MANAGER_SHIFT` on

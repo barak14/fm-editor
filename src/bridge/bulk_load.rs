@@ -85,7 +85,7 @@ pub(super) fn load_entity_cache(
         .ok_or("s_dob no offset")?
         .offset()
         + 2;
-    // Optional: FM27 has no mapped role-ratings pointer.
+    // Optional: a schema may leave the role-ratings pointer unmapped.
     let s_role_ptr_off = schemas.offset_of("s_role_ptr");
 
     // Club offsets

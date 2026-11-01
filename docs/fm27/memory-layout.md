@@ -231,8 +231,8 @@ out any human-manager-class entry with an empty DOB
 (`staff::is_account_placeholder`).
 
 At +0x350 the same slots read zeros and unrelated data. The role sub-record
-pointer (0x1D0 + shift) is unverified: it reads an unaligned value
-(0x263009D03), as does a normal staff member's 0x1D0.
+pointer is at +0x510 (0x1D0 + shift); see "Staff identity, ability and role
+ratings" below.
 
 ### Stadium (home stadium via club → senior team → +0x78)
 
@@ -348,8 +348,72 @@ player base + 0x288, staff base + 0x100.
 | Place of birth | +0x180 → +0x18 | San Sebastián / Heidelberg / Tolosa |
 | Attributes | all 23 staff attribute offsets match FM27€0's | |
 
-The human-manager validator no longer requires the role-ratings pointer when
-the schema leaves it unmapped (FM27).
+The human-manager validator skips the role-ratings check when a schema leaves
+the pointer unmapped. FM27 maps it again (see below), so the check applies.
+
+### Staff identity, ability and role ratings (2026-11-01, Steam, Spurs save)
+
+Read-only pass on the Spurs test save at Mon 13 Jul 2026 (staff array 49,197).
+Memory was read through `/proc/<pid>/mem`; FM's profiles were viewed on the
+headless display. Code: `fields::fm27::staff`.
+
+| Field | Location | Witnesses |
+|-------|----------|-----------|
+| DOB | +0x188 (day-of-year u16, year u16) | FM profile dates match memory for Guardiola 18/1/1971 (day 18), Flick 5/3/1965 (64), Cudicini 6/9/1973 (249), Bruno Saltor 1/10/1980 (275, leap year), Thorrington 17/10/1979 (290). Andrew Crofts 29/5/1984 (150) matches his real DOB. |
+| CA / PA | u16 +0xDA / +0xDC | FM27 does not display staff CA/PA, so these are checked in memory only. All 49,195 AI staff read 1..=200 with CA <= PA; Guardiola 190/200, Arteta 173/180, Slot 164/175, Flick 165/165, Cudicini 110/149. |
+| Reputation | u16 +0xD4 home / +0xD6 current / +0xD8 world | FM shows one word, which ranks with the values: Bruno (5500/5500/1250) and Thorrington (5750/5750/2250) "Obscure", Cudicini (6520/6520/3260) "Local", Flick (8300/8300/8100) "Continental", Guardiola (9500/9500/9500) "Global". Band edges are unknown. |
+| Role-ratings pointer | +0x1D0 → 15 × u8 (1–20) | See below. |
+
+**Role-ratings pointer.** The earlier "unaligned, so not a pointer" reading
+was wrong: FM27 packs the 15-byte role records back to back, so most pointers
+are not 8-byte aligned. Consecutive staff point 15 bytes apart (René Henriksen
+0x12E44004F, the next staff member 0x12E44005E). Of 49,197 staff, 46,384 point
+at a record whose 15 bytes are all 1..=20; 2,812 are null. The remaining one is
+the human manager, whose slot at +0x1D0 holds other data. His pointer is at
++0x510 (0x1D0 + 0x340) and reads Manager 20. The Steam-account placeholder has
+one too.
+
+The byte order is the same as on FM26. For every employed staff member, the
+index rated 18 or more was tallied against the contract job code (contract
++0x26):
+
+| Job code (FM27 title) | Staff | Index rated 18+ |
+|------|------:|------|
+| 16 Manager | 4,542 | 0 Manager (3,377) |
+| 20 Assistant Manager | 1,794 | 1 Asst Manager / 2 Coach |
+| 2 Coach | 2,700 | 2 Coach (2,267) |
+| 12 Physio | 2,514 | 3 Physio (all) |
+| 14 Scout | 1,864 | 4 Scout (all) |
+| 34 GK Coach | 1,874 | 5 GK Coach (all) |
+| 26 Fitness Coach | 1,960 | 6 Fitness Coach (all) |
+| 22 Set Piece Coach | 60 | 7 Set Piece Coach (58) |
+| 4 (chairman/board) | 542 | 8 (all) |
+| 10 Director of Football | 653 | 9 DoF (all) |
+| 64 Head of Youth Development | 625 | 10 HoYD (all) |
+| 86 Loan Manager | 93 | 11 Loan Manager (all) |
+| 58 / 60 / 62 analysts | 437 / 1,539 / 288 | 12 Data Analyst (all) |
+| 40 / 48 sports science | 282 / 764 | 13 Sports Scientist (all) |
+| 88 Technical Director | 371 | 14 Technical Director (all) |
+
+Index 8 is 20 for every job-4 staff member (Khaldoon Al Mubarak at Man City,
+Joan Laporta as Barcelona's president, code 70) and for Spurs' Peter
+Charrington. Guardiola reads 15 there. The editor leaves it unlabelled as
+on FM26.
+
+FM's profile "Preferred Jobs" list is a separate field: it can leave out
+highly rated roles (Thorrington's Coach 20, Cudicini's Scout 20). Its icon
+colour does follow these ratings. Roles rated 10 or more are green, and roles
+rated 1 are grey:
+
+| Staff | Memory (idx: value) | FM Preferred Jobs |
+|-------|---------------------|-------------------|
+| Guardiola | 0:20 1:12 2:12 | Manager, Assistant Manager, Coach all green |
+| Flick | 0:20 1:1 2:1 9:15 | Manager green; Assistant Manager, Coach grey |
+| Cudicini | 0:13 1:10 2:20 4:20 5:17 9:10, rest 1 | Coach, GK Coach, Asst Manager green; Loan Manager, HoYD, Fitness, Set Piece grey |
+| Bruno | 0:10 1:20 2:20 6:12, rest 1 | Asst Manager, Coach, Fitness Coach green; Loan Manager, HoYD, GK Coach, Set Piece grey |
+| Thorrington | 2:20 4:18 9:20, rest ≤13 | DoF, Scout green; TD, HoYD, analyst roles grey |
+
+Ratings stay read-only in the editor (`staff_panel`: "Roles (read-only)").
 
 **Club** (Arsenal / Spurs / Man City / Liverpool):
 
@@ -376,8 +440,8 @@ is unverified). Editing Youth Coaching or Youth Recruitment also writes
 the finance copy (two undo entries).
 
 Not decoded: sponsorship deals (club+0x130 vector did not parse), morale /
-condition / sharpness / injuries (FM27€0 also leaves these read-only), staff
-role ratings, cup prize money.
+condition / sharpness / injuries (FM27€0 also leaves these read-only), cup
+prize money.
 
 ### Player appearance
 
@@ -549,8 +613,8 @@ Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
 
 - `p_name2` block-2 names: removed on FM27 (see above).
 - Reputation is memory-checked only; FM shows reputation as words
-  ("Worldwide", "Continental"), not numbers.
-- Staff role sub-record pointer (0x1D0).
+  ("Worldwide", "Continental", "Obscure"), not numbers. Band edges are unknown.
+- Staff CA/PA: FM27 never shows them, so they are memory-checked only.
 - Stadium array root (`rva_stadium_base`) and stride.
 - Asking price (+0x238) for a listed player (see the player table).
 

@@ -80,7 +80,7 @@ The current UI groups the sidebar, separates connection controls, places Undo/hi
 ## Human Managers & Staff
 
 - **Human-manager actions** — Unsackable status, registration outside normal windows, manager stats and relationships, and moves to another club or a national team. Expose only operations whose effects and undo can be verified.
-- **Staff profile coverage** — Extend current attributes, CA/PA, reputation, personal information and contracts with coaching licences, roles, scouting knowledge, tendencies, preferred formations and relationships; handle player/staff hybrid records explicitly.
+- **Staff profile coverage** — Extend current attributes, CA/PA, reputation, personal information and contracts with coaching licences, roles, scouting knowledge, tendencies, preferred formations and relationships; handle player/staff hybrid records explicitly. *Progress:* FM27 Steam shows staff role ratings again (read-only; pointer +0x1D0 checked against every employed staff member's job and FM's Preferred Jobs icons) and has DOB checked against FM profiles; staff CA/PA and reputation are memory-checked only, because FM27 shows no staff CA/PA and only reputation words. FM's separate Preferred Jobs list is unmapped.
 
 ## Club Data
 
