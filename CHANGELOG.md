@@ -9,11 +9,16 @@
 - FM24 Steam: staff **Judge Staff**, **Data Analysis** and **Sports Science** are now mapped and editable, verified on Jedinak, Guardiola and Ryan Mason.
 - FM24 Steam: clubs show read-only **Wage Spend** (FM's "Currently spending", p/w) and **Next Min Budget** (next season's minimum guaranteed transfer budget).
 - Add read-only two-player comparison: **Select for compare** on one profile, then **Compare with selected** on another. Named columns stay visible while scrolling, with coloured attributes, grouped sections and available age, CA/PA, wage and expiry context. Snapshots clear on save reload/reconnection. No season-statistics mappings or memory writes are added.
+- FM27 Steam: staff **Role ratings** are shown again (read-only), checked against every employed staff member's job and FM's Preferred Jobs icons.
+- FM27 Steam: staff profiles show **Languages**, **Coaching Licence** and preferred in/out-of-possession **Formations** (read-only); player profiles show **Languages**, in FM's order and level words.
+- FM27 Steam: edit player and staff **first, last and common names** by picking an existing name from a search (names are shared records; the editor re-points the person and never changes a name's text). Verified in game, through Undo, and across Save As and reload.
+- FM27 Steam: player **Asking Price** read and write verified in game (-1 = Unspecified).
 
 ### Fixes
 
 - FM24 Steam: the club **Transfer Budget** now reads and writes the value FM's finance screen shows (finance+0x7CC). The budget-record copy used before is not what FM displays, so edits to it did not show in game.
 - Make player profile layouts use available space: independently stacked attribute cards reduce gaps and scrolling; **Positions & Traits** sizes the pitch to the profile viewport and places traits beside it on wide views, with readable stacked layouts on narrow screens. Keep the existing schema-backed numeric editing and Undo behaviour.
+- FM27 Steam: favoured-club reasons read the right byte. **As a player** / **As a supporter** were wrong for some clubs (Mbappé's R. Madrid, Litmanen's Ajax).
 
 ## 0.3.0 (prerelease)
 
