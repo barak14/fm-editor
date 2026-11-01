@@ -976,18 +976,18 @@ mod player_schema_tests {
     fn fm24_and_fm26_leave_new_player_paths_unmapped() {
         for schemas in [&fm24::FM24, &fm26::FM26] {
             assert!(schemas.player_lists.is_none());
-            assert!(schemas.morale_labels.is_empty());
-            assert_eq!(schemas.morale_label(10), "Level 10");
             assert_eq!(schemas.rva_current_date, 0);
             for key in ["p_list_date", "p_list_flags", "p_list_code"] {
                 assert!(schemas.field(key).unwrap().offset.is_none(), "{key}");
                 assert_eq!(schemas.offset_of(key), None);
             }
         }
+        assert!(fm26::FM26.morale_labels.is_empty());
+        assert_eq!(fm26::FM26.morale_label(10), "Level 10");
     }
 
     #[test]
-    fn fm24_maps_live_witnessed_weight_traits_and_transfer_budget() {
+    fn fm24_maps_live_witnessed_fields() {
         let schemas = &fm24::FM24;
         assert_eq!(schemas.offset_of("p_weight"), Some(0x14C));
         assert_eq!(schemas.offset_of("p_traits"), Some(0x368));
@@ -999,8 +999,19 @@ mod player_schema_tests {
             }
             other => panic!("unexpected location {other:?}"),
         }
-        // Leads that FM's own screens did not confirm stay unmapped.
-        for key in ["p_morale", "p_sharpness", "p_fitness", "p_fatigue"] {
+        // Morale is the 1..20 level one byte after the FM27-style lead.
+        assert_eq!(schemas.offset_of("p_morale"), Some(0x25F));
+        assert_eq!(schemas.morale_label(13), "Good");
+        assert_eq!(schemas.morale_label(19), "Exceptional");
+        assert_eq!(schemas.morale_label(5), "Level 5");
+        // Condition leads that FM's own screens did not confirm stay unmapped.
+        for key in ["p_sharpness", "p_fitness", "p_fatigue"] {
+            assert_eq!(schemas.offset_of(key), None, "{key}");
+        }
+        for key in ["s_judge_staff", "s_data_analysis", "s_sports_science"] {
+            assert!(schemas.offset_of(key).is_some(), "{key}");
+        }
+        for key in ["s_versatility", "s_business", "s_interference", "s_resources"] {
             assert_eq!(schemas.offset_of(key), None, "{key}");
         }
     }

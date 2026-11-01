@@ -65,11 +65,19 @@ long-lived shell makes later commands open there instead of on the desktop.
 The compositor is detached from the shell that starts it, because FM loses its
 display and will likely crash if the compositor stops. Save and quit FM before
 `stop`; `stop --force` skips that check. To drive write/undo checks, start the
-editor with the `env` output too, so its window is in the same session.
+editor in the same session with `DISPLAY` from `env` but **without**
+`WAYLAND_DISPLAY` (for example `env -u WAYLAND_DISPLAY DISPLAY=:2 ...`): with
+both set, egui opens as a native Wayland client that `xdotool` cannot see or
+click. Start long-lived editors as managed services rather than with `&`,
+because a harness may hang up background children when a command returns.
 Screenshots supplement the in-game comparison described below; they do not
-replace checking against FM's own values. Verified with FM27 (Steam, Proton)
-only: render, `grim` capture, `xdotool` clicks and typing. FM24 and FM26 use the
-same launch option but have not been run headless yet.
+replace checking against FM's own values. Verified with FM27 and FM24 (Steam,
+Proton): render, `grim` capture, `xdotool` clicks and typing. FM26 uses the
+same launch option but has not been run headless yet.
+
+FM24 only shows a club's finances to its human manager. To get a second
+club witness for a finance field, add a manager to that club in the save
+(FM menu > Add New Manager, pick the club with its radio button, Confirm).
 
 **Nobody watches the headless screen.** The user cannot see the headless
 display, so they cannot confirm what happened in FM or the editor there. Take a
@@ -80,13 +88,13 @@ launched on it can take focus and swallow clicks. Before typing, run
 `xdotool windowfocus` on the target window, because `windowactivate` alone
 does not move keyboard focus to the editor.
 
-**The live save is a test save.** The FM27 save used for headless checks (Spurs,
-July 2026) exists for testing. Controlled test writes are acceptable there, and
-a test value that cannot be restored is recorded as a finding rather than
-treated as damage. Restore what you can and document the rest. This does not
-relax the write rules for real use: writes still go through the
-acknowledged-write/undo path, and you should not assume any other save is a
-test save.
+**Every local save is a test save.** All FM saves on this machine (the FM27
+Spurs save, the FM24 "Andre Webster - Tottenham" save and any other) exist for
+testing. Controlled test writes are acceptable, including writing a candidate
+offset to see which on-screen value changes, and a test value that cannot be
+restored is recorded as a finding rather than treated as damage. Restore what
+you can and document the rest. This does not relax the write rules for real
+use: editor writes still go through the acknowledged-write/undo path.
 
 
 ## Field research and verification

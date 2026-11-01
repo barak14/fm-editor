@@ -284,15 +284,20 @@ fn show_finance(
         }
     }
     // Derived totals: shown, not edited (FM recomputes them).
-    for key in ["c_wage_total", "c_wage_spend", "c_youth_grant"] {
+    for key in [
+        "c_wage_total",
+        "c_wage_spend",
+        "c_youth_grant",
+        "c_next_transfer_min",
+    ] {
         let Some(field) = schemas.field(key) else {
             continue;
         };
         if let Some(v) = fields::read_field_u32(club, &club.raw, field) {
-            let label = if key == "c_youth_grant" {
-                field.label.to_string()
-            } else {
+            let label = if matches!(key, "c_wage_total" | "c_wage_spend") {
                 format!("{} (p/w)", field.label)
+            } else {
+                field.label.to_string()
             };
             field_widget::info_label(ui, &label, v);
             shown = true;

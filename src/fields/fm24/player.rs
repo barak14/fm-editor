@@ -15,6 +15,15 @@ use crate::fields::{date, direct, encoded, fm_string, pointer, raw, sub_date, su
 use crate::fields::Category::*;
 use crate::fields::Entity::Player;
 
+/// FM24 morale level names, from Brighton's squad Dynamics view (3 Jul 2023
+/// test save, 24 players). Only witnessed levels are named; others stay
+/// numeric. Levels 8 and 10..14 match FM27's names.
+pub(crate) const MORALE_LABELS: &[(u8, &str)] = &[
+    (8, "Fair"), (10, "Okay"), (11, "Fairly Good"), (12, "Quite Good"),
+    (13, "Good"), (14, "Really Good"), (15, "Very Good"), (16, "Extremely Good"),
+    (17, "Excellent"), (18, "Superb"), (19, "Exceptional"),
+];
+
 /// Player sub-records, resolved by `player::read_player_at`. Located from
 /// FM27€0's FM24 table (leads) and confirmed 2026-10-30 against Harry Kane,
 /// Lionel Messi, Cristiano Ronaldo, Kevin De Bruyne and Joe Ward; see
@@ -166,7 +175,9 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "p_squad_ptr",      label: "Squad Record",      entity: Player, category: Internal,    offset: None },
     Field { key: "p_contract_type",    label: "Contract Type",    entity: Player, category: Contract,   offset: None     },
     Field { key: "p_contract_signed",  label: "Contract Signed",  entity: Player, category: Contract,   offset: None    },
-    Field { key: "p_morale",       label: "Morale",           entity: Player, category: Condition,   offset: None },
+    // Morale level 1..20 (as FM26/FM27 +0x26C): 24 Brighton players' bytes
+    // match FM's Dynamics labels (MORALE_LABELS). 0x25E is a different value.
+    Field { key: "p_morale",       label: "Morale",           entity: Player, category: Condition,   offset: direct(0x025F) },
     // 64-bit bitmask, bit = PPM_ID - 1 (as FM26/FM27). Kane 0x00000A0000080080
     // decodes to FM's four traits; Maddison 0x0000200000080100 to his.
     Field { key: "p_traits",       label: "Traits (PPMs)",    entity: Player, category: Traits,      offset: raw(0x0368) },

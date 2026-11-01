@@ -73,16 +73,27 @@ the `home_stadium` sub-record, so `rva_stadium_base` is 0.
   Get Ball (both in FM's list) and Hits Free Kicks With Power (not checked).
   Adding Shoots From Distance to Udogie (0x2000000000, Dives Into Tackles)
   showed both traits in FM; Undo restored memory.
-- Leads read but not yet confirmed in game: condition u16 0x1F8 and sharpness
-  u16 0x1F4 (0..10000), jadedness i16 0x1F6, asking price i32 0x1D4 (-1 =
-  none), looks 0x309..0x30C. Cristian Romero (Tottenham) is consistent with
-  FM's condition popup: condition 10000 "Peak", sharpness 5100 "Needs match
-  practice", jadedness -125 "Fresh" (one witness). Kane's sharpness reads 5900
-  while FM says "Severely lacking in match sharpness" and Maddison's 5150
-  "Needs match practice", so the sharpness scale is unresolved.
-- Morale is **not** at the FM26/FM27 encoding: the byte at 0x25E reads 104..185
-  for six players (Kane, Maddison, Kulusevski, Udogie, Richarlison and
-  Cristian Romero Giraud), not a 1..20 level. Unmapped.
+- Morale level u8 1..20 at **0x25F** (mapped 2026-11-01), the FM26/FM27
+  encoding one byte after the old 0x25E lead (0x25E reads 104..185 and is
+  something else). All 24 Brighton players' bytes match the squad Dynamics
+  view: 8 Fair, 10 Okay, 11 Fairly Good, 12 Quite Good, 13 Good, 14 Really
+  Good, 15 Very Good, 16 Extremely Good, 17 Excellent, 18 Superb, 19
+  Exceptional (levels 8 and 10..14 match FM27's names). Setting Jason Steele
+  17 -> 10 showed "Okay" in FM's squad view at once; Undo showed "Excellent".
+- Sharpness lead u16 **0x1F4** (0..10000), still unmapped because no build has
+  a condition UI yet. Over Brighton's 24 players FM's squad sharpness icon
+  steps with it: red "Lacking Sharpness" up to 5850 (3500 Moder/Undav/Dahoud,
+  5850 Groß), orange "Maintaining Sharpness" at 6100 (Milner), yellow at 7400
+  (Scherpen). FM shows only these bands, so no exact value can be read off
+  screen. Kane's profile header ("Severely lacking in match sharpness" at
+  5900) and Maddison's ("Needs match practice" at 5150) look like advice text,
+  not the band.
+- Other leads read but not confirmed in game: condition u16 0x1F8 (10000 for
+  fit players; injured Moder 9321, Scherpen 9325), jadedness i16 0x1F6 (-125
+  for most players, Scherpen 0), asking price i32 0x1D4 (-1 = none), looks
+  0x309..0x30C. Cristian Romero (Tottenham) is consistent with FM's condition
+  popup: condition 10000 "Peak", sharpness 5100 "Needs match practice",
+  jadedness -125 "Fresh" (one witness).
 
 ## Staff (vs FM26)
 
@@ -90,11 +101,17 @@ the `home_stadium` sub-record, so `rva_stadium_base` is 0.
   attribute at 0x3D is "Mental" (FM26: Possession) and the mental attribute at
   0x1C is "Level of Discipline" (FM26: Authority). Mile Jedinak's FM24 profile
   (2026-10-30) shows Mental 12 and Level of Discipline 14, matching 0x3D = 60
-  (encoded) and 0x1C = 14; his Judging Staff Ability 9 matches the FM27€0 lead
-  0x4A = 46 (encoded), a first witness for that unmapped field.
-- Attribute block (< 0x50) is FM26 **+8**. Seven fields disagree with the
-  Guardiola witness at +8 and are left unmapped: judge staff, data analysis,
-  sports science, versatility, business, interference, resources.
+  (encoded) and 0x1C = 14.
+- Attribute block (< 0x50) is FM26 **+8**; 0x10..0x17 is a pointer. Judging
+  Staff Ability 0x4A, Analysing Data 0x44 and Sports Science 0x47 (encoded,
+  displayed = (raw + 2) / 5) were mapped 2026-11-01 against FM24's staff
+  profile tabs: Jedinak 9 / 5 / 3 (raw 46 / 25 / 15), Guardiola 15 / 7 / 3
+  (74 / 35 / 15). Setting Ryan Mason's Judging Staff Ability 10 -> 16 and
+  Analysing Data 4 -> 12 showed 16 and 12 in FM; Undo restored memory. The
+  earlier Guardiola "disagreement" did not reproduce on FM24's own screens.
+- Hidden attributes FM does not display stay unmapped, with FM26+8 leads
+  (Jedinak / Guardiola): versatility 0x43 = 55 / 15, business 0x19 = 10 / 14,
+  interference 0x1E = 12 / 17, resources 0x23 = 8 / 1.
 - Reps 0xD0/0xD2/0xD4, CA/PA 0xD6/0xD8 (4 earlier than FM26), staff ID 0x104,
   name 0x140, name subs 0x150/0x158, DOB 0x13C, personality 0x170 (unchanged),
   role-ratings ptr 0x1F8.
@@ -132,6 +149,11 @@ from the sub-records. Verified on the test save's human manager (role ratings Ma
   sub-record copies go stale. Transfer remaining stays at budget+0x08 (FM24
   shows no separate figure to check it against). The average ticket price
   float is at both finance+0x18 (mapped) and +0x870.
+- Read-only finance figures (mapped 2026-11-01): **Currently Spending**
+  finance+0x81C and **Next Season Min Transfer Budget** finance+0x7D4. Spurs
+  £3,271,987 / £25.92M and Brighton £1,543,870 / £34.75M on FM's Finances
+  screen; memory 3,271,987 / 25,925,482 and 1,543,871 / 34,750,000 (Brighton's
+  wage figures read £1 above FM's display). Shown, not edited: FM recomputes them.
 - Home stadium: club+0x18 → [0] senior team → +0x78, same chain as FM26.
 - Not mapped: gender (+0x161 holds 0/2/4/8/10/32, not FM26's 0/1), nickname
   (stadium-sub +0x90 is a short name here), team UID, training ground,
@@ -160,6 +182,6 @@ r=0.89, DL/WBL r=0.82, attribute bytes ≤ 100, max(left, right foot) = 20 for a
 
 ## Unmapped worklist
 
-Player: value, morale and condition (leads above), apps/goals, dates
-(transfer/join/debut/listing), secondary name block, contract clauses and listing. Staff: the
-seven attributes above. Club and stadium: see above.
+Player: value, condition (sharpness band confirmed, see above), apps/goals,
+dates (transfer/join/debut/listing), secondary name block, contract clauses and
+listing. Staff: the four hidden attributes above. Club and stadium: see above.

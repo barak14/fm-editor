@@ -7,8 +7,10 @@
 //!
 //! Evidence: Josep Guardiola Sala (ID 1120, DOB day 18/1971, CA 190 / PA 200,
 //! reps 9500, personality [20,20,15,18,20,16,14,8], roles Manager 20 / Asst 12 /
-//! Coach 12 via role ptr) — 31 of 38 attribute witnesses match at FM26+8. The
-//! seven that did not are left unmapped below. A 1500-staff sample has CA <= PA,
+//! Coach 12 via role ptr) — 31 of 38 attribute witnesses match at FM26+8.
+//! Judge staff, data analysis and sports science were added 2026-11-01 at
+//! FM26+8 against FM24's own profile screens (Jedinak and Guardiola); the four
+//! hidden ones FM does not display stay unmapped. A 1500-staff sample has CA <= PA,
 //! attribute bytes <= 100, personality 1..20 and plausible DOBs for 100%.
 
 use crate::fields::{date, direct, encoded, fm_string, pointer, raw, raw_capped, role_index, Field};
@@ -81,10 +83,15 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "s_current_rep",  label: "Current Rep",      entity: Staff, category: Reputation,   offset: raw_capped(0x0D2, 10000) },
     Field { key: "s_world_rep",    label: "World Rep",        entity: Staff, category: Reputation,   offset: raw_capped(0x0D4, 10000) },
 
-    // Not yet located in FM24 (Guardiola witness disagrees with FM26+8).
-    Field { key: "s_judge_staff",     label: "Judge Staff",       entity: Staff, category: Knowledge,   offset: None },
-    Field { key: "s_data_analysis",   label: "Data Analysis",     entity: Staff, category: Knowledge,   offset: None },
-    Field { key: "s_sports_science",  label: "Sports Science",    entity: Staff, category: Medical,     offset: None },
+    // FM26+8, confirmed on FM24's staff profile (2026-11-01). Jedinak: Judging
+    // Staff Ability 9 (0x4A = 46), Analysing Data 5 (0x44 = 25), Sports
+    // Science 3 (0x47 = 15). Guardiola: 15 (74), 7 (35), 3 (15).
+    Field { key: "s_judge_staff",     label: "Judge Staff",       entity: Staff, category: Knowledge,   offset: encoded(0x04A) },
+    Field { key: "s_data_analysis",   label: "Data Analysis",     entity: Staff, category: Knowledge,   offset: encoded(0x044) },
+    Field { key: "s_sports_science",  label: "Sports Science",    entity: Staff, category: Medical,     offset: encoded(0x047) },
+    // Hidden attributes FM24 does not display; FM26+8 leads read Jedinak /
+    // Guardiola versatility 0x43 = 55 / 15, business 0x19 = 10 / 14,
+    // interference 0x1E = 12 / 17, resources 0x23 = 8 / 1. Unverified.
     Field { key: "s_versatility",   label: "Versatility",       entity: Staff, category: TacticalStyle, offset: None },
     Field { key: "s_business",       label: "Business",         entity: Staff, category: BoardRelations, offset: None },
     Field { key: "s_interference",   label: "Interference",     entity: Staff, category: BoardRelations, offset: None },

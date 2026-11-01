@@ -671,12 +671,18 @@ fn show_player_status(
     addr: u64,
     edits: &mut Vec<FieldEdit>,
 ) {
-    let Some(layout) = schemas.player_lists else {
+    // Morale shows where its levels were witnessed in game (FM24, FM27); the
+    // transfer value and injury/absence lists stay FM27-only (list layout).
+    let layout = schemas.player_lists;
+    let morale = schemas
+        .field("p_morale")
+        .filter(|f| f.offset.is_some() && !schemas.morale_labels.is_empty());
+    if layout.is_none() && morale.is_none() {
         return;
-    };
+    }
     ui.separator();
     ui.strong("Status");
-    if let Some(field) = schemas.field("p_morale").filter(|f| f.offset.is_some()) {
+    if let Some(field) = morale {
         let labels: Vec<_> = (1..=20).map(|n| (n, schemas.morale_label(n))).collect();
         let options: Vec<_> = labels
             .iter()
@@ -691,7 +697,7 @@ fn show_player_status(
             &options,
         ));
     }
-    if let Some(off) = schemas.offset_of("p_value") {
+    if let Some(off) = layout.and_then(|_| schemas.offset_of("p_value")) {
         if let Some(bytes) = player.raw.get(off..off.saturating_add(4)) {
             if let (Ok(bytes), Some(at)) = (bytes.try_into(), addr.checked_add(off as u64)) {
                 if let Some(edit) = field_widget::money_edit_at(
@@ -707,6 +713,9 @@ fn show_player_status(
             }
         }
     }
+    let Some(layout) = layout else {
+        return;
+    };
     ui.strong("Injuries");
     match &player.injuries {
         ListState::Unmapped => {
@@ -1319,7 +1328,7 @@ mod tests {
     }
 
     #[test]
-    fn fm24_fm26_new_player_sections_render_nothing() {
+    fn fm24_shows_only_morale_and_fm26_renders_no_new_player_sections() {
         use crate::game_version::GameBuild;
         for build in [GameBuild::Fm24Steam, GameBuild::Fm26Steam] {
             let ctx = egui::Context::default();
@@ -1338,7 +1347,16 @@ mod tests {
             for s in output.shapes {
                 collect_text(&s.shape, &mut text);
             }
-            assert!(text.is_empty(), "{build:?}: {text:?}");
+            if build == GameBuild::Fm24Steam {
+                // FM24 shows only the witnessed morale level: no transfer
+                // value, injury or absence rows, and no writes from rendering.
+                assert!(text.iter().any(|t| t.contains("Morale")), "{text:?}");
+                for absent in ["Transfer Value", "Injuries", "Unavailability"] {
+                    assert!(!text.iter().any(|t| t.contains(absent)), "{absent}: {text:?}");
+                }
+            } else {
+                assert!(text.is_empty(), "{build:?}: {text:?}");
+            }
             assert!(edits.is_empty());
         }
     }

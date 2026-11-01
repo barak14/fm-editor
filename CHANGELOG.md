@@ -5,6 +5,9 @@
 ### Features
 
 - FM24 Steam: editable player **Weight** and **Traits (PPMs)**, verified in game on Kane, Maddison, Kulusevski and Udogie.
+- FM24 Steam: editable player **Morale** (level 1–20 with FM24's own level names), matched against all 24 Brighton players and written/undone live.
+- FM24 Steam: staff **Judge Staff**, **Data Analysis** and **Sports Science** are now mapped and editable, verified on Jedinak, Guardiola and Ryan Mason.
+- FM24 Steam: clubs show read-only **Wage Spend** (FM's "Currently spending", p/w) and **Next Min Budget** (next season's minimum guaranteed transfer budget).
 
 ### Fixes
 

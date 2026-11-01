@@ -78,6 +78,11 @@ pub(crate) const FIELDS: &[Field] = &[
     // budget £25.92M = +0x7D4. budget+0x0C (used before) read 3,464,579 for
     // Spurs; it equals +0x810 for Arsenal, Barcelona and Derby only.
     Field { key: "c_wage_budget",        label: "Wage Budget",        entity: Club, category: Finance,    offset: sub_raw("finance", 0x810) },
+    // Read-only figures from the same Finances box. Spurs £3,271,987 /
+    // £25.92M and Brighton £1,543,870 / £34.75M on screen; memory reads
+    // 3,271,987 / 25,925,482 and 1,543,871 / 34,750,000.
+    Field { key: "c_wage_spend",         label: "Wage Spend",         entity: Club, category: Finance,    offset: sub_raw("finance", 0x81C) },
+    Field { key: "c_next_transfer_min",  label: "Next Min Budget", entity: Club, category: Finance,    offset: sub_raw("finance", 0x7D4) },
     Field { key: "c_avg_attendance",     label: "Avg Attendance",     entity: Club, category: General,    offset: sub_raw("stadium", 0x68) },
     Field { key: "c_min_attendance",     label: "Min Attendance",     entity: Club, category: General,    offset: sub_raw("stadium", 0x6C) },
     Field { key: "c_max_attendance",     label: "Max Attendance",     entity: Club, category: General,    offset: sub_raw("stadium", 0x70) },
