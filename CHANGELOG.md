@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0 (prerelease)
+
 ### Features
 
 - FM24 Steam: editable player **Weight** and **Traits (PPMs)**, verified in game on Kane, Maddison, Kulusevski and Udogie.
