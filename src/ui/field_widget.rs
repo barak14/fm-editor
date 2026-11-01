@@ -12,7 +12,10 @@ const VALUE_SIZE: [f32; 2] = [44.0, 22.0];
 
 /// A fixed label slot keeps profile values aligned without centering short labels.
 /// Truncated labels automatically show their full text on hover in egui.
-pub(crate) fn profile_label(ui: &mut egui::Ui, label: impl Into<egui::WidgetText>) -> egui::Response {
+pub(crate) fn profile_label(
+    ui: &mut egui::Ui,
+    label: impl Into<egui::WidgetText>,
+) -> egui::Response {
     ui.allocate_ui_with_layout(
         egui::vec2(130.0, VALUE_SIZE[1]),
         egui::Layout::left_to_right(egui::Align::Center),
@@ -1065,6 +1068,8 @@ pub fn choice_u8_edit(
         ui.add_enabled_ui(enabled, |ui| {
             egui::ComboBox::from_id_salt(("choice_u8", label, base_addr, offset))
                 .selected_text(old_name)
+                .width(ui.available_width().min(160.0).max(0.0))
+                .wrap_mode(egui::TextWrapMode::Truncate)
                 .show_ui(ui, |ui| {
                     for &(code, name) in options {
                         ui.selectable_value(&mut new, code, name);
@@ -1316,11 +1321,14 @@ fn day_month_to_doy(year: u16, day: i32, month: i32) -> u16 {
     doy + (day.clamp(1, month_days[m] as i32) as u16)
 }
 
-/// Read-only label for a numeric value.
+/// Read-only profile value, constrained to its column even for unbroken names.
+/// The full value is available on hover when the single-line display truncates.
 pub fn info_label(ui: &mut egui::Ui, label: &str, value: impl std::fmt::Display) {
     ui.horizontal(|ui| {
         profile_label(ui, label);
-        ui.label(format!("{value}"));
+        let value = value.to_string();
+        ui.add(egui::Label::new(&value).truncate())
+            .on_hover_text(value);
     });
 }
 
@@ -1343,6 +1351,85 @@ pub fn info_label_wrapped(ui: &mut egui::Ui, label: &str, value: impl std::fmt::
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn long_choice_stays_within_profile_column_without_render_edits() {
+        let ctx = egui::Context::default();
+        let mut raw = [1];
+        let f = field(Encoding::Direct, 0);
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let response = ui.allocate_ui(egui::vec2(250.0, 0.0), |ui| {
+                    assert!(choice_u8_edit(
+                        ui,
+                        "Ethnicity",
+                        &mut raw,
+                        &f,
+                        0x20000,
+                        &[(1, "Mediterranean/Hispanic")]
+                    )
+                    .is_none());
+                });
+                assert!(
+                    response.response.rect.width() <= 250.5,
+                    "choice row expanded to {:?}",
+                    response.response.rect
+                );
+            });
+        });
+        assert_eq!(raw, [1]);
+        assert!(!output.shapes.is_empty());
+    }
+
+    #[test]
+    fn read_only_values_stay_inside_desktop_and_narrow_columns() {
+        for width in [2160.0, 1100.0, 380.0] {
+            for value in [
+                "Tottenham Hotspur".to_owned(),
+                "LongUnbrokenClubName".repeat(20),
+            ] {
+                let ctx = egui::Context::default();
+                let mut column_right = 0.0;
+                let mut expected_value_left = 0.0;
+                let output = ctx.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(width, 800.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ctx| {
+                        egui::CentralPanel::default().show(ctx, |ui| {
+                            ui.columns(if width > 1000.0 { 4 } else { 1 }, |cols| {
+                                let right = cols[0].max_rect().right();
+                                column_right = right;
+                                expected_value_left = cols[0].max_rect().left()
+                                    + 130.0
+                                    + cols[0].spacing().item_spacing.x;
+                                info_label(&mut cols[0], "Club", &value);
+                                assert!(cols[0].min_rect().right() <= right + 0.5);
+                                if cols.len() > 1 {
+                                    cols[1].label("Loyalty");
+                                }
+                            });
+                        });
+                    },
+                );
+                let texts = text_shapes(&output.shapes);
+                let rendered = texts.iter().find(|t| t.galley.text() == value).unwrap();
+                assert!(rendered.pos.x + rendered.galley.size().x <= column_right + 0.5);
+                assert!(
+                    (rendered.pos.x - expected_value_left).abs() < 1.0,
+                    "read-only values must stay beside the label, not centered in spare width"
+                );
+                if width > 1000.0 {
+                    let adjacent = texts.iter().find(|t| t.galley.text() == "Loyalty").unwrap();
+                    assert!(rendered.pos.x + rendered.galley.size().x < adjacent.pos.x);
+                }
+            }
+        }
+    }
+
     fn metadata_frame(
         ctx: &egui::Context,
         events: Vec<egui::Event>,

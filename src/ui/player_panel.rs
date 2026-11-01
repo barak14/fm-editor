@@ -96,7 +96,142 @@ pub fn show(
 // ---------------------------------------------------------------------------
 
 fn show_overview(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    player: &mut PlayerRecord,
+    addr: u64,
+    edits: &mut Vec<FieldEdit>,
+    wage_period: WagePeriod,
+    face_pack_path: Option<&str>,
+    names: &mut crate::ui::name_picker::NamePicker,
+) {
+    let id = potential_attributes_id(player, addr);
+    let mut preview = ui.data_mut(|data| data.get_temp::<bool>(id).unwrap_or(false));
+    if ui
+        .checkbox(&mut preview, "Show potential attributes")
+        .on_hover_text("Estimated attributes at PA; read-only, not a growth guarantee.")
+        .changed()
+    {
+        ui.data_mut(|data| data.insert_temp(id, preview));
+    }
+    // A previous row can expand the scroll area's minimum width. The viewport,
+    // not that minimum, determines the number and bounded width of these stacks.
+    let width = ui
+        .available_width()
+        .min((ui.clip_rect().right() - ui.cursor().left()).max(0.0))
+        .min(1450.0);
+    let count = if width >= 1200.0 {
+        5
+    } else if width >= 880.0 {
+        4
+    } else if width >= 720.0 {
+        3
+    } else if width >= 600.0 {
+        2
+    } else {
+        1
+    };
+    let assignments: &[&[usize]] = match count {
+        5 => &[&[0], &[1], &[2], &[3], &[4]],
+        4 => &[&[0], &[1], &[2], &[3, 4]],
+        3 => &[&[0], &[1, 3], &[2, 4]],
+        2 => &[&[0, 2], &[1, 3, 4]],
+        _ => &[&[0, 1, 2, 3, 4]],
+    };
+    let mut projected = preview.then(|| potential_attribute_raw(player));
+    ui.allocate_ui_with_layout(
+        egui::vec2(width, 0.0),
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
+            ui.set_width(width);
+            ui.columns(count, |cols| {
+                for (col, stacks) in cols.iter_mut().zip(assignments) {
+                    for &stack in *stacks {
+                        if stack == 0 {
+                            egui::Frame::group(col.style())
+                                .inner_margin(8.0)
+                                .show(col, |ui| {
+                                    show_personal_details(
+                                        schemas,
+                                        ui,
+                                        player,
+                                        addr,
+                                        edits,
+                                        wage_period,
+                                        face_pack_path,
+                                        names,
+                                    );
+                                    show_nationality_ties(schemas, ui, player);
+                                });
+                            continue;
+                        }
+                        let categories: &[(&str, Category)] = match stack {
+                            1 => &[
+                                ("Technical", Category::Technical),
+                                ("Set Pieces", Category::SetPieces),
+                            ],
+                            2 => &[
+                                ("Mental", Category::Mental),
+                                ("Personality", Category::Personality),
+                            ],
+                            3 => &[
+                                ("Physical", Category::Physical),
+                                ("Hidden", Category::Hidden),
+                            ],
+                            _ => &[
+                                ("Goalkeeping", Category::Goalkeeping),
+                                ("Footedness", Category::Footedness),
+                            ],
+                        };
+                        for &(heading, category) in categories {
+                            egui::Frame::group(col.style())
+                                .inner_margin(8.0)
+                                .show(col, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    if let Some(raw) = projected.as_mut() {
+                                        ui.add_enabled_ui(false, |ui| {
+                                            field_widget::category_column(
+                                                schemas,
+                                                ui,
+                                                heading,
+                                                Entity::Player,
+                                                category,
+                                                raw,
+                                                addr,
+                                                &mut Vec::new(),
+                                            );
+                                        });
+                                    } else {
+                                        field_widget::category_column(
+                                            schemas,
+                                            ui,
+                                            heading,
+                                            Entity::Player,
+                                            category,
+                                            &mut player.raw,
+                                            addr,
+                                            edits,
+                                        );
+                                    }
+                                });
+                            col.add_space(8.0);
+                        }
+                        if stack == 1 {
+                            egui::Frame::group(col.style())
+                                .inner_margin(8.0)
+                                .show(col, |ui| {
+                                    show_reputation(schemas, ui, player, addr, edits);
+                                });
+                        }
+                    }
+                }
+            });
+        },
+    );
+}
+
+fn show_personal_details(
+    schemas: &'static fields::VersionedSchemas,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -110,9 +245,6 @@ fn show_overview(
     let p_dob = schemas.field("p_dob").unwrap();
     let p_ca = schemas.field("p_ca").unwrap();
     let p_pa = schemas.field("p_pa").unwrap();
-    let p_current_rep = schemas.field("p_current_rep").unwrap();
-    let p_home_rep = schemas.field("p_home_rep").unwrap();
-    let p_world_rep = schemas.field("p_world_rep").unwrap();
 
     // Face image — shown when a face pack path is configured and the UID is known.
     let face_uid = player.field_u32("p_uid").filter(|&uid| uid > 0);
@@ -123,156 +255,153 @@ fn show_overview(
         ui.add_space(4.0);
     }
 
-    // Top info row: Personal | Ability | Reputation
-    ui.horizontal_wrapped(|ui| {
-        // Personal Details
-        ui.vertical(|ui| {
-            ui.strong("Identity");
-            edits.extend(field_widget::dob_edit(ui, &mut player.raw, &p_dob, addr));
-            if let Some(f) = schemas.field("p_height") {
-                edits.extend(field_widget::raw_u16_edit(
-                    ui,
-                    &f,
-                    &mut player.raw,
-                    250,
-                    addr,
-                ));
-            }
-            if let Some(f) = schemas.field("p_weight") {
-                edits.extend(field_widget::raw_u16_edit(
-                    ui,
-                    &f,
-                    &mut player.raw,
-                    250,
-                    addr,
-                ));
-            }
-            if let Some(birthplace) = &player.birthplace {
-                field_widget::info_label(ui, "Place of Birth", birthplace);
-            }
-            if let Some(languages) = player.languages.as_deref().filter(|l| !l.is_empty()) {
-                field_widget::info_label_wrapped(
-                    ui,
-                    "Languages",
-                    crate::person::format_languages(languages),
-                );
-            }
-            edits.extend(crate::ui::name_picker::names_section(
-                schemas,
+    // Personal Details
+    ui.vertical(|ui| {
+        ui.strong("Identity");
+        edits.extend(field_widget::dob_edit(ui, &mut player.raw, &p_dob, addr));
+        if let Some(f) = schemas.field("p_height") {
+            edits.extend(field_widget::raw_u16_edit(
                 ui,
-                names,
-                &crate::person::PLAYER_NAME_SLOTS,
+                &f,
                 &mut player.raw,
+                250,
                 addr,
             ));
-        });
-
-        // Appearance (shown in the 3D match), when the schema maps it.
-        if schemas.offset_of("p_skin_tone").is_some() {
-            ui.separator();
-            ui.vertical(|ui| {
-                ui.strong("Appearance");
-                if let Some(f) = schemas.field("p_ethnicity") {
-                    edits.extend(field_widget::choice_u8_edit(
-                        ui,
-                        "Ethnicity",
-                        &mut player.raw,
-                        &f,
-                        addr,
-                        ETHNICITIES,
-                    ));
-                }
-                for (key, max) in [
-                    ("p_skin_tone", 19),
-                    ("p_hair_colour", 18),
-                    ("p_hair_length", 6),
-                ] {
-                    if let Some(f) = schemas.field(key) {
-                        edits.extend(field_widget::raw_u8_edit(
-                            ui,
-                            &f,
-                            &mut player.raw,
-                            max,
-                            addr,
-                        ));
-                    }
-                }
-            });
         }
-
-        ui.separator();
-
-        // Ability
-        ui.vertical(|ui| {
-            ui.strong("Ability");
-            edits.extend(field_widget::ca_pa_edit(
+        if let Some(f) = schemas.field("p_weight") {
+            edits.extend(field_widget::raw_u16_edit(
                 ui,
+                &f,
                 &mut player.raw,
-                &p_ca,
-                &p_pa,
+                250,
                 addr,
             ));
-        });
-
-        ui.separator();
-
-        // Reputation
-        ui.vertical(|ui| {
-            ui.strong("Reputation");
-            if let Some(e) =
-                field_widget::raw_u16_edit(ui, &p_current_rep, &mut player.raw, 10000, addr)
-            {
-                edits.push(e);
-            }
-            if let Some(e) =
-                field_widget::raw_u16_edit(ui, &p_home_rep, &mut player.raw, 10000, addr)
-            {
-                edits.push(e);
-            }
-            if let Some(e) =
-                field_widget::raw_u16_edit(ui, &p_world_rep, &mut player.raw, 10000, addr)
-            {
-                edits.push(e);
-            }
-        });
-
-        ui.separator();
-
-        // Stats
-        ui.vertical(|ui| {
-            ui.strong("Stats");
-            // Each row shows only when the record's schema maps the field.
-            if let Some(apps) = player.field_u16("p_senior_apps") {
-                field_widget::info_label(ui, "Snr Apps", apps);
-            }
-            if let (Some(caps), Some(goals)) = (
-                player.field_int("p_intl_caps"),
-                player.field_int("p_intl_goals"),
-            ) {
-                field_widget::info_label(ui, "Intl Caps / Goals", format!("{caps} / {goals}"));
-            }
-            if let (Some(caps), Some(goals)) = (
-                player.field_int("p_u21_caps"),
-                player.field_int("p_u21_goals"),
-            ) {
-                field_widget::info_label(ui, "U21 Caps / Goals", format!("{caps} / {goals}"));
-            }
-            // FM27 has no struct-level weekly wage; fall back to the contract's.
-            if let Some(wage) = player
-                .field_u32("p_weekly_wage")
-                .or_else(|| player.field_u32("p_contract_wage"))
-            {
-                field_widget::info_label(ui, "Wage", format_wage(wage, wage_period));
-            }
-        });
+        }
+        if let Some(birthplace) = &player.birthplace {
+            field_widget::info_label(ui, "Place of Birth", birthplace);
+        }
+        if let Some(languages) = player.languages.as_deref().filter(|l| !l.is_empty()) {
+            field_widget::info_label_wrapped(
+                ui,
+                "Languages",
+                crate::person::format_languages(languages),
+            );
+        }
+        edits.extend(crate::ui::name_picker::names_section(
+            schemas,
+            ui,
+            names,
+            &crate::person::PLAYER_NAME_SLOTS,
+            &mut player.raw,
+            addr,
+        ));
     });
 
+    // Status belongs to the person, immediately after identity and names.
     show_player_status(schemas, ui, player, addr, edits);
-    show_nationality_ties(schemas, ui, player);
+
+    // Appearance (shown in the 3D match), when the schema maps it.
+    if schemas.offset_of("p_skin_tone").is_some() {
+        ui.separator();
+        ui.vertical(|ui| {
+            ui.strong("Appearance");
+            if let Some(f) = schemas.field("p_ethnicity") {
+                edits.extend(field_widget::choice_u8_edit(
+                    ui,
+                    "Ethnicity",
+                    &mut player.raw,
+                    &f,
+                    addr,
+                    ETHNICITIES,
+                ));
+            }
+            for (key, max) in [
+                ("p_skin_tone", 19),
+                ("p_hair_colour", 18),
+                ("p_hair_length", 6),
+            ] {
+                if let Some(f) = schemas.field(key) {
+                    edits.extend(field_widget::raw_u8_edit(
+                        ui,
+                        &f,
+                        &mut player.raw,
+                        max,
+                        addr,
+                    ));
+                }
+            }
+        });
+    }
 
     ui.separator();
 
-    show_overview_attributes(schemas, ui, player, addr, edits);
+    // Ability
+    ui.vertical(|ui| {
+        ui.strong("Ability");
+        edits.extend(field_widget::ca_pa_edit(
+            ui,
+            &mut player.raw,
+            &p_ca,
+            &p_pa,
+            addr,
+        ));
+    });
+
+    // Stats
+    ui.vertical(|ui| {
+        ui.strong("Stats");
+        // Each row shows only when the record's schema maps the field.
+        if let Some(apps) = player.field_u16("p_senior_apps") {
+            field_widget::info_label(ui, "Snr Apps", apps);
+        }
+        if let (Some(caps), Some(goals)) = (
+            player.field_int("p_intl_caps"),
+            player.field_int("p_intl_goals"),
+        ) {
+            field_widget::info_label(ui, "Intl Caps / Goals", format!("{caps} / {goals}"));
+        }
+        if let (Some(caps), Some(goals)) = (
+            player.field_int("p_u21_caps"),
+            player.field_int("p_u21_goals"),
+        ) {
+            field_widget::info_label(ui, "U21 Caps / Goals", format!("{caps} / {goals}"));
+        }
+        // FM27 has no struct-level weekly wage; fall back to the contract's.
+        if let Some(wage) = player
+            .field_u32("p_weekly_wage")
+            .or_else(|| player.field_u32("p_contract_wage"))
+        {
+            field_widget::info_label(ui, "Wage", format_wage(wage, wage_period));
+        }
+    });
+}
+
+fn show_reputation(
+    schemas: &'static fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    player: &mut PlayerRecord,
+    addr: u64,
+    edits: &mut Vec<FieldEdit>,
+) {
+    let p_current_rep = schemas.field("p_current_rep").unwrap();
+    let p_home_rep = schemas.field("p_home_rep").unwrap();
+    let p_world_rep = schemas.field("p_world_rep").unwrap();
+    // Reputation
+    ui.vertical(|ui| {
+        ui.strong("Reputation");
+        if let Some(e) =
+            field_widget::raw_u16_edit(ui, &p_current_rep, &mut player.raw, 10000, addr)
+        {
+            edits.push(e);
+        }
+        if let Some(e) = field_widget::raw_u16_edit(ui, &p_home_rep, &mut player.raw, 10000, addr) {
+            edits.push(e);
+        }
+        if let Some(e) = field_widget::raw_u16_edit(ui, &p_world_rep, &mut player.raw, 10000, addr)
+        {
+            edits.push(e);
+        }
+    });
 }
 
 fn potential_attributes_id(player: &PlayerRecord, addr: u64) -> egui::Id {
@@ -301,114 +430,6 @@ fn potential_attribute_raw(player: &PlayerRecord) -> Vec<u8> {
         }
     }
     raw
-}
-
-fn show_overview_attributes(
-    schemas: &'static fields::VersionedSchemas,
-    ui: &mut egui::Ui,
-    player: &mut PlayerRecord,
-    addr: u64,
-    edits: &mut Vec<FieldEdit>,
-) {
-    let id = potential_attributes_id(player, addr);
-    let mut preview = ui.data_mut(|data| data.get_temp::<bool>(id).unwrap_or(false));
-    if ui
-        .checkbox(&mut preview, "Show potential attributes")
-        .on_hover_text("Estimated attributes at PA; read-only, not a growth guarantee.")
-        .changed()
-    {
-        ui.data_mut(|data| data.insert_temp(id, preview));
-    }
-    if preview {
-        let mut raw = potential_attribute_raw(player);
-        ui.add_enabled_ui(false, |ui| {
-            // Keep even accidental widget proposals isolated from the live edit sink.
-            show_attribute_stacks_raw(schemas, ui, &mut raw, addr, &mut Vec::new());
-        });
-    } else {
-        show_attribute_stacks(schemas, ui, player, addr, edits);
-    }
-}
-
-/// Each column owns its vertical flow; a tall neighbour never delays its next card.
-fn show_attribute_stacks(
-    schemas: &'static fields::VersionedSchemas,
-    ui: &mut egui::Ui,
-    player: &mut PlayerRecord,
-    addr: u64,
-    edits: &mut Vec<FieldEdit>,
-) {
-    show_attribute_stacks_raw(schemas, ui, &mut player.raw, addr, edits);
-}
-
-fn show_attribute_stacks_raw(
-    schemas: &'static fields::VersionedSchemas,
-    ui: &mut egui::Ui,
-    raw: &mut [u8],
-    addr: u64,
-    edits: &mut Vec<FieldEdit>,
-) {
-    let bundles = [
-        [
-            ("Technical", Category::Technical),
-            ("Set Pieces", Category::SetPieces),
-        ],
-        [
-            ("Mental", Category::Mental),
-            ("Footedness", Category::Footedness),
-        ],
-        [
-            ("Physical", Category::Physical),
-            ("Personality", Category::Personality),
-        ],
-        [
-            ("Goalkeeping", Category::Goalkeeping),
-            ("Hidden", Category::Hidden),
-        ],
-    ];
-    // Earlier overview rows may expand their minimum width (for example a long
-    // relationship label). Choose columns from the visible viewport, not that
-    // expanded content width, and give the stacks a fresh constrained child.
-    let width = ui
-        .available_width()
-        .min((ui.clip_rect().right() - ui.cursor().left()).max(0.0));
-    let count = crate::ui::entity_header::column_count(width);
-    let assignments: &[&[usize]] = match count {
-        4 => &[&[0], &[1], &[2], &[3]],
-        2 => &[&[0, 3], &[1, 2]],
-        _ => &[&[0, 1, 2, 3]],
-    };
-    ui.allocate_ui_with_layout(
-        egui::vec2(width, 0.0),
-        egui::Layout::top_down(egui::Align::Min),
-        |ui| {
-            ui.set_width(width);
-            ui.columns(count, |cols| {
-                for (col, indices) in cols.iter_mut().zip(assignments) {
-                    for &index in *indices {
-                        for (heading, category) in bundles[index] {
-                            egui::Frame::group(col.style())
-                                .inner_margin(10.0)
-                                .show(col, |ui| {
-                                    ui.set_width(ui.available_width());
-                                    field_widget::category_column(
-                                        schemas,
-                                        ui,
-                                        heading,
-                                        Entity::Player,
-                                        category,
-                                        raw,
-                                        addr,
-                                        edits,
-                                    );
-                                });
-                            col.add_space(12.0);
-                        }
-                    }
-                }
-            });
-        },
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -847,8 +868,8 @@ fn show_player_status(
     addr: u64,
     edits: &mut Vec<FieldEdit>,
 ) {
-    // Morale shows where its levels were witnessed in game (FM24, FM27); the
-    // transfer value and injury/absence lists stay FM27-only (list layout).
+    // Only expose morale on builds with witnessed mappings; use the schema's
+    // numeric encoding, not the display-only descriptions of morale levels.
     let layout = schemas.player_lists;
     let morale = schemas
         .field("p_morale")
@@ -856,22 +877,17 @@ fn show_player_status(
     if layout.is_none() && morale.is_none() {
         return;
     }
-    ui.separator();
     ui.strong("Status");
     if let Some(field) = morale {
-        let labels: Vec<_> = (1..=20).map(|n| (n, schemas.morale_label(n))).collect();
-        let options: Vec<_> = labels
-            .iter()
-            .map(|(n, label)| (*n, label.as_str()))
-            .collect();
-        edits.extend(field_widget::choice_u8_edit(
-            ui,
-            "Morale",
-            &mut player.raw,
-            field,
-            addr,
-            &options,
-        ));
+        if let Some(location) = field.offset.as_ref() {
+            if let Some(&raw) = player.raw.get(location.offset() as usize) {
+                if (1..=20).contains(&location.decode_u8(raw)) {
+                    edits.extend(field_widget::attr_edit(ui, field, &mut player.raw, addr));
+                } else {
+                    field_widget::info_label(ui, "Morale", format!("raw={raw}"));
+                }
+            }
+        }
     }
     if let Some(off) = layout.and_then(|_| schemas.offset_of("p_value")) {
         if let Some(bytes) = player.raw.get(off..off.saturating_add(4)) {
@@ -1409,6 +1425,58 @@ fn trait_value(raw: &[u8], location: Option<fields::FieldLocation>) -> Option<(u
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn default_and_expanded_columns_keep_long_personal_values_clear_of_attributes() {
+        for width in [916.0, 966.0, 1220.0] {
+            let ctx = egui::Context::default();
+            let mut player = growing_player(crate::game_version::GameBuild::Fm27Steam);
+            let schemas = player.build.schemas();
+            let ethnicity = schemas.field("p_ethnicity").unwrap().offset.unwrap();
+            player.raw[ethnicity.offset() as usize] = ethnicity.encode_u8(2);
+            let dob = schemas.offset_of("p_dob").unwrap();
+            player.raw[dob..dob + 2].copy_from_slice(&324u16.to_le_bytes());
+            player.raw[dob + 2..dob + 4].copy_from_slice(&1990u16.to_le_bytes());
+            let output = profile_frame(
+                &ctx,
+                &mut player,
+                &mut PlayerTab::Overview,
+                egui::vec2(width, 5000.0),
+                vec![],
+            );
+            let text = painted_text(&output);
+            let heading = |label: &str| text.iter().find(|(s, _, _)| s == label).unwrap().1;
+            let identity = heading("Identity");
+            let technical = heading("Technical");
+            assert!(technical.left() > identity.right());
+            for (label, rect, _) in &text {
+                if rect.top() >= identity.top() && rect.left() < technical.left() {
+                    assert!(
+                        rect.right() < technical.left(),
+                        "personal {label:?} overlaps attributes at {width}: {rect:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    fn show_overview_attributes(
+        schemas: &'static fields::VersionedSchemas,
+        ui: &mut egui::Ui,
+        player: &mut PlayerRecord,
+        addr: u64,
+        edits: &mut Vec<FieldEdit>,
+    ) {
+        show_overview(
+            schemas,
+            ui,
+            player,
+            addr,
+            edits,
+            WagePeriod::Weekly,
+            None,
+            &mut crate::ui::name_picker::NamePicker::default(),
+        );
+    }
     fn fixture_player(build: crate::game_version::GameBuild) -> PlayerRecord {
         PlayerRecord {
             build,
@@ -1586,6 +1654,162 @@ mod tests {
     }
 
     #[test]
+    fn numeric_morale_edits_preserve_schema_bytes_and_undo_metadata() {
+        fn frame(
+            ctx: &egui::Context,
+            player: &mut PlayerRecord,
+            events: Vec<egui::Event>,
+        ) -> (egui::FullOutput, Vec<FieldEdit>) {
+            let mut edits = Vec::new();
+            let output = ctx.run(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        show_player_status(player.build.schemas(), ui, player, 0x20000, &mut edits);
+                    });
+                },
+            );
+            (output, edits)
+        }
+        for build in [
+            crate::game_version::GameBuild::Fm24Steam,
+            crate::game_version::GameBuild::Fm27Steam,
+        ] {
+            let ctx = egui::Context::default();
+            crate::ui::navigation::set_editing_enabled(&ctx, true);
+            let mut player = fixture_player(build);
+            let location = build.schemas().field("p_morale").unwrap().offset.unwrap();
+            player.raw[location.offset() as usize] = location.encode_u8(10);
+            let (output, edits) = frame(&ctx, &mut player, vec![]);
+            assert!(edits.is_empty());
+            let value = painted_text(&output)
+                .into_iter()
+                .find(|(s, _, _)| s == "10")
+                .unwrap()
+                .1
+                .center();
+            for pressed in [true, false, true, false] {
+                let (_, edits) = frame(
+                    &ctx,
+                    &mut player,
+                    vec![
+                        egui::Event::PointerMoved(value),
+                        egui::Event::PointerButton {
+                            pos: value,
+                            button: egui::PointerButton::Primary,
+                            pressed,
+                            modifiers: egui::Modifiers::NONE,
+                        },
+                    ],
+                );
+                assert!(edits.is_empty());
+            }
+            frame(
+                &ctx,
+                &mut player,
+                vec![
+                    egui::Event::Key {
+                        key: egui::Key::A,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: egui::Modifiers {
+                            ctrl: true,
+                            command: true,
+                            ..Default::default()
+                        },
+                    },
+                    egui::Event::Text("17".into()),
+                ],
+            );
+            let (_, edits) = frame(
+                &ctx,
+                &mut player,
+                vec![egui::Event::Key {
+                    key: egui::Key::Enter,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+            assert_eq!(edits.len(), 1);
+            let edit = &edits[0];
+            assert_eq!(edit.addr, 0x20000 + location.offset());
+            assert_eq!(edit.old_raw, vec![location.encode_u8(10)]);
+            assert_eq!(edit.new_raw, vec![location.encode_u8(17)]);
+            assert_eq!(
+                player.raw[location.offset() as usize],
+                location.encode_u8(17)
+            );
+            let presentation = edit.presentation.as_ref().unwrap();
+            assert_eq!(presentation.field, "Morale");
+            assert_eq!(presentation.before, "10");
+            assert_eq!(presentation.after, "17");
+        }
+    }
+
+    #[test]
+    fn morale_is_numeric_schema_encoded_and_invalid_values_never_render_clamp() {
+        use crate::game_version::GameBuild;
+        for build in [GameBuild::Fm24Steam, GameBuild::Fm27Steam] {
+            let location = build.schemas().field("p_morale").unwrap().offset.unwrap();
+            for value in [0, 1, 10, 20, 255] {
+                let ctx = egui::Context::default();
+                let mut player = fixture_player(build);
+                player.raw[location.offset() as usize] = value;
+                let before = player.raw.clone();
+                let mut edits = Vec::new();
+                let output = ctx.run(Default::default(), |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        show_player_status(build.schemas(), ui, &mut player, 0x20000, &mut edits);
+                    });
+                });
+                assert_eq!(player.raw, before);
+                assert!(edits.is_empty());
+                let text = painted_text(&output);
+                let expected = if (1..=20).contains(&location.decode_u8(value)) {
+                    location.decode_u8(value).to_string()
+                } else {
+                    format!("raw={value}")
+                };
+                assert!(
+                    text.iter().any(|(s, _, _)| s == &expected),
+                    "{build:?}: {text:?}"
+                );
+                assert!(!text.iter().any(|(s, _, _)| s == "Okay"
+                    || s.contains("Superb")
+                    || s.contains("Very Good")));
+            }
+        }
+    }
+
+    #[test]
+    fn status_is_in_personal_column_immediately_after_identity() {
+        for width in [966.0, 1220.0, 280.0] {
+            let ctx = egui::Context::default();
+            let mut player = growing_player(crate::game_version::GameBuild::Fm27Steam);
+            let output = profile_frame(
+                &ctx,
+                &mut player,
+                &mut PlayerTab::Overview,
+                egui::vec2(width, 5000.0),
+                vec![],
+            );
+            let text = painted_text(&output);
+            let rect = |label: &str| text.iter().find(|(s, _, _)| s == label).unwrap().1;
+            assert_eq!(rect("Status").left(), rect("Identity").left());
+            assert!(rect("Status").top() > rect("Identity").bottom());
+            assert!(rect("Status").bottom() < rect("Appearance").top());
+            assert!(rect("Status").bottom() < rect("Ability").top());
+            assert_eq!(text.iter().filter(|(s, _, _)| s == "Status").count(), 1);
+        }
+    }
+
+    #[test]
     fn fm27_player_sections_distinguish_unloaded_unreadable_and_empty_without_writes() {
         use crate::game_version::GameBuild;
         for width in [1200.0, 280.0] {
@@ -1632,7 +1856,8 @@ mod tests {
                         collect_text(&s.shape, &mut text);
                     }
                     let text = text.join(" ");
-                    assert!(text.contains("Level 15"), "{text}");
+                    assert!(text.contains("Morale 15"), "{text}");
+                    assert!(!text.contains("Level 15"), "{text}");
                     assert!(
                         text.contains(match state {
                             0 => "Not loaded",
@@ -1831,6 +2056,134 @@ mod tests {
         );
         assert_eq!(player.raw, before);
         output
+    }
+
+    #[test]
+    fn potential_preview_leaves_ordinary_overview_fields_unchanged() {
+        let ctx = egui::Context::default();
+        let mut player = growing_player(crate::game_version::GameBuild::Fm27Steam);
+        let before = player.raw.clone();
+        let mut ordinary = Vec::new();
+        for preview in [false, true] {
+            ctx.data_mut(|data| {
+                data.insert_temp(potential_attributes_id(&player, player.addr), preview)
+            });
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1440.0, 4000.0),
+                    )),
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        let mut edits = Vec::new();
+                        show_overview_attributes(
+                            player.build.schemas(),
+                            ui,
+                            &mut player,
+                            0x20000,
+                            &mut edits,
+                        );
+                        assert!(edits.is_empty());
+                    });
+                },
+            );
+            let text = painted_text(&output);
+            let technical_left = text
+                .iter()
+                .find(|(s, _, _)| s == "Technical")
+                .unwrap()
+                .1
+                .left();
+            ordinary.push(
+                text.into_iter()
+                    .filter(|(_, r, _)| r.right() < technical_left)
+                    .map(|(s, _, _)| s)
+                    .collect::<Vec<_>>(),
+            );
+            assert_eq!(player.raw, before);
+        }
+        assert_eq!(ordinary[0], ordinary[1]);
+        assert!(ordinary[0].iter().any(|s| s == "Ability"));
+        assert!(ordinary[0].iter().any(|s| s == "Appearance"));
+    }
+
+    #[test]
+    fn narrow_overview_scroll_reaches_every_mapped_attribute_and_personal_section() {
+        for width in [280.0, 400.0] {
+            let ctx = egui::Context::default();
+            let mut player = growing_player(crate::game_version::GameBuild::Fm27Steam);
+            let mut tab = PlayerTab::Overview;
+            let size = egui::vec2(width, 700.0);
+            let mut visible = std::collections::HashSet::new();
+            for frame in 0..100 {
+                let output = profile_frame(
+                    &ctx,
+                    &mut player,
+                    &mut tab,
+                    size,
+                    if frame == 0 {
+                        vec![]
+                    } else {
+                        scroll_events(egui::pos2(width - 40.0, 600.0), -80.0)
+                    },
+                );
+                for (text, rect, clip) in painted_text(&output) {
+                    if clip.contains_rect(rect) {
+                        visible.insert(text);
+                    }
+                }
+            }
+            for heading in [
+                "Identity",
+                "Ability",
+                "Appearance",
+                "Stats",
+                "Reputation",
+                "Status",
+                "Nationality & ties",
+                "Technical",
+                "Mental",
+                "Physical",
+                "Set Pieces",
+                "Personality",
+                "Goalkeeping",
+                "Hidden",
+                "Footedness",
+                "Show potential attributes",
+            ] {
+                assert!(
+                    visible.contains(heading),
+                    "unreachable {heading} at {width}"
+                );
+            }
+            for category in [
+                Category::Technical,
+                Category::Mental,
+                Category::Physical,
+                Category::SetPieces,
+                Category::Personality,
+                Category::Goalkeeping,
+                Category::Hidden,
+                Category::Footedness,
+            ] {
+                for field in player
+                    .build
+                    .schemas()
+                    .fields_for_category(Entity::Player, category)
+                {
+                    if field.offset.is_some() {
+                        assert!(
+                            visible.contains(field.label),
+                            "unreachable {} at {width}",
+                            field.label
+                        );
+                    }
+                }
+            }
+        }
     }
 
     fn populated_positions(invalid: bool) -> PlayerRecord {
@@ -2279,8 +2632,56 @@ mod tests {
     }
 
     #[test]
+    fn sidebar_sized_overview_keeps_long_ethnicity_in_a_single_stack() {
+        let ctx = egui::Context::default();
+        let mut player = growing_player(crate::game_version::GameBuild::Fm27Steam);
+        let ethnicity = player
+            .build
+            .schemas()
+            .field("p_ethnicity")
+            .unwrap()
+            .offset
+            .unwrap();
+        player.raw[ethnicity.offset() as usize] = ethnicity.encode_u8(2);
+        let before = player.raw.clone();
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(548.0, 5000.0),
+                )),
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let mut edits = Vec::new();
+                    show_overview_attributes(
+                        player.build.schemas(),
+                        ui,
+                        &mut player,
+                        0x20000,
+                        &mut edits,
+                    );
+                    assert!(edits.is_empty());
+                });
+            },
+        );
+        assert_eq!(player.raw, before);
+        let text = painted_text(&output);
+        let rect = |label: &str| text.iter().find(|(s, _, _)| s == label).unwrap().1;
+        assert_eq!(rect("Identity").left(), rect("Technical").left());
+        assert!(rect("Technical").top() > rect("Appearance").bottom());
+        assert!(text.iter().any(|(s, _, _)| s.contains("North African")));
+        for (_, rect, _) in text {
+            assert!(rect.right() <= 541.0, "narrow column overflow: {rect:?}");
+        }
+    }
+
+    #[test]
     fn overview_cards_flow_independently_in_balanced_stacks() {
-        for width in [1200.0, 700.0, 280.0, 400.0] {
+        for width in [
+            1440.0, 2160.0, 1220.0, 1200.0, 966.0, 760.0, 700.0, 548.0, 280.0, 400.0,
+        ] {
             let ctx = egui::Context::default();
             let mut player = populated_positions(false);
             let before = player.raw.clone();
@@ -2295,7 +2696,7 @@ mod tests {
                 },
                 |ctx| {
                     egui::CentralPanel::default().show(ctx, |ui| {
-                        show_attribute_stacks(
+                        show_overview_attributes(
                             player.build.schemas(),
                             ui,
                             &mut player,
@@ -2315,23 +2716,42 @@ mod tests {
             let set = heading("Set Pieces");
             let feet = heading("Footedness");
             let personality = heading("Personality");
-            if width >= 960.0 {
+            if width >= 892.0 {
+                let identity = heading("Identity");
+                for attribute in [tech, mental, physical] {
+                    assert!((attribute.top() - identity.top()).abs() < 4.0,
+                        "attributes must start beside personal details: {attribute:?}, {identity:?}");
+                    assert!(attribute.left() > identity.right());
+                }
                 assert_eq!(tech.left(), set.left());
-                assert_eq!(mental.left(), feet.left());
-                assert_eq!(physical.left(), personality.left());
+                assert_eq!(mental.left(), personality.left());
+                assert_eq!(physical.left(), heading("Hidden").left());
                 assert!(
-                    personality.top() + 40.0 < set.top(),
-                    "physical stack should reclaim its empty space: personality={personality:?}, set={set:?}"
+                    heading("Hidden").top() + 40.0 < set.top(),
+                    "physical stack should reclaim its empty space"
                 );
-                assert!(personality.top() + 40.0 < feet.top());
-            } else if width >= 480.0 {
-                assert_eq!(tech.left(), heading("Goalkeeping").left());
-                assert_eq!(mental.left(), physical.left());
-                assert!(heading("Goalkeeping").top() > set.top());
-                assert!(physical.top() > feet.top());
+                assert!(heading("Goalkeeping").right() < 1600.0);
+                let goalkeeping = heading("Goalkeeping");
+                if width >= 1212.0 {
+                    assert!(goalkeeping.left() > physical.left());
+                    assert!((goalkeeping.top() - physical.top()).abs() < 1.0);
+                } else {
+                    assert_eq!(goalkeeping.left(), physical.left());
+                    assert!(goalkeeping.top() > heading("Hidden").bottom());
+                }
+            } else if width >= 732.0 {
+                assert!(tech.left() > heading("Identity").left());
+                assert!(mental.left() > tech.left());
+                assert_eq!(physical.left(), tech.left());
+                assert_eq!(heading("Goalkeeping").left(), mental.left());
+            } else if width >= 612.0 {
+                assert_eq!(tech.left(), physical.left());
+                assert_eq!(mental.left(), heading("Identity").left());
+                assert!(physical.top() > set.top());
             } else {
                 assert!(mental.top() > set.top());
-                assert!(physical.top() > feet.top());
+                assert!(physical.top() > personality.top());
+                assert!(feet.top() > heading("Goalkeeping").top());
                 for (_, rect, _) in &text {
                     assert!(rect.right() <= width - 7.0, "horizontal overflow: {rect:?}");
                 }
@@ -2356,7 +2776,7 @@ mod tests {
                 |ctx| {
                     egui::CentralPanel::default().show(ctx, |ui| {
                         ui.allocate_space(egui::vec2(1600.0, 10.0));
-                        show_attribute_stacks(
+                        show_overview_attributes(
                             player.build.schemas(),
                             ui,
                             &mut player,
@@ -2372,7 +2792,7 @@ mod tests {
                 assert_eq!(heading("Technical").left(), heading("Mental").left());
                 assert!(heading("Mental").top() > heading("Set Pieces").top());
             } else {
-                assert!(heading("Mental").left() > heading("Technical").left());
+                assert!(heading("Technical").left() > heading("Mental").left());
                 assert_eq!(heading("Technical").left(), heading("Goalkeeping").left());
             }
             for (_, rect, _) in text {
@@ -2570,15 +2990,12 @@ mod tests {
                             },
                         );
                         let text = painted_text(&output);
-                        assert!(
-                            text.iter()
-                                .any(|(s, _, _)| s == "Contract type: Unknown (read-only)")
-                        );
-                        assert!(
-                            !text
-                                .iter()
-                                .any(|(s, _, _)| s.contains("Apply Contract Type"))
-                        );
+                        assert!(text
+                            .iter()
+                            .any(|(s, _, _)| s == "Contract type: Unknown (read-only)"));
+                        assert!(!text
+                            .iter()
+                            .any(|(s, _, _)| s.contains("Apply Contract Type")));
                         assert!(matches!(tab, PlayerTab::Contract));
                         assert!(edits.is_empty());
                         assert_eq!(player.contract_raw, before);

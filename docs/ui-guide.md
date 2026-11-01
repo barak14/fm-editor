@@ -4,7 +4,11 @@
 
 Player, Staff, Human Manager and Club detail views share a persistent name/identity header. Player and staff headers show age and the club/nation information available in the attached game's schema; club headers show the club's nation where mapped (FM27). On FM27 Steam, age is calculated on the attached game's current date and updates as days pass; other builds estimate it from the birth year and the build's season year. Unknown information is labelled explicitly rather than guessed.
 
-The left sidebar groups **Players**, **Staff** and **Clubs** under Browse, with **Human Manager** under Management. Connection controls have their own Game Connection block. Back/Forward/Reload remain at the top; **Undo** and **Change history** are in the editing toolbar above the main workspace, not among navigation destinations. Profile identity summaries and attribute groups use bordered sections.
+Player and Human Manager overviews use compact identity strips above independently stacked columns. Personal details sit beside attributes on desktop rather than above them; narrow windows reflow the columns and scroll vertically. Read-only profile values stay beside their labels and within their column, with the full value on hover when shortened. The manager's editable Identity controls are in the personal-details column, not in the header.
+
+In Human Manager, read-only Roles follow Knowledge. Player Status follows Identity in the left personal-details column; morale is shown and edited as a numeric 1–20 rating rather than descriptive level names.
+
+The left sidebar groups **Players**, **Staff** and **Clubs** under Browse, with **Human Manager** under Management. Connection controls have their own Game Connection block. Back/Forward/Reload remain at the top; **Undo** and **Change history** are in the editing toolbar above the main workspace, not among navigation destinations. Compact identity strips keep profile context visible without a tall banner.
 
 When a game's version is known, the window title and sidebar heading identify it (for example, **FM27 Editor**); worktree titles retain their branch suffix. The connection block shows Connected/Waiting for save rather than repeating version and PID. The status bar retains attached-game details.
 
@@ -155,10 +159,10 @@ eviction. Old sessions contain reports, never reusable Undo payloads. This first
 version has no Redo, export, replay, history-delete action or staged Apply.
 Narrow windows use stacked rows instead of squeezing a wide table.
 
-Read-only sections/tabs are labelled. Player attributes use independently stacked
-category cards in four columns on wide views, or two/one on narrower views. Short
-groups no longer leave an empty row beneath them while waiting for the tallest
-neighbour. Labels use proportional text and numeric hit targets are consistent.
+Read-only sections/tabs are labelled. Player Overview places personal details beside
+independently stacked attribute cards in four or five columns on desktop views,
+with three, two or one on smaller viewports. Bounded content widths keep related values close on
+large displays; short groups do not wait for neighbouring cards to finish.
 Redundant inline instructions have been removed; necessary caveats remain in
 labels and tooltips. Unsupported contract-type conversion has no Apply button;
 its read-only status and hover explanation remain visible on the Contract tab.
@@ -189,7 +193,7 @@ is distinct from the blue outfield shirts; familiarity is always numeric.
 
 These player rows and actions are mapped for **FM27 Steam only**. FM27 Game Pass inherits the Steam schema but remains unverified; FM24/FM26 do not show these new controls.
 
-- **Status** shows editable morale (levels 1–20) and transfer value in pounds. Only witnessed morale levels have descriptive labels; other valid levels show **Level N** rather than a guessed description.
+- **Status**, below Identity, shows editable numeric morale (1–20) and transfer value in pounds. Morale uses the attached build's mapped field; descriptive morale words are not used in the control.
 - **Injuries** lists the injury name, injured-on date, and dates for returning to light and full training. **Heal** shortens the remaining durations to the elapsed time since the injury began; it never lengthens an injury. Both training durations are one undoable edit.
 - **Unavailability** shows suspensions/bans, holidays and unknown codes with available dates. **Lift ban** shortens a date-based suspension to the elapsed time since it began. Holidays and unknown kinds are read-only. Heal/Lift ban require a readable list and a known current game date, and are disabled when no shortening is possible. On FM27 Steam, once the shortened ban expires during the next game day, FM deletes the suspension, and Undo can no longer restore it.
 - **Identity** shows the player's languages in FM's order and level words (Basic, Good, Fluent), read-only.

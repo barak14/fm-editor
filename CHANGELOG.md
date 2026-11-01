@@ -5,7 +5,7 @@
 ### Features
 
 - FM24 Steam: editable player **Weight** and **Traits (PPMs)**, verified in game on Kane, Maddison, Kulusevski and Udogie.
-- FM24 Steam: editable player **Morale** (level 1–20 with FM24's own level names), matched against all 24 Brighton players and written/undone live.
+- FM24 Steam: editable player **Morale** (numeric 1–20), matched against all 24 Brighton players and written/undone live.
 - FM24 Steam: staff **Judge Staff**, **Data Analysis** and **Sports Science** are now mapped and editable, verified on Jedinak, Guardiola and Ryan Mason.
 - FM24 Steam: clubs show read-only **Wage Spend** (FM's "Currently spending", p/w) and **Next Min Budget** (next season's minimum guaranteed transfer budget).
 - Add read-only two-player comparison: **Select for compare** on one profile, then **Compare with selected** on another. Named columns stay visible while scrolling, with coloured attributes, grouped sections and available age, CA/PA, wage and expiry context. Snapshots clear on save reload/reconnection. No season-statistics mappings or memory writes are added.
@@ -19,6 +19,8 @@
 
 ### Fixes
 
+- Keep player and manager overviews compact: shallow identity headers and independently stacked personal-detail/attribute columns bring attributes into view without shrinking text. Reflow columns on narrow windows; constrain long read-only values beside their labels, with full text on hover.
+- Fit more player attribute columns at default window sizes; move Status below Identity and display morale numerically (1–20). Place manager Roles below Knowledge.
 - FM24 Steam: the club **Transfer Budget** now reads and writes the value FM's finance screen shows (finance+0x7CC). The budget-record copy used before is not what FM displays, so edits to it did not show in game.
 - Make player profile layouts use available space: independently stacked attribute cards reduce gaps and scrolling; **Positions & Traits** sizes the pitch to the profile viewport and places traits beside it on wide views, with readable stacked layouts on narrow screens. Keep the existing schema-backed numeric editing and Undo behaviour.
 - FM27 Steam: favoured-club reasons read the right byte. **As a player** / **As a supporter** were wrong for some clubs (Mbappé's R. Madrid, Litmanen's Ajax).
