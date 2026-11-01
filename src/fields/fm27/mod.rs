@@ -37,6 +37,7 @@ const STEAM: VersionedSchemas = VersionedSchemas {
     stadium_sub_records: &[],
     player_lists: Some(&player::FM27_PLAYER_LISTS),
     morale_labels: player::MORALE_LABELS,
+    person_profile: Some(&staff::PERSON_PROFILE),
 
     player_struct_size: 992, // 0x3E0 — covers block-2 name sub-records at 0x3D0/0x3D8
     staff_struct_size: 576,

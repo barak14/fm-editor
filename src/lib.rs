@@ -14,6 +14,7 @@ pub mod club_policy;
 pub mod fields;
 pub mod game_date;
 pub mod game_version;
+pub mod person;
 pub mod player;
 pub mod process;
 pub mod ratings;

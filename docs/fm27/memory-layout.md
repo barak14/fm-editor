@@ -361,7 +361,7 @@ headless display. Code: `fields::fm27::staff`.
 |-------|----------|-----------|
 | DOB | +0x188 (day-of-year u16, year u16) | FM profile dates match memory for Guardiola 18/1/1971 (day 18), Flick 5/3/1965 (64), Cudicini 6/9/1973 (249), Bruno Saltor 1/10/1980 (275, leap year), Thorrington 17/10/1979 (290). Andrew Crofts 29/5/1984 (150) matches his real DOB. |
 | CA / PA | u16 +0xDA / +0xDC | FM27 does not display staff CA/PA, so these are checked in memory only. All 49,195 AI staff read 1..=200 with CA <= PA; Guardiola 190/200, Arteta 173/180, Slot 164/175, Flick 165/165, Cudicini 110/149. |
-| Reputation | u16 +0xD4 home / +0xD6 current / +0xD8 world | FM shows one word, which ranks with the values: Bruno (5500/5500/1250) and Thorrington (5750/5750/2250) "Obscure", Cudicini (6520/6520/3260) "Local", Flick (8300/8300/8100) "Continental", Guardiola (9500/9500/9500) "Global". Band edges are unknown. |
+| Reputation | u16 +0xD4 home / +0xD6 current / +0xD8 world | FM shows one word. For AI staff it ranks with world rep: Bruno (world 1250), Bajković (2000) and Thorrington (2250) "Obscure"; Cudicini (3260) "Local"; van der Gragt (5159), Reiziger (5000), Bjelica (5250), Chapuisat (5500) and Conceição (5750) "Regional"; Nedvěd (6250) "National"; Flick (8100) "Continental"; Guardiola (9500) "Global". Your manager (home 9125, current 9500, world 5500) shows "Global", and players use other words ("Worldwide" for Mbappé at 9600; Keisuke Honda "Continental" at world 4650). So the word is not world rep alone, and the editor shows the numbers only. |
 | Role-ratings pointer | +0x1D0 → 15 × u8 (1–20) | See below. |
 
 **Role-ratings pointer.** The earlier "unaligned, so not a pointer" reading
@@ -387,7 +387,7 @@ index rated 18 or more was tallied against the contract job code (contract
 | 34 GK Coach | 1,874 | 5 GK Coach (all) |
 | 26 Fitness Coach | 1,960 | 6 Fitness Coach (all) |
 | 22 Set Piece Coach | 60 | 7 Set Piece Coach (58) |
-| 4 (chairman/board) | 542 | 8 (all) |
+| 4 Chairperson | 542 | 8 (all) |
 | 10 Director of Football | 653 | 9 DoF (all) |
 | 64 Head of Youth Development | 625 | 10 HoYD (all) |
 | 86 Loan Manager | 93 | 11 Loan Manager (all) |
@@ -414,6 +414,98 @@ rated 1 are grey:
 | Thorrington | 2:20 4:18 9:20, rest ≤13 | DoF, Scout green; TD, HoYD, analyst roles grey |
 
 Ratings stay read-only in the editor (`staff_panel`: "Roles (read-only)").
+
+### Staff languages, coaching licence and preferred formations (2026-11-01, Steam, Spurs save)
+
+Read-only, shown in the staff Identity column (and languages in the player
+Identity column). Code: `fields::fm27::staff::PERSON_PROFILE`,
+`LICENCE_LABELS`, `FORMATION_LABELS`, `src/person.rs`.
+
+**Person block.** Staff +0x100..+0x240 and player +0x288.. (player-coach
++0x288+0xF8) hold the same person layout: player nation +0x2F0 and staff
+nation +0x168 are both person +0x68. The human manager's person block is
+at +0x100+0x340, like his other identity fields.
+
+**Languages.** Person +0xF0 is a `(begin, end)` vector of pointers to
+16-byte entries {language pointer, u32 level}; the language name is an
+FmString at language +0x18. FM's Personal tab shows:
+
+1. the nation's native language as Fluent, unless the vector already lists
+   it. The nation's languages are a vector at nation +0x48 of 16-byte
+   {language pointer, u32 share} entries, and only the first is shown (USA:
+   English then Spanish; Thorrington shows English but not Spanish);
+2. then the vector's languages by level, highest first, keeping vector order
+   for equal levels.
+
+| Level | FM word | Witnesses |
+|------:|---------|-----------|
+| 0, 1 | not shown | van der Gragt Macedonian 0; Conceição Dutch 1 and Arabic 1; Bajković Slovenian 1 |
+| 2-4 | Basic | Thorrington German 2, Bjelica Macedonian 3, Reiziger German 4, Litmanen Estonian 3 |
+| 5, 6 | Good | Guardiola German 5, Bjelica Serbian 6, Mbappé Arabic 6 / Spanish 5 |
+| 7-10 | Fluent | Nedvěd English 7, Breitenreiter English 8, Conceição Spanish 9 |
+
+Full lists matched FM exactly, in order, for Guardiola, Flick, Cudicini,
+Thorrington, Bjelica, Reiziger, Nedvěd, Breitenreiter, Conceição, van der
+Gragt, Bajković, Chapuisat, André Webster (your manager, shifted block) and the
+players Mbappé, Haaland, Litmanen and Keisuke Honda (player-coach). The editor
+checked the same lists through its own reader for Webster, Flick, Guardiola,
+Mbappé, Litmanen and Honda.
+
+**Coaching licence.** u8 at staff +0x23C (person +0x13C); the human manager's
+is at +0x23C+0x340, so it was added to `MANAGER_SHIFTED_FIELDS` (his standard
+slot reads 2, but FM shows "Continental Pro Licence", which matches the
+shifted 1).
+
+| Code | FM "Coaching Qualifications" | Witnesses | Staff |
+|-----:|------------------------------|-----------|------:|
+| 0 | No Qualifications | Fearghal Kerin (physio) | 16,744 |
+| 1 | Continental Pro Licence | Guardiola, Flick, Cudicini, Bjelica, Reiziger, Breitenreiter, Conceição, van der Gragt, Webster | 6,841 |
+| 2 | Continental A Licence | Bruno Saltor, Boban Bajković | 9,252 |
+| 3 | Continental B Licence | Stéphane Chapuisat | 6,882 |
+| 4 | Continental C Licence | Stefano Castellani | 2,556 |
+| 5 | National A Licence | Alberto Benito | 2,387 |
+| 6 | National B Licence | Frank Baumann | 2,176 |
+| 7 | National C Licence | Dustin Heun | 2,022 |
+| 8 | No Qualifications | Pavel Nedvěd | 335 |
+
+Codes 3-7 have one witness each, but the ladder order is fixed by FM's
+Qualification Ladder and fits 0-2 and 8. The "Active Study" marker on the
+ladder is not mapped.
+
+**Preferred formations.** u8 formation IDs in the 8-byte block at
++0xDF..+0xE6 (FM26 order: preferred, second, defensive and attacking in
+possession, then the same four out of possession). FM's Overview "Preferred
+Formations" shows +0xDF with the in-possession icon (green) and +0xE3 with the
+out-of-possession icon (red); the other six bytes are not shown. FM shows the
+row only for coaching staff (not for physios or scouts), and shows "Custom"
+for your manager, whose block reads zero.
+
+| ID | Formation | Witnesses |
+|---:|-----------|-----------|
+| 3 | 4-4-2 | Ferguson-Dillon, Behlau, Tumani |
+| 4 | 4-3-3 DM Wide | Guardiola, Flick, Cudicini |
+| 7 | 4-4-2 Diamond Narrow | Lourenço, Kono, Mark Robson, David Head |
+| 22 | 4-4-2 2DM | Cudicini, Simeone, Behlau, Tumani |
+| 27 | 4-3-2-1 DM AM Narrow | Mark Robson, David Head |
+| 28 | 4-2-4 DM Wide | Simeone, Carminati, Eibenberger |
+| 29 | 4-2-3-1 DM AM Wide | Flick, Tapalović |
+| 30 | 5-3-2 DM WB | Pintus, Carminati |
+| 32 | 4-1-4-1 DM | Guardiola, Ferguson-Dillon |
+| 33 | 4-4-1-1 2DM | Tapalović, Eibenberger, Sambade |
+| 35 | 5-2-3 DM Wide | Bruno Saltor, Giráldez |
+| 62 | 4-2-2-2 DM AM Narrow | Bitcon, Sambade |
+| 63 | 5-2-2-1 DM AM | Bruno Saltor, Kovač, Giráldez, Jurić |
+| 64 | 5-2-1-2 DM AM | Filippi, Jurić, Kono |
+
+IDs 0, 65 and 68 also occur (95, 17 and 10 staff) but no witness showed them:
+Grégory Proment (65 in) is a manager, yet FM showed no formation row for him.
+The editor shows unknown IDs as "Formation #N". A 14-entry list of formation
+objects (stride 0x7B0, name FmString at +0x00) exists in the heap, but it has
+no ID field and is not the ID table.
+
+Not mapped: FM's "Tactical Style" word (Tiki-Taka, Control Possession, Wing
+Play, Route One) and "Tendencies", which FM probably derives from the tactical
+attributes, and the "Preferred Jobs" list.
 
 **Club** (Arsenal / Spurs / Man City / Liverpool):
 
@@ -492,9 +584,16 @@ Pass inherits these struct offsets (unverified); FM24/FM26 have none.
   Simons, Odobert (injuries); Mudryk (ban); Porro, Bentancur (holiday).
 - **Ties**: pointer at player+0x300 (shifted for player-coaches); 16-byte entries (target +0x00, kind +0x0A with 1 club
   and 8 nation, type +0x0B with 9 other nationality and 3 favoured club,
-  strength +0x0C, reason +0x0D with 0x4F as a player and 0x4E as a supporter).
+  strength +0x0C, reason +0x08 with 1 as a supporter and 2 as a player).
   Witnesses: Senesi, Gray (nationalities); Bentancur, van Hecke, Gray
-  (favoured clubs).
+  (favoured clubs). **Corrected 2026-11-01:** the reason was first mapped to
+  +0x0D (0x4F player, 0x4E supporter), which agreed with +0x08 on those
+  witnesses only. FM's Personal tab contradicts +0x0D: Mbappé's R. Madrid
+  (supporter) reads +0x08 1 / +0x0D 0x4F; Haaland's Bryne, Man City and Leeds
+  (all supporter) read 1 / 0x4F; Litmanen's Ajax (player) reads 2 / 0x4E and
+  Liverpool (supporter) 1 / 0x4F. +0x08 matches all of them. Across sampled
+  favoured-club ties, +0x08 is 1 or 2 except 12 entries with 0 and one with 4
+  (unlabelled); +0x0D (0x4E, 0x4F or 0) is not understood.
 - **Clauses** vector at contract+0x68: 8-byte entries (amount +0x00, value
   +0x04, type +0x06). Types 0x20 appearance fee, 0x21 goal, 0x22 clean sheet,
   0x26 unused substitute, 0x27 assist (pound amounts); 0x05 relegation wage
@@ -613,8 +712,11 @@ Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
 
 - `p_name2` block-2 names: removed on FM27 (see above).
 - Reputation is memory-checked only; FM shows reputation as words
-  ("Worldwide", "Continental", "Obscure"), not numbers. Band edges are unknown.
+  ("Worldwide", "Continental", "Obscure"), not numbers. The word is not world
+  reputation alone (see the staff table), so no labels are shown.
 - Staff CA/PA: FM27 never shows them, so they are memory-checked only.
+- Formation IDs 0, 65 and 68 and the six formation bytes FM does not show.
+- Favoured-club tie reason codes 0 and 4.
 - Stadium array root (`rva_stadium_base`) and stride.
 - Asking price (+0x238) for a listed player (see the player table).
 

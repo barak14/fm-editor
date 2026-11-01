@@ -38,6 +38,8 @@ pub struct StaffView {
     pub club_addr: Option<u64>,
     /// Place of birth (e.g. "San Sebastián"). None until offset is mapped.
     pub birthplace: Option<String>,
+    /// Spoken languages in FM's profile order. None when unmapped or unreadable.
+    pub languages: Option<Vec<crate::person::Language>>,
     /// Contract sub-record bytes (job, wage, expiry), when mapped and present.
     pub contract_raw: Option<Vec<u8>>,
     /// Address of the contract sub-record, for edits to contract fields.

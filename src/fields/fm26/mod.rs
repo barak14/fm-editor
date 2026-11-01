@@ -58,6 +58,7 @@ pub static FM26: VersionedSchemas = VersionedSchemas {
     stadium_sub_records: &[],
     player_lists: None,
     morale_labels: &[],
+    person_profile: None,
 
     player_struct_size: 992, // 0x3E0 — covers block-2 name sub-records at 0x3D0/0x3D8
     staff_struct_size: 576,

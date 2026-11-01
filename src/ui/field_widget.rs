@@ -1243,6 +1243,23 @@ pub fn info_label(ui: &mut egui::Ui, label: &str, value: impl std::fmt::Display)
     });
 }
 
+/// Most width a wrapped value may take, so a long list inside a
+/// `horizontal_wrapped` row (player identity) does not claim the whole row.
+const WRAPPED_VALUE_MAX_WIDTH: f32 = 320.0;
+
+/// Read-only label whose value wraps within the column (long lists such as
+/// languages), instead of running into the next column.
+pub fn info_label_wrapped(ui: &mut egui::Ui, label: &str, value: impl std::fmt::Display) {
+    ui.horizontal_top(|ui| {
+        profile_label(ui, label);
+        let width = ui.available_width().min(WRAPPED_VALUE_MAX_WIDTH);
+        ui.vertical(|ui| {
+            ui.set_max_width(width);
+            ui.add(egui::Label::new(format!("{value}")).wrap());
+        });
+    });
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

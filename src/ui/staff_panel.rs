@@ -99,7 +99,41 @@ fn identity(
     if let Some(birthplace) = &staff.birthplace {
         field_widget::info_label(ui, "Place of Birth", birthplace);
     }
+    profile_labels(schemas, ui, staff);
     ui.add_space(4.0);
+}
+
+/// Read-only person-profile rows: languages, coaching licence and preferred
+/// formations, when the attached build maps them.
+fn profile_labels(
+    schemas: &'static crate::fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    staff: &StaffView,
+) {
+    let Some(layout) = schemas.person_profile else {
+        return;
+    };
+    if let Some(languages) = staff.languages.as_deref().filter(|l| !l.is_empty()) {
+        field_widget::info_label_wrapped(ui, "Languages", crate::person::format_languages(languages));
+    }
+    let byte = |key: &str| schemas.offset_of(key).and_then(|o| staff.record.raw.get(o).copied());
+    if let Some(code) = byte("s_licence") {
+        field_widget::info_label(ui, "Coaching Licence", layout.licence_label(code));
+    }
+    // A zero ID means no preference (the human manager reads zero).
+    let formations: Vec<String> = ["s_formation_in", "s_formation_out"]
+        .iter()
+        .filter_map(|key| byte(key))
+        .filter(|&id| id != 0)
+        .map(|id| layout.formation_label(id))
+        .collect();
+    if formations.len() == 2 {
+        field_widget::info_label_wrapped(
+            ui,
+            "Formations",
+            format!("{} (in) / {} (out)", formations[0], formations[1]),
+        );
+    }
 }
 
 fn categories(

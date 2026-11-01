@@ -132,6 +132,15 @@ pub(crate) const FIELDS: &[Field] = &[
         // 15-byte record with every byte in 1..=20 and 2,812 are null. The
         // human manager's pointer is at +0x510 (0x1D0 + HUMAN_MANAGER_SHIFT).
         Field { key: "s_role_ptr",     label: "Role Ratings",     entity: Staff, category: General,      offset: pointer(0x1D0) },
+        // Coaching licence (u8, person block +0x13C; human manager shifted).
+        // FM's Personal tab "Coaching Qualifications": see LICENCE_LABELS.
+        Field { key: "s_licence",      label: "Coaching Licence", entity: Staff, category: Internal,     offset: direct(0x23C) },
+        // Preferred formations: u8 formation IDs in an 8-byte block at
+        // +0xDF. FM's "Preferred Formations" shows +0xDF (in possession) then
+        // +0xE3 (out of possession); the other six bytes are not shown.
+        // Coaching staff only; the human manager's block reads zero.
+        Field { key: "s_formation_in",  label: "Formation (in possession)",     entity: Staff, category: Internal, offset: direct(0x0DF) },
+        Field { key: "s_formation_out", label: "Formation (out of possession)", entity: Staff, category: Internal, offset: direct(0x0E3) },
 
         // =====================================================================
         // Staff Roles (15-byte sub-record reached via s_role_ptr)
@@ -210,4 +219,74 @@ pub const MANAGER_SHIFTED_FIELDS: &[(usize, usize)] = &[
     (0x170, 8), // personality (8 x u8)
     (0x188, 4), // DOB day (u16) + year (u16)
     (0x1D0, 8), // role sub-record pointer
+    (0x23C, 1), // coaching licence (person block; standard slot holds another value)
+];
+
+/// Person-profile layout (FM27 Steam, 2026-11-01). The person block is at
+/// staff +0x100 and player +0x288 (player-coach +0x288+0xF8).
+///
+/// Languages: person +0xF0 is a vector of pointers to 16-byte entries
+/// {language ptr, u32 level}; the language name is an FmString at +0x18.
+/// FM's Personal tab lists the nation's native language first as Fluent
+/// (nation +0x48, first 16-byte entry) unless the vector already has it,
+/// then the vector's languages by level, hiding levels 0-1. Witnesses:
+/// Guardiola, Flick, Cudicini, Thorrington, Bjelica, Reiziger, Nedvěd,
+/// Breitenreiter, Conceição, van der Gragt, Bajković, Chapuisat.
+pub static PERSON_PROFILE: crate::fields::PersonProfileLayout = crate::fields::PersonProfileLayout {
+    staff_person_offset: 0x100,
+    languages_vec: 0xF0,
+    language_level: 0x08,
+    language_name: 0x18,
+    nation_ptr: 0x68,
+    nation_languages_vec: 0x48,
+    nation_language_size: 0x10,
+    // 2-4 Basic (Reiziger German 4, Bjelica Macedonian 3, Thorrington German
+    // 2), 5-6 Good (Guardiola German 5, Bjelica Serbian 6), 7-10 Fluent
+    // (Nedvěd English 7, Breitenreiter English 8, Conceição Spanish 9).
+    // 0 and 1 are not shown (van der Gragt Macedonian 0, Conceição Dutch 1).
+    language_levels: &[(2, "Basic"), (5, "Good"), (7, "Fluent")],
+    licence_labels: LICENCE_LABELS,
+    formation_labels: FORMATION_LABELS,
+};
+
+/// `s_licence` codes against FM's "Coaching Qualifications" current level.
+/// Witnesses: 0 Fearghal Kerin; 1 Guardiola, Flick, Cudicini, Bjelica,
+/// Reiziger, Breitenreiter, Conceição, van der Gragt, André Webster; 2 Bruno Saltor, Boban Bajković; 3 Stéphane Chapuisat; 4 Stefano
+/// Castellani; 5 Alberto Benito; 6 Frank Baumann; 7 Dustin Heun; 8 Pavel
+/// Nedvěd. 0 and 8 both show "No Qualifications".
+pub const LICENCE_LABELS: &[(u8, &str)] = &[
+    (0, "No Qualifications"),
+    (1, "Continental Pro Licence"),
+    (2, "Continental A Licence"),
+    (3, "Continental B Licence"),
+    (4, "Continental C Licence"),
+    (5, "National A Licence"),
+    (6, "National B Licence"),
+    (7, "National C Licence"),
+    (8, "No Qualifications"),
+];
+
+/// Formation IDs witnessed on FM's "Preferred Formations" (staff Overview),
+/// each on at least two staff: 3 Ferguson-Dillon, Behlau, Tumani; 4
+/// Guardiola, Flick, Cudicini; 7 Lourenço, Kono, Robson, Head; 22 Cudicini,
+/// Simeone, Behlau; 27 Robson, Head; 28 Simeone, Carminati, Eibenberger; 29
+/// Flick, Tapalović; 30 Pintus, Carminati; 32 Guardiola, Ferguson-Dillon; 33
+/// Tapalović, Eibenberger, Sambade; 35 Bruno Saltor, Giráldez; 62 Bitcon,
+/// Sambade; 63 Bruno Saltor, Kovač, Giráldez, Jurić; 64 Filippi, Jurić, Kono.
+/// IDs 0, 65 and 68 also occur but were not shown by FM on any witness.
+pub const FORMATION_LABELS: &[(u8, &str)] = &[
+    (3, "4-4-2"),
+    (4, "4-3-3 DM Wide"),
+    (7, "4-4-2 Diamond Narrow"),
+    (22, "4-4-2 2DM"),
+    (27, "4-3-2-1 DM AM Narrow"),
+    (28, "4-2-4 DM Wide"),
+    (29, "4-2-3-1 DM AM Wide"),
+    (30, "5-3-2 DM WB"),
+    (32, "4-1-4-1 DM"),
+    (33, "4-4-1-1 2DM"),
+    (35, "5-2-3 DM Wide"),
+    (62, "4-2-2-2 DM AM Narrow"),
+    (63, "5-2-2-1 DM AM"),
+    (64, "5-2-1-2 DM AM"),
 ];

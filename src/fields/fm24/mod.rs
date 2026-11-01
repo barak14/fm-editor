@@ -47,6 +47,7 @@ pub static FM24: VersionedSchemas = VersionedSchemas {
     stadium_sub_records: &[],
     player_lists: None,
     morale_labels: player::MORALE_LABELS,
+    person_profile: None,
 
     player_struct_size: 0x3E8, // pool stride
     staff_struct_size: 0x268,  // pool stride

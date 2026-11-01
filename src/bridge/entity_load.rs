@@ -42,6 +42,7 @@ pub(super) fn load_staff_view(
         club_name: extras.club_name,
         club_addr: extras.club_addr,
         birthplace: extras.birthplace,
+        languages: extras.languages,
         contract_raw: extras.contract_raw,
         contract_addr: extras.contract_addr,
     })
@@ -53,6 +54,7 @@ pub(super) struct StaffExtras {
     pub club_name: Option<String>,
     pub club_addr: Option<u64>,
     pub birthplace: Option<String>,
+    pub languages: Option<Vec<crate::person::Language>>,
     pub contract_raw: Option<Vec<u8>>,
     pub contract_addr: Option<u64>,
 }
@@ -74,6 +76,9 @@ pub(super) fn load_staff_extras(fm: &FmProcess, base: u64) -> StaffExtras {
         club_name: crate::fields::read_sub_fm_string(fm, base, "s_club", subs, &|o| o),
         club_addr: resolve_sub_ptr(fm, base, "club", subs),
         birthplace: crate::fields::read_sub_fm_string(fm, base, "s_birthplace", subs, &|o| o),
+        languages: fm.schemas().person_profile.and_then(|layout| {
+            crate::person::read_languages(fm, base.checked_add(layout.staff_person_offset as u64)?)
+        }),
         contract_raw,
         contract_addr,
     }
@@ -454,6 +459,7 @@ pub(super) fn load_human_manager(fm: &FmProcess) -> Result<StaffView, String> {
         club_name: extras.club_name,
         club_addr: extras.club_addr,
         birthplace: extras.birthplace,
+        languages: extras.languages,
         contract_raw: extras.contract_raw,
         contract_addr: extras.contract_addr,
     })

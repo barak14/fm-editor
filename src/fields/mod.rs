@@ -551,6 +551,66 @@ pub struct PlayerListLayout {
     pub clause_year_types: &'static [u8],
 }
 
+/// Build-specific layout and labels for person-profile data shared by staff
+/// and players: spoken languages, plus staff coaching licence and preferred
+/// formation names. All offsets are relative to the person block, which sits
+/// at `staff_person_offset` in a staff object (shifted for the human manager)
+/// and at `player_person_offset` in a player object.
+#[derive(Debug)]
+pub struct PersonProfileLayout {
+    pub staff_person_offset: usize,
+    /// Person + this: vector (begin/end u64) of pointers to language entries.
+    pub languages_vec: usize,
+    /// Language entry + this: u32 level. The entry starts with the language pointer.
+    pub language_level: usize,
+    /// Language object + this: FmString pointer with the language name.
+    pub language_name: usize,
+    /// Person + this: nation pointer.
+    pub nation_ptr: usize,
+    /// Nation + this: vector of `nation_language_size`-byte entries that
+    /// start with a language pointer. The first is the native language.
+    pub nation_languages_vec: usize,
+    pub nation_language_size: usize,
+    /// (minimum level, label), ascending. Lower levels are not shown by FM.
+    pub language_levels: &'static [(u32, &'static str)],
+    /// Labels for the `s_licence` byte.
+    pub licence_labels: &'static [(u8, &'static str)],
+    /// Names for staff formation IDs (`s_formation_in` / `s_formation_out`);
+    /// only witnessed IDs are listed.
+    pub formation_labels: &'static [(u8, &'static str)],
+}
+
+impl PersonProfileLayout {
+    /// FM's word for a language level, or `None` when FM hides the language.
+    pub fn language_level_label(&self, level: u32) -> Option<&'static str> {
+        self.language_levels
+            .iter()
+            .rev()
+            .find(|&&(min, _)| level >= min)
+            .map(|&(_, label)| label)
+    }
+
+    /// Licence label, falling back to the raw code.
+    pub fn licence_label(&self, code: u8) -> String {
+        label_or_code(self.licence_labels, code, "Code")
+    }
+
+    /// Formation name, falling back to the raw ID.
+    pub fn formation_label(&self, id: u8) -> String {
+        label_or_code(self.formation_labels, id, "Formation #")
+    }
+}
+
+fn label_or_code(table: &[(u8, &'static str)], code: u8, prefix: &str) -> String {
+    table
+        .iter()
+        .find(|&&(known, _)| known == code)
+        .map(|&(_, label)| label.to_owned())
+        .unwrap_or_else(|| {
+            if prefix.ends_with('#') { format!("{prefix}{code}") } else { format!("{prefix} {code}") }
+        })
+}
+
 /// Complete field / layout / RVA schema for one game build.
 ///
 /// There is exactly one `static` of this type per supported build
@@ -578,6 +638,9 @@ pub struct VersionedSchemas {
     pub player_lists: Option<&'static PlayerListLayout>,
     /// Only independently witnessed morale levels have labels.
     pub morale_labels: &'static [(u8, &'static str)],
+    /// None when this build's person-profile data (languages, licence,
+    /// formation names) has not been mapped.
+    pub person_profile: Option<&'static PersonProfileLayout>,
 
     // Struct sizes / read sizes.
     pub player_struct_size: usize,
@@ -996,7 +1059,7 @@ mod player_schema_tests {
                 layout.relation_strength,
                 layout.relation_reason
             ),
-            (16, 0, 0x0A, 0x0B, 0x0C, 0x0D)
+            (16, 0, 0x0A, 0x0B, 0x0C, 0x08)
         );
         assert_eq!(
             (
@@ -1010,7 +1073,7 @@ mod player_schema_tests {
         assert_eq!((layout.nation_name, layout.club_name), (0x18, 0xC0));
         assert_eq!(
             layout.favoured_club_reasons,
-            &[(0x4F, "As a player"), (0x4E, "As a supporter")]
+            &[(1, "As a supporter"), (2, "As a player")]
         );
         for (key, expected_offset, expected_encoding) in [
             ("p_list_date", 0x50, Encoding::DateDayYear),

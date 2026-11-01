@@ -1916,6 +1916,7 @@ mod tests {
             club_addr: None,
             nationality: None,
             birthplace: None,
+            languages: None,
             game_date: Some(date),
             relations: ListState::Unmapped,
             injuries: ListState::Items(vec![Injury {
@@ -2011,6 +2012,7 @@ fn cached_player_record(cached: &CachedPlayer, build: GameBuild) -> PlayerRecord
         club_addr: None,
         nationality: None,
         birthplace: None,
+        languages: None,
         game_date: None,
         injuries: crate::player::ListState::Unmapped,
         absences: crate::player::ListState::Unmapped,
@@ -2035,6 +2037,7 @@ fn cached_staff_view(cached: &CachedStaff, build: GameBuild) -> StaffView {
         club_name: None,
         club_addr: None,
         birthplace: None,
+        languages: None,
         contract_raw: None,
         contract_addr: None,
     }

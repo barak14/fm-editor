@@ -147,6 +147,9 @@ fn show_overview(
             if let Some(birthplace) = &player.birthplace {
                 field_widget::info_label(ui, "Place of Birth", birthplace);
             }
+            if let Some(languages) = player.languages.as_deref().filter(|l| !l.is_empty()) {
+                field_widget::info_label_wrapped(ui, "Languages", crate::person::format_languages(languages));
+            }
         });
 
         // Appearance (shown in the 3D match), when the schema maps it.
@@ -1372,6 +1375,7 @@ mod tests {
             club_addr: None,
             nationality: None,
             birthplace: None,
+            languages: None,
             game_date: None,
             injuries: ListState::Unmapped,
             absences: ListState::Unmapped,
@@ -1621,6 +1625,7 @@ mod tests {
                     club_addr: None,
                     nationality: None,
                     birthplace: None,
+                    languages: None,
                     game_date: None,
                     injuries: ListState::Unmapped,
                     absences: ListState::Unmapped,

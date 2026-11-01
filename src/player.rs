@@ -439,6 +439,8 @@ pub struct PlayerRecord {
     pub club_addr: Option<u64>,
     pub nationality: Option<String>,
     pub birthplace: Option<String>,
+    /// Spoken languages in FM's profile order; `None` when unmapped or unreadable.
+    pub languages: Option<Vec<crate::person::Language>>,
     pub game_date: Option<GameDate>,
     pub injuries: ListState<Injury>,
     pub absences: ListState<Absence>,
@@ -806,6 +808,10 @@ pub fn read_player_at(fm: &FmProcess, addr: u64, index: usize) -> Result<PlayerR
     let club_addr = fields::resolve_sub_ptr_mapped(fm, addr, "club", subs, &phys);
     let nationality = fields::read_sub_fm_string(fm, addr, "p_nationality", subs, &phys);
     let birthplace = fields::read_sub_fm_string(fm, addr, "p_birthplace", subs, &phys);
+    let languages = fm.schemas().person_profile.and_then(|_| {
+        let person = player_phys_offset(fm.schemas(), fm.schemas().player_person_offset as u64, person_shift);
+        crate::person::read_languages(fm, addr.checked_add(person)?)
+    });
     let game_date = (fm.schemas().rva_current_date != 0)
         .then(|| fm.gp_base.checked_add(fm.schemas().rva_current_date))
         .flatten()
@@ -827,6 +833,7 @@ pub fn read_player_at(fm: &FmProcess, addr: u64, index: usize) -> Result<PlayerR
         club_addr,
         nationality,
         birthplace,
+        languages,
         game_date,
         injuries,
         absences,
@@ -957,8 +964,8 @@ mod tests {
         let object = 0x20000;
         let base = 0x30000;
         let witnesses = [
-            (l.kind_club, l.type_favoured_club, 0x4F, 0x40000u64, "Boca"),
-            (l.kind_club, l.type_favoured_club, 0x4E, 0x41000, "Peñarol"),
+            (l.kind_club, l.type_favoured_club, 2, 0x40000u64, "Boca"),
+            (l.kind_club, l.type_favoured_club, 1, 0x41000, "Peñarol"),
             (l.kind_nation, l.type_other_nationality, 0, 0x42000, "Italy"),
             (
                 l.kind_nation,
@@ -970,11 +977,11 @@ mod tests {
             (
                 l.kind_club,
                 l.type_favoured_club,
-                0x4F,
+                2,
                 0x44000,
                 "NAC Breda",
             ),
-            (l.kind_club, l.type_favoured_club, 0x4E, 0x45000, "Leeds"),
+            (l.kind_club, l.type_favoured_club, 1, 0x45000, "Leeds"),
         ];
         let mut entries = Vec::new();
         for (i, (kind, relation_type, reason, target, name)) in witnesses.iter().enumerate() {
@@ -1313,6 +1320,7 @@ mod tests {
             club_addr: None,
             nationality: None,
             birthplace: None,
+            languages: None,
             game_date: None,
             injuries: ListState::Unmapped,
             absences: ListState::Unmapped,

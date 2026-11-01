@@ -44,14 +44,18 @@ pub(crate) const FM27_PLAYER_LISTS: crate::fields::PlayerListLayout = crate::fie
     relation_kind: 0x0A,
     relation_type: 0x0B,
     relation_strength: 0x0C,
-    relation_reason: 0x0D,
+    // Reason u8 at +0x08: 1 as a supporter, 2 as a player (FM27 Personal
+    // tab: Mbappé Monaco/PSG player, R. Madrid supporter; Haaland Bryne,
+    // Man City, Leeds supporter; Litmanen Liverpool supporter, Ajax and
+    // Reipas player). +0x0D (0x4E/0x4F/0) is not the reason.
+    relation_reason: 0x08,
     kind_club: 1,
     kind_nation: 8,
     type_other_nationality: 9,
     type_favoured_club: 3,
     nation_name: 0x18,
     club_name: 0xC0,
-    favoured_club_reasons: &[(0x4F, "As a player"), (0x4E, "As a supporter")],
+    favoured_club_reasons: &[(1, "As a supporter"), (2, "As a player")],
     clauses_vec: 0x68,
     clause_size: 8,
     clause_amount: 0x00,

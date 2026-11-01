@@ -83,7 +83,13 @@ club witness for a finance field, add a manager to that club in the save
 display, so they cannot confirm what happened in FM or the editor there. Take a
 `shot` after each step and report what FM showed in words: the screen, the
 value and the game date. Do not ask the user to check it on their own monitor.
-Only one session should drive the shared display at a time. Another editor
+Only one session should drive the shared display at a time.
+Keep the editor off FM's display when you can: run it on a second compositor
+(`FMH_DIR=/tmp/fmh-ed bash Tools/fm-headless.sh start 900x1000`) and click it
+with a `zwlr_virtual_pointer_v1` client on that compositor's Wayland socket.
+On 2026-11-01, an editor sharing FM27's display took keyboard and click focus;
+after it closed, FM (Wine) still rendered hover but ignored `xdotool` clicks
+and typing, and only restarting FM recovered it reliably. Another editor
 launched on it can take focus and swallow clicks. Before typing, run
 `xdotool windowfocus` on the target window, because `windowactivate` alone
 does not move keyboard focus to the editor.
