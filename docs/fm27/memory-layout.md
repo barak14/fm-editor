@@ -106,9 +106,14 @@ months; the user confirmed changeable salary/length. Working draft type was
 production current-contract inspection. The first Undo was refused before
 writing; the entire independently captured club prefix/info/date stayed
 unchanged. A regression reproduced the overbroad old manager-prefix guard;
-the corrected build still needs live Undo retesting. Contract acceptance,
-reapply/save/reload/day, employment and payroll remain unverified. No existing
-player contract is claimed repaired; achievement compatibility is unconfirmed.
+the user then confirmed Undo with the corrected build after opening/changing an
+offer, followed by successful reapplication, saving and reloading. Independent
+read-only checks confirmed 0/4/4/4/4/4/4 at a new club address after reload on
+13 July and after a day advance on 14 July (days 194/195). The restored
+intermediate buffer was not separately captured before reapplication; that Undo
+result relies on user confirmation and the writer's guarded readback. Accepted
+contracts, employment and payroll remain unverified. No existing player contract
+is claimed repaired; achievement compatibility is unconfirmed.
 
 See [investigation, Windows usage and acceptance gates](contract-type-investigation.md).
 

@@ -3,9 +3,11 @@
 A club-policy workaround now produces selectable Part Time offers in the observed
 Farnham test career. It changes one permitted-type input, then lets FM construct
 and negotiate the contract. **It is still an experimental trial:** the first live
-Undo was refused by an overly broad guard; the corrected implementation awaits
-live retest. Accepted contracts, payroll and save/reload/day persistence remain
-unverified. No repair of an existing player's contract is claimed.
+Undo was refused by an overly broad guard. The user has since confirmed Undo
+after opening/changing an offer, reapplication, save/reload and a day advance
+with the corrected build. Read-only checks confirmed the policy after reload
+and on the next day. Accepted contracts and payroll remain unverified. No repair
+of an existing player's contract is claimed.
 
 The implementation applies to **any selected human-managed club that satisfies
 the eligibility checks**, without club names or witness UIDs in runtime rules.
@@ -184,8 +186,24 @@ The correction retains manager identity/contract fields individually, leaving
 session state alone while preserving all other identity/ownership/build/date
 checks. Error acknowledgements now distinguish a preflight refusal (no write
 attempted) from uncertain post-write readback, identify the changed retained
-range, and describe successful Undo as restoration. **The corrected live Undo
-has not yet been tested.** Automated tests do not replace that gate.
+range, and describe successful Undo as restoration.
+
+On a new, separate test copy, the user subsequently confirmed that Apply and
+Undo succeeded **after opening or changing an offer**, exercising the original
+failure route. They then reapplied, saved and reloaded; Part Time remained
+available. Independent read-only checks rediscovered the club at a new address
+and confirmed **0/4/4/4/4/4/4** on 13 July (day 194). After the user advanced a
+day, another repeated capture confirmed that policy on **14 July (day 195)**.
+The original fresh save and external untouched backup still match their baseline
+hashes. No agent memory writes or desktop operations were performed.
+
+The intermediate restored buffer was not captured separately before the user
+reapplied. That Undo result is user-confirmed and relies on the production
+writer's guarded readback, rather than an independent full pre/post-Undo dump.
+Full post-reload info/finance and post-day info/date windows are retained locally.
+This verifies the reported Undo workflow and policy persistence; it does not
+verify an accepted player contract, employment or payroll. Those checks and the
+same-player before/after control remain outstanding.
 
 ### Windows trial workflow
 
@@ -262,9 +280,10 @@ mutable negotiation state, and desktop/narrow controls. Arbitrary-club UID and
 multiple-manager cases explicitly exercise the generic identity-based design.
 
 The earlier launch wrapper succeeded before this feature; it does not validate
-the final trial. The user manually exercised the initial GUI. The agent did not
-operate the desktop after the user's boundary. Final native GUI/Undo retest,
-Linux CI, accepted-contract/payroll and persistence checks remain outstanding.
+the final trial. The user manually exercised the corrected GUI, including Undo
+after negotiation, reapplication, save/reload and day advance. The agent did not
+operate the desktop after the user's boundary. Native narrow-window workflow,
+Linux CI and accepted-contract/employment/payroll checks remain outstanding.
 Achievement compatibility remains **unconfirmed**.
 
 ## Files changed

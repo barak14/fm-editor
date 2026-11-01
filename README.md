@@ -17,7 +17,8 @@ An experimental Windows FM27 Steam **club-policy trial** is available only with
 explicit `--enable-policy-trial` startup. It proposes allowing Part Time offers
 for an all-Non-Contract club policy; direct player-contract conversion remains
 disabled. Read the [evidence, separate-copy requirements and trial instructions](docs/fm27/contract-type-investigation.md#guarded-club-policy-workaround-implemented-live-trial-outstanding)
-before using it. Live write validation is still outstanding.
+before using it. Offer controls, Undo and policy persistence have been tested;
+accepted-contract and payroll validation is still outstanding.
 
 - **Players** — attributes, positions, CA/PA, personality, reputation, date of birth, traits;
   club, nationality, place of birth, international caps; contract wage, expiry, squad status,

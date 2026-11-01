@@ -135,7 +135,9 @@ The Player Contract tab continues to show unsupported type conversion; wages
 are labelled in GBP/week and bonuses in GBP/event.
 
 The initial live trial exposed an Undo-guard bug, now covered by a regression
-and corrected in code. **The corrected live Undo and contract/persistence tests
-are outstanding.** Follow the [evidence and test-copy workflow](fm27/contract-type-investigation.md)
+and corrected in code. The user has since confirmed Undo after opening/changing
+an offer, reapplication and save/reload. Read-only checks confirmed the policy
+after reload and a day advance. **Accepted-contract and payroll tests remain
+outstanding.** Follow the [evidence and test-copy workflow](fm27/contract-type-investigation.md)
 before use. Undo concerns the byte edit and cannot reverse accepted contracts
 or gameplay consequences after time advances.
