@@ -137,7 +137,8 @@ are labelled in GBP/week and bonuses in GBP/event.
 The initial live trial exposed an Undo-guard bug, now covered by a regression
 and corrected in code. The user has since confirmed Undo after opening/changing
 an offer, reapplication and save/reload. Read-only checks confirmed the policy
-after reload and a day advance. **Accepted-contract and payroll tests remain
-outstanding.** Follow the [evidence and test-copy workflow](fm27/contract-type-investigation.md)
+after reload and a day advance. An accepted fixed-term Part Time contract also
+matches the read-only current-contract checks. **Post-contract reload and salary-
+payment tests remain outstanding.** Follow the [evidence and test-copy workflow](fm27/contract-type-investigation.md)
 before use. Undo concerns the byte edit and cannot reverse accepted contracts
 or gameplay consequences after time advances.

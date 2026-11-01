@@ -111,9 +111,14 @@ offer, followed by successful reapplication, saving and reloading. Independent
 read-only checks confirmed 0/4/4/4/4/4/4 at a new club address after reload on
 13 July and after a day advance on 14 July (days 194/195). The restored
 intermediate buffer was not separately captured before reapplication; that Undo
-result relies on user confirmation and the writer's guarded readback. Accepted
-contracts, employment and payroll remain unverified. No existing player contract
-is claimed repaired; achievement compatibility is unconfirmed.
+result relies on user confirmation and the writer's guarded readback. A later FM screenshot shows Matthew Bondswell (29210513) at Farnham on a Part
+Time Contract, $8K/year, signed 25 July 2026 to 30 June 2028. Repeated current-
+contract snapshots confirm byte 0, owner/person match, both club pointers to
+Farnham 8325096 and wage 114 GBP/week. Signed raw `CE 46 EA 07` and expiry
+`B6 00 EC 07` match those dates without discarding flags. FM shows 0.9% payroll
+inclusion; salary payments and post-contract save/reload/day survival remain
+unverified. This is an accepted contract created by FM, not a direct editor
+conversion. Achievement compatibility remains unconfirmed.
 
 See [investigation, Windows usage and acceptance gates](contract-type-investigation.md).
 

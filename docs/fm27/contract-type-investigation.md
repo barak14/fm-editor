@@ -6,8 +6,9 @@ and negotiate the contract. **It is still an experimental trial:** the first liv
 Undo was refused by an overly broad guard. The user has since confirmed Undo
 after opening/changing an offer, reapplication, save/reload and a day advance
 with the corrected build. Read-only checks confirmed the policy after reload
-and on the next day. Accepted contracts and payroll remain unverified. No repair
-of an existing player's contract is claimed.
+and on the next day. A subsequently accepted Part Time contract now matches FM
+and read-only current-contract checks. Its survival after save/reload and salary
+payments remain unverified. No direct conversion of an existing contract is claimed.
 
 The implementation applies to **any selected human-managed club that satisfies
 the eligibility checks**, without club names or witness UIDs in runtime rules.
@@ -202,8 +203,29 @@ reapplied. That Undo result is user-confirmed and relies on the production
 writer's guarded readback, rather than an independent full pre/post-Undo dump.
 Full post-reload info/finance and post-day info/date windows are retained locally.
 This verifies the reported Undo workflow and policy persistence; it does not
-verify an accepted player contract, employment or payroll. Those checks and the
+verify an accepted player contract by itself. The later accepted-contract evidence
+below adds that observation; post-contract reload, salary payments and the
 same-player before/after control remain outstanding.
+
+### Accepted Part Time contract
+
+The user finalised a deal for **Matthew Bondswell (UID 29210513)** and supplied
+FM Contract Details showing Farnham, **Part Time Contract**, **$8K/year**,
+start **25 July 2026**, expiry **30 June 2028** and **0.9% of overall payroll**.
+Fresh identity discovery and repeated current-contract snapshots confirmed type
+**0**, a matching embedded-person owner, and both current/owning club pointers
+resolving to Farnham **8325096**. This is his current contract, not an offer or
+future record. The wage is **114 GBP/week**; no external FX conversion was used.
+Signed raw bytes `CE 46 EA 07` retain flags and decode to 25 July; expiry
+`B6 00 EC 07` decodes to 30 June 2028. The club policy remains 0/4/4/4/4/4/4.
+
+The current mapped wage total including bonuses reads 13,313 GBP/week, compared
+with 13,198 on 13 July. The 115 GBP/week difference spans other game activity
+and is not an isolated signing measurement or proof of a salary payment.
+The FM payroll percentage demonstrates displayed payroll inclusion. Actual
+salary deductions and this accepted contract's save/reload/day survival still
+need checking. The editor did not supply financial terms or write the player's
+contract; FM created the deal through the user's normal negotiation actions.
 
 ### Windows trial workflow
 
@@ -283,7 +305,9 @@ The earlier launch wrapper succeeded before this feature; it does not validate
 the final trial. The user manually exercised the corrected GUI, including Undo
 after negotiation, reapplication, save/reload and day advance. The agent did not
 operate the desktop after the user's boundary. Native narrow-window workflow,
-Linux CI and accepted-contract/employment/payroll checks remain outstanding.
+Linux CI, accepted-contract save/reload/day survival and salary-payment checks
+remain outstanding. Current employment/ownership, fixed term and displayed
+payroll inclusion have been observed for Bondswell.
 Achievement compatibility remains **unconfirmed**.
 
 ## Files changed
