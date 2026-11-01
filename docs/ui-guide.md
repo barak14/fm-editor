@@ -33,6 +33,36 @@ Every search starts with **Name/UID**, followed by its supported filters and **R
 
 Column widths are currently fixed; resizable/customizable tables are separate follow-up work.
 
+## Player comparison
+
+Open a player profile and click **Select for compare**. Open another player's
+profile, then click **Compare with selected** to open the comparison immediately.
+The selected player's name stays beside the profile actions. Selecting a new
+player starts a new pair; **Clear selection** removes the selection and comparison.
+**Compare players** in the workspace toolbar reopens the comparison.
+
+The two columns use player names, distinct identity accents and coloured
+attribute values, with grouped technical, set-piece, mental, physical and
+goalkeeping sections. Player names stay visible while scrolling. There is no
+separate difference column. **Swap players** exchanges the columns. Available
+age, CA/PA, wage in GBP/week and contract expiry provide context. Missing,
+invalid or unmapped values are shown as unavailable, not zero. Values use each
+player's own build schema; Game Pass remains unverified. Comparisons require
+different players from the same build and add no new mappings.
+Wage uses the explicitly typed current-contract money field where available;
+legacy direct fields without an explicit monetary width are not used as fallbacks.
+
+Comparisons are read-only snapshots, not automatically refreshed live values;
+hover the snapshot information control for details. Reload profiles and select
+them again after changes. Selection is disabled while a write is awaiting
+acknowledgement. Comparisons clear on **Reload Save**, save replacement/unload
+and reconnection; existing snapshots remain viewable after the game exits.
+The window adapts and scrolls at narrow sizes. List multi-selection/right-click
+comparison is not implemented.
+
+This is attribute comparison only. Season/competition statistics, per-90 values,
+league rankings and performance percentiles still require separate verified data.
+
 ## Best XI
 
 The **Best XI** sidebar button opens a read-only lineup planner. It starts with
@@ -93,17 +123,24 @@ The banner distinguishes **Editing live**, **Applying changes**, and **Read-only
 - Immediately before each edit or Undo, the worker checks that memory still matches the bytes that were read. Changed or unreadable memory refuses the write with a reload/retry message; failed Undo stays available. This is a read-before-write guard, not an atomic lock on FM's memory.
 - Unsupported trait fields, incomplete buffers and invalid stored ticket prices are not editable. Rendering them must not clamp and write game memory without input.
 
-Read-only sections/tabs are labelled. Attributes use four columns on wide views and two or one on narrower views; labels use proportional text and numeric hit targets are consistent.
+Read-only sections/tabs are labelled. Player attributes use independently stacked
+category cards in four columns on wide views, or two/one on narrower views. Short
+groups no longer leave an empty row beneath them while waiting for the tallest
+neighbour. Labels use proportional text and numeric hit targets are consistent.
 
 Shared profile field rows, including reputation, use a fixed-width, left-aligned label column so value boxes line up regardless of label length. Long labels truncate with their full text available on hover. Compact CA/PA pairs, position cells and date controls retain their specialized layouts.
 
 The player **Positions & Traits** formation uses the same marked pitch and shirt
 icons, with all 15 positions arranged from ST at the top to GK at the bottom.
-Sweeper remains between DC and GK in the centre. The pitch adapts to narrow
-panels; numeric familiarity controls remain beneath each shirt, using the same
-schema-backed editing and Undo behaviour as other attributes. Invalid raw values
-remain visible and are not corrected by rendering. The yellow keeper shirt is
-distinct from the blue outfield shirts; familiarity is always shown numerically.
+Sweeper remains between DC and GK in the centre. On wide panels the pitch is
+sized against the available profile height, with traits and optional PA
+extrapolation beside it in an independently scrolling pane. Narrow panels stack
+the pitch and traits; genuinely short views scroll rather than shrinking numeric
+controls below a readable size. Position abbreviations appear on the shirts,
+with familiarity values directly beneath them instead of repeated labels.
+The same schema-backed editing and Undo behaviour is retained. Invalid raw
+values stay visible and are not corrected by rendering. The yellow keeper shirt
+is distinct from the blue outfield shirts; familiarity is always numeric.
 
 ## FM27 player data
 

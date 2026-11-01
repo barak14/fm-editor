@@ -3,7 +3,7 @@
 use eframe::egui;
 
 use crate::fields::{Category, Encoding, Entity, Field};
-use crate::settings::{theme_data_id, Theme};
+use crate::settings::{Theme, theme_data_id};
 
 use super::navigation;
 
@@ -189,6 +189,26 @@ pub fn attr_cell_compact(
     raw: &mut [u8],
     entity_addr: u64,
 ) -> Option<FieldEdit> {
+    attr_cell_compact_inner(ui, field, raw, entity_addr, true)
+}
+
+/// The compact numeric editor without a label, for an already labelled pitch shirt.
+pub fn attr_value_compact(
+    ui: &mut egui::Ui,
+    field: &Field,
+    raw: &mut [u8],
+    entity_addr: u64,
+) -> Option<FieldEdit> {
+    attr_cell_compact_inner(ui, field, raw, entity_addr, false)
+}
+
+fn attr_cell_compact_inner(
+    ui: &mut egui::Ui,
+    field: &Field,
+    raw: &mut [u8],
+    entity_addr: u64,
+    labelled: bool,
+) -> Option<FieldEdit> {
     let loc = field.offset.as_ref()?;
     let offset = loc.offset() as usize;
     if offset >= raw.len() {
@@ -203,7 +223,9 @@ pub fn attr_cell_compact(
         ui.vertical(|ui| {
             ui.set_width(56.0);
             ui.vertical_centered(|ui| {
-                ui.label(egui::RichText::new(field.label).color(grey));
+                if labelled {
+                    ui.label(egui::RichText::new(field.label).color(grey));
+                }
                 ui.add_sized(
                     VALUE_SIZE,
                     egui::Label::new(egui::RichText::new(format!("r{old_raw_byte}")).color(grey)),
@@ -220,7 +242,9 @@ pub fn attr_cell_compact(
     ui.vertical(|ui| {
         ui.set_width(56.0);
         ui.vertical_centered(|ui| {
-            ui.label(field.label);
+            if labelled {
+                ui.label(field.label);
+            }
             ui.visuals_mut().override_text_color = Some(color);
             changed = number_edit(
                 ui,
@@ -1325,9 +1349,11 @@ mod tests {
         let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
         date_frame(&ctx, &mut raw, 100, true, click_text(&output, "Calendar"));
         let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
-        assert!(text_shapes(&output.shapes)
-            .iter()
-            .any(|s| s.galley.text() == "[1]"));
+        assert!(
+            text_shapes(&output.shapes)
+                .iter()
+                .any(|s| s.galley.text() == "[1]")
+        );
         let (_, edits) = date_frame(&ctx, &mut raw, 100, true, click_text(&output, "2"));
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].addr, 100);
@@ -1360,9 +1386,10 @@ mod tests {
             let (_, edits) = date_frame(&ctx, &mut raw, 200, ancestor, vec![]);
             assert!(edits.is_empty());
             assert_eq!(raw, original);
-            assert!(ctx
-                .data_mut(|d| d.get_temp::<CalendarDraft>(calendar_id(200, 0)))
-                .is_none());
+            assert!(
+                ctx.data_mut(|d| d.get_temp::<CalendarDraft>(calendar_id(200, 0)))
+                    .is_none()
+            );
             let (_, edits) = date_frame(&ctx, &mut raw, 100, ancestor, vec![]);
             assert!(edits.is_empty());
             if !editing || !ancestor {
@@ -1379,9 +1406,11 @@ mod tests {
             let (output, edits) = date_frame(&ctx, &mut raw, 100, true, vec![]);
             assert!(edits.is_empty());
             assert_eq!(raw, original);
-            assert!(!text_shapes(&output.shapes)
-                .iter()
-                .any(|s| s.galley.text() == "Calendar"));
+            assert!(
+                !text_shapes(&output.shapes)
+                    .iter()
+                    .any(|s| s.galley.text() == "Calendar")
+            );
         }
     }
 
@@ -1517,6 +1546,197 @@ mod tests {
         });
         assert_eq!(raw, original);
     }
+    type CompactEditor = fn(&mut egui::Ui, &Field, &mut [u8], u64) -> Option<FieldEdit>;
+
+    fn compact_frame(
+        ctx: &egui::Context,
+        editor: CompactEditor,
+        field: &Field,
+        raw: &mut [u8],
+        ancestor_enabled: bool,
+        events: Vec<egui::Event>,
+    ) -> (egui::FullOutput, Option<FieldEdit>) {
+        let mut edit = None;
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0, 600.0),
+                )),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.add_enabled_ui(ancestor_enabled, |ui| {
+                        edit = editor(ui, field, raw, 0x20000);
+                    });
+                });
+            },
+        );
+        (output, edit)
+    }
+
+    fn compact_enter() -> Vec<egui::Event> {
+        vec![egui::Event::Key {
+            key: egui::Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]
+    }
+
+    #[test]
+    fn compact_variants_render_valid_and_invalid_values_without_edits() {
+        for (editor, label_count) in [
+            (attr_cell_compact as CompactEditor, 1),
+            (attr_value_compact as CompactEditor, 0),
+        ] {
+            for (encoding, byte, text) in [
+                (Encoding::Direct, 1, "1"),
+                (Encoding::Direct, 20, "20"),
+                (Encoding::Direct, 0, "r0"),
+                (Encoding::Direct, 21, "r21"),
+                (Encoding::Direct, 255, "r255"),
+                (Encoding::Encoded, 3, "1"),
+                (Encoding::Encoded, 49, "10"),
+                (Encoding::Encoded, 98, "20"),
+                (Encoding::Encoded, 0, "r0"),
+                (Encoding::Encoded, 103, "r103"),
+            ] {
+                for editing in [false, true] {
+                    for ancestor in [false, true] {
+                        let ctx = egui::Context::default();
+                        navigation::set_editing_enabled(&ctx, editing);
+                        let field = field(encoding, 1);
+                        let mut raw = [0xAA, byte, 0xBB];
+                        let original = raw;
+                        let (output, edit) =
+                            compact_frame(&ctx, editor, &field, &mut raw, ancestor, vec![]);
+                        assert!(edit.is_none());
+                        assert_eq!(raw, original);
+                        let texts = text_shapes(&output.shapes);
+                        assert_eq!(texts.iter().filter(|s| s.galley.text() == text).count(), 1);
+                        assert_eq!(
+                            texts
+                                .iter()
+                                .filter(|s| s.galley.text() == field.label)
+                                .count(),
+                            label_count,
+                            "the value-only variant must not duplicate the pitch label"
+                        );
+                        if text.starts_with('r') {
+                            for events in [
+                                click_text(&output, text),
+                                vec![egui::Event::Text("17".into())],
+                                compact_enter(),
+                            ] {
+                                let (_, edit) =
+                                    compact_frame(&ctx, editor, &field, &mut raw, ancestor, events);
+                                assert!(edit.is_none());
+                                assert_eq!(raw, original);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn compact_variants_commit_equivalent_bytes_and_respect_editing_gates() {
+        for editor in [attr_cell_compact as CompactEditor, attr_value_compact] {
+            // 49 is deliberately noncanonical: displaying 10 must not rewrite it to 48.
+            for (encoding, old_byte, new_byte) in
+                [(Encoding::Direct, 10, 17), (Encoding::Encoded, 49, 83)]
+            {
+                for (editing, ancestor) in [
+                    (None, true),
+                    (Some(false), true),
+                    (Some(true), false),
+                    (Some(true), true),
+                ] {
+                    let ctx = egui::Context::default();
+                    if let Some(editing) = editing {
+                        navigation::set_editing_enabled(&ctx, editing);
+                    }
+                    let field = field(encoding, 1);
+                    let mut raw = [0xAA, old_byte, 0xBB];
+                    let original = raw;
+                    let (output, edit) =
+                        compact_frame(&ctx, editor, &field, &mut raw, ancestor, vec![]);
+                    assert!(edit.is_none());
+                    assert_eq!(raw, original);
+                    // Click selects the DragValue's text. Typing is only a draft until Enter.
+                    for events in [
+                        click_text(&output, "10"),
+                        vec![egui::Event::Text("17".into())],
+                    ] {
+                        let (_, edit) =
+                            compact_frame(&ctx, editor, &field, &mut raw, ancestor, events);
+                        assert!(edit.is_none());
+                        assert_eq!(raw, original);
+                    }
+                    let (_, edit) =
+                        compact_frame(&ctx, editor, &field, &mut raw, ancestor, compact_enter());
+                    if editing == Some(true) && ancestor {
+                        let edit = edit.expect("Enter must commit the numeric edit");
+                        assert_eq!(edit.addr, 0x20001);
+                        assert_eq!(edit.old_raw, [old_byte]);
+                        assert_eq!(edit.new_raw, [new_byte]);
+                        assert_eq!(edit.description, "Test value: 10 → 17");
+                        assert_eq!(raw, [0xAA, new_byte, 0xBB]);
+                        let (_, edit) =
+                            compact_frame(&ctx, editor, &field, &mut raw, ancestor, vec![]);
+                        assert!(
+                            edit.is_none(),
+                            "a committed edit must not repeat next frame"
+                        );
+                        assert_eq!(raw, [0xAA, new_byte, 0xBB]);
+                    } else {
+                        assert!(edit.is_none());
+                        assert_eq!(raw, original);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn compact_variants_require_mapping_and_in_bounds_buffer() {
+        for editor in [attr_cell_compact as CompactEditor, attr_value_compact] {
+            for editing in [false, true] {
+                let ctx = egui::Context::default();
+                navigation::set_editing_enabled(&ctx, editing);
+                let mut unmapped = field(Encoding::Direct, 0);
+                unmapped.offset = None;
+                for field in [
+                    unmapped,
+                    field(Encoding::Direct, 3),
+                    field(Encoding::Encoded, u64::MAX),
+                ] {
+                    let mut raw = [10, 10, 10];
+                    let original = raw;
+                    let (output, edit) =
+                        compact_frame(&ctx, editor, &field, &mut raw, true, vec![]);
+                    assert!(edit.is_none());
+                    assert_eq!(raw, original);
+                    assert!(text_shapes(&output.shapes).is_empty());
+                }
+                let (_, edit) = compact_frame(
+                    &ctx,
+                    editor,
+                    &field(Encoding::Direct, 0),
+                    &mut [],
+                    true,
+                    vec![],
+                );
+                assert!(edit.is_none());
+            }
+        }
+    }
+
     #[test]
     fn disabled_editors_preserve_buffers_and_emit_no_edits() {
         // Default previews, explicitly disabled editing, and a disabled ancestor.
@@ -1548,14 +1768,10 @@ mod tests {
                         assert!(
                             raw_u32_edit(ui, &field(Encoding::RawU32, 0), &mut raw, 0).is_none()
                         );
-                        assert!(ca_pa_edit(
-                            ui,
-                            &mut raw,
-                            &attribute,
-                            &field(Encoding::Direct, 1),
-                            0
-                        )
-                        .is_empty());
+                        assert!(
+                            ca_pa_edit(ui, &mut raw, &attribute, &field(Encoding::Direct, 1), 0)
+                                .is_empty()
+                        );
                         assert!(
                             dob_edit(ui, &mut dob, &field(Encoding::DateDayYear, 0), 0).is_empty()
                         );

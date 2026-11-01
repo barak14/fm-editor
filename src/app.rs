@@ -138,6 +138,7 @@ pub struct FmEditorApp {
     // Filtering runs every frame against the entity cache — no bridge round-trip.
     player_search: PlayerSearchState,
     best_xi: pages::best_xi::BestXiState,
+    player_comparison: crate::ui::player_comparison::PlayerComparison,
     staff_search: StaffSearchState,
     club_search: ClubSearchState,
 
@@ -218,6 +219,7 @@ impl FmEditorApp {
             last_auto_connect: Instant::now() - std::time::Duration::from_secs(10),
             player_search: PlayerSearchState::default(),
             best_xi: pages::best_xi::BestXiState::default(),
+            player_comparison: Default::default(),
             staff_search: StaffSearchState::default(),
             club_search: ClubSearchState::default(),
             advanced_open: false,
@@ -298,6 +300,7 @@ impl FmEditorApp {
         self.staff_snapshots.clear();
         self.undo_stack.clear();
         self.policy_ui.reset();
+        self.player_comparison.clear();
         self.writes.clear();
         self.write_error = None;
     }
@@ -1260,6 +1263,7 @@ impl eframe::App for FmEditorApp {
                 if ui.button("Change history").clicked() {
                     self.show_history = !self.show_history;
                 }
+                self.player_comparison.toolbar(ui);
             });
             if let Some(error) = self.write_error.clone() {
                 ui.horizontal_wrapped(|ui| {
@@ -1428,6 +1432,11 @@ impl eframe::App for FmEditorApp {
                             EntityTabType::Player => {
                                 if let Some(p) = self.selected_player.as_mut().filter(|p| p.addr == tab_addr) {
                                     let addr = p.addr;
+                                    // Capture confirmed displayed data before any editable widgets run.
+                                    self.player_comparison.controls(
+                                        ui, p, self.game_date,
+                                        !self.writes.is_pending() && edits.is_empty(),
+                                    );
                                     let e = player_panel::show(
                                         schemas, self.game_date, ui, p, &mut self.player_tab, addr,
                                         wage_period, face_pack_path.as_deref(),
@@ -1514,6 +1523,8 @@ impl eframe::App for FmEditorApp {
                 }
             }
         });
+
+        self.player_comparison.show(ctx);
 
         // ===== Edit History window =====
         if self.show_history {
@@ -1622,6 +1633,7 @@ impl eframe::App for FmEditorApp {
         if reload_save_clicked {
             self.game_date = None;
             self.best_xi.clear();
+            self.player_comparison.clear();
             self.entity_cache = None;
             self.cache_load_state = CacheLoadState::Loading { done: 0, total: 0 };
             self.bridge.send(BridgeCmd::LoadEntityCache);

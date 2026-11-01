@@ -23,6 +23,7 @@ been tested; accepted-contract reload and salary-payment checks remain.
 - **Players** — attributes, positions, CA/PA, personality, reputation, date of birth, traits;
   club, nationality, place of birth, international caps; contract wage, expiry, squad status,
   squad number and asking price.
+- **Player comparison** — select a player, then compare another against them in a read-only, colour-coded view with named columns and available age, CA/PA and contract context. [Workflow and limitations](docs/ui-guide.md#player-comparison).
 - **Staff** — coaching, mental and knowledge attributes, reputation, personality; job,
   employer, wage and contract expiry.
 - **Your manager** — the same staff view for the human manager.

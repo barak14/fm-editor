@@ -47,19 +47,31 @@ pub fn show(
     });
     ui.separator();
 
-    egui::ScrollArea::vertical().show(ui, |ui| match tab {
-        PlayerTab::Overview => show_overview(
-            schemas,
-            ui,
-            player,
-            addr,
-            &mut edits,
-            wage_period,
-            face_pack_path,
-        ),
+    match tab {
         PlayerTab::PositionsTraits => show_positions_traits(schemas, ui, player, addr, &mut edits),
-        PlayerTab::Contract => show_contract(schemas, ui, player, &mut edits),
-    });
+        PlayerTab::Overview => {
+            egui::ScrollArea::vertical()
+                .id_salt("player_overview")
+                .show(ui, |ui| {
+                    show_overview(
+                        schemas,
+                        ui,
+                        player,
+                        addr,
+                        &mut edits,
+                        wage_period,
+                        face_pack_path,
+                    );
+                });
+        }
+        PlayerTab::Contract => {
+            egui::ScrollArea::vertical()
+                .id_salt("player_contract")
+                .show(ui, |ui| {
+                    show_contract(schemas, ui, player, &mut edits);
+                });
+        }
+    }
 
     // Widgets address edits as `addr + schema offset`. A player-coach's person
     // block sits `person_shift` bytes later in memory, so move edits that land
@@ -242,34 +254,78 @@ fn show_overview(
 
     ui.separator();
 
-    for groups in [
+    show_attribute_stacks(schemas, ui, player, addr, edits);
+}
+
+/// Each column owns its vertical flow; a tall neighbour never delays its next card.
+fn show_attribute_stacks(
+    schemas: &'static fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    player: &mut PlayerRecord,
+    addr: u64,
+    edits: &mut Vec<FieldEdit>,
+) {
+    let bundles = [
         [
             ("Technical", Category::Technical),
-            ("Mental", Category::Mental),
-            ("Physical", Category::Physical),
-            ("Hidden", Category::Hidden),
+            ("Set Pieces", Category::SetPieces),
         ],
         [
-            ("Set Pieces", Category::SetPieces),
-            ("Goalkeeping", Category::Goalkeeping),
+            ("Mental", Category::Mental),
             ("Footedness", Category::Footedness),
+        ],
+        [
+            ("Physical", Category::Physical),
             ("Personality", Category::Personality),
         ],
-    ] {
-        crate::ui::entity_header::columns(ui, |index, col| {
-            let (heading, category) = groups[index];
-            field_widget::category_column(
-                schemas,
-                col,
-                heading,
-                Entity::Player,
-                category,
-                &mut player.raw,
-                addr,
-                edits,
-            );
-        });
-    }
+        [
+            ("Goalkeeping", Category::Goalkeeping),
+            ("Hidden", Category::Hidden),
+        ],
+    ];
+    // Earlier overview rows may expand their minimum width (for example a long
+    // relationship label). Choose columns from the visible viewport, not that
+    // expanded content width, and give the stacks a fresh constrained child.
+    let width = ui
+        .available_width()
+        .min((ui.clip_rect().right() - ui.cursor().left()).max(0.0));
+    let count = crate::ui::entity_header::column_count(width);
+    let assignments: &[&[usize]] = match count {
+        4 => &[&[0], &[1], &[2], &[3]],
+        2 => &[&[0, 3], &[1, 2]],
+        _ => &[&[0, 1, 2, 3]],
+    };
+    ui.allocate_ui_with_layout(
+        egui::vec2(width, 0.0),
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
+            ui.set_width(width);
+            ui.columns(count, |cols| {
+                for (col, indices) in cols.iter_mut().zip(assignments) {
+                    for &index in *indices {
+                        for (heading, category) in bundles[index] {
+                            egui::Frame::group(col.style())
+                                .inner_margin(10.0)
+                                .show(col, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    field_widget::category_column(
+                                        schemas,
+                                        ui,
+                                        heading,
+                                        Entity::Player,
+                                        category,
+                                        &mut player.raw,
+                                        addr,
+                                        edits,
+                                    );
+                                });
+                            col.add_space(12.0);
+                        }
+                    }
+                }
+            });
+        },
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -283,10 +339,78 @@ fn show_positions_traits(
     addr: u64,
     edits: &mut Vec<FieldEdit>,
 ) {
-    // Stack the formation above traits on narrow panels rather than forcing overflow.
-    ui.strong("Positions");
-    show_positions_formation(schemas, ui, player, addr, edits);
-    ui.add_space(12.0);
+    let height = ui.available_height().max(0.0);
+    if ui.available_width() >= 820.0 {
+        let pitch_width = (ui.available_width() * 0.4).min(440.0);
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(pitch_width, height),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.set_width(pitch_width);
+                    // Only genuinely short viewports need pitch scrolling.
+                    egui::ScrollArea::vertical()
+                        .id_salt("player_pitch")
+                        .max_height(height)
+                        .show(ui, |ui| {
+                            let heading_height = if height >= 414.0 {
+                                ui.strong("Positions");
+                                24.0
+                            } else {
+                                0.0
+                            };
+                            show_positions_formation_with_height(
+                                schemas,
+                                ui,
+                                player,
+                                addr,
+                                edits,
+                                (height - heading_height).clamp(340.0, 500.0),
+                            );
+                        });
+                },
+            );
+            ui.allocate_ui_with_layout(
+                egui::vec2(ui.available_width(), height),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("player_traits")
+                        .max_height(height)
+                        .show(ui, |ui| {
+                            show_traits_and_projection(schemas, ui, player, addr, edits);
+                        });
+                },
+            );
+        });
+    } else {
+        // Capture the finite viewport before entering the scrolling content.
+        egui::ScrollArea::vertical()
+            .id_salt("player_positions_stacked")
+            .max_height(height)
+            .show(ui, |ui| {
+                ui.strong("Positions");
+                show_positions_formation_with_height(
+                    schemas,
+                    ui,
+                    player,
+                    addr,
+                    edits,
+                    (height - 24.0).clamp(390.0, 500.0),
+                );
+                ui.add_space(12.0);
+                show_traits_and_projection(schemas, ui, player, addr, edits);
+            });
+    }
+}
+
+fn show_traits_and_projection(
+    schemas: &'static fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    player: &mut PlayerRecord,
+    addr: u64,
+    edits: &mut Vec<FieldEdit>,
+) {
     ui.strong("Traits");
     show_traits_checkboxes(schemas, ui, player, addr, edits);
 
@@ -363,12 +487,25 @@ fn show_positions_traits(
 }
 
 /// Position familiarities on a responsive pitch, attacking towards the top.
+#[cfg(test)]
 fn show_positions_formation(
     schemas: &'static crate::fields::VersionedSchemas,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
     edits: &mut Vec<FieldEdit>,
+) {
+    let height = ui.available_height().clamp(390.0, 500.0);
+    show_positions_formation_with_height(schemas, ui, player, addr, edits, height);
+}
+
+fn show_positions_formation_with_height(
+    schemas: &'static fields::VersionedSchemas,
+    ui: &mut egui::Ui,
+    player: &mut PlayerRecord,
+    addr: u64,
+    edits: &mut Vec<FieldEdit>,
+    height: f32,
 ) {
     // Rows of (left, center, right) position keys. None = empty cell.
     let rows: &[(Option<&str>, Option<&str>, Option<&str>)] = &[
@@ -381,31 +518,42 @@ fn show_positions_formation(
         (None, Some("pos_gk"), None),
     ];
 
-    let width = ui.available_width().min(560.0);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 630.0), egui::Sense::hover());
+    let width = ui.available_width().min(440.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
     let field = crate::ui::pitch::paint(ui.painter(), rect);
+    // On scaled desktops retain the 22px editor, reducing only shirt/gap space.
+    let compact = height < 390.0;
+    let shirt_height = if height < 360.0 {
+        20.0
+    } else if compact {
+        22.0
+    } else {
+        24.0
+    };
+    let cell_height = shirt_height + if compact { 2.0 } else { 4.0 } + 22.0;
     for (row, keys) in rows.iter().enumerate() {
         for (column, key) in [keys.0, keys.1, keys.2].into_iter().enumerate() {
             let Some(key) = key else { continue };
             let center = crate::ui::pitch::point(
                 field,
                 0.15 + column as f32 * 0.35,
-                0.065 + row as f32 * 0.145,
+                (cell_height / 2.0 + row as f32 * (field.height() - cell_height) / 6.0)
+                    / field.height(),
             );
-            let cell = egui::Rect::from_center_size(center, egui::vec2(60.0, 70.0));
-            ui.scope_builder(
+            let cell = egui::Rect::from_center_size(center, egui::vec2(56.0, cell_height));
+            ui.new_child(
                 egui::UiBuilder::new()
                     .max_rect(cell)
                     .layout(egui::Layout::top_down(egui::Align::Center)),
-                |ui| {
-                    ui.push_id(key, |ui| {
-                        pos_cell(schemas, ui, Some(key), player, addr, edits)
-                    });
-                },
-            );
+            )
+            .scope(|ui| {
+                ui.spacing_mut().item_spacing.y = if compact { 2.0 } else { 4.0 };
+                ui.push_id(key, |ui| {
+                    pos_cell(schemas, ui, Some(key), player, addr, edits, shirt_height)
+                });
+            });
         }
     }
-    ui.advance_cursor_after_rect(rect);
 }
 
 fn pos_cell(
@@ -415,20 +563,22 @@ fn pos_cell(
     player: &mut PlayerRecord,
     addr: u64,
     edits: &mut Vec<FieldEdit>,
+    shirt_height: f32,
 ) {
     match key {
         Some(k) => {
             if let Some(f) = schemas.field(k) {
-                let (kit, _) = ui.allocate_exact_size(egui::vec2(46.0, 30.0), egui::Sense::hover());
+                let (kit, _) =
+                    ui.allocate_exact_size(egui::vec2(46.0, shirt_height), egui::Sense::hover());
                 let color = if k == "pos_gk" {
                     crate::ui::pitch::KEEPER
                 } else {
                     crate::ui::pitch::OUTFIELD
                 };
                 crate::ui::pitch::shirt(ui.painter(), kit, f.label, color);
-                // Keep the schema-driven numeric editor, including invalid/raw and
-                // acknowledgement guards, unchanged. The shirt repeats its label.
-                if let Some(edit) = field_widget::attr_cell_compact(ui, &f, &mut player.raw, addr) {
+                // The shirt supplies the label; retain the shared guarded editor.
+                if let Some(edit) = field_widget::attr_value_compact(ui, &f, &mut player.raw, addr)
+                {
                     edits.push(edit);
                 }
             }
@@ -1440,7 +1590,7 @@ mod tests {
                 egui::Shape::Text(text) => {
                     centers.insert(
                         text.galley.text().to_owned(),
-                        text.pos + text.galley.size() * 0.5,
+                        text.galley.rect.translate(text.pos.to_vec2()).center(),
                     );
                 }
                 egui::Shape::Vec(shapes) => {
@@ -1522,7 +1672,7 @@ mod tests {
                     // Text origins are pixel-rounded independently, so their
                     // painted centers can differ by one pixel.
                     let close = |a: f32, b: f32| assert!((a - b).abs() <= 1.0, "{a} != {b}");
-                    let pitch_width = (width - 16.0_f32).min(560.0);
+                    let pitch_width = (width - 16.0_f32).min(440.0);
                     let column_gap = (pitch_width - 28.0) * 0.35;
                     close(amc.x - aml.x, column_gap);
                     close(amr.x - amc.x, column_gap);
@@ -1543,6 +1693,419 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn painted_text(output: &egui::FullOutput) -> Vec<(String, egui::Rect, egui::Rect)> {
+        fn collect(
+            shape: &egui::Shape,
+            clip: egui::Rect,
+            out: &mut Vec<(String, egui::Rect, egui::Rect)>,
+        ) {
+            match shape {
+                egui::Shape::Text(t) => out.push((
+                    t.galley.text().to_owned(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                    clip,
+                )),
+                egui::Shape::Vec(shapes) => {
+                    for shape in shapes {
+                        collect(shape, clip, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut text = Vec::new();
+        for s in &output.shapes {
+            collect(&s.shape, s.clip_rect, &mut text);
+        }
+        text
+    }
+
+    fn profile_frame(
+        ctx: &egui::Context,
+        player: &mut PlayerRecord,
+        tab: &mut PlayerTab,
+        size: egui::Vec2,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        let before = player.raw.clone();
+        let output = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                events,
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.add_space(80.0); // The real profile sits below workspace controls.
+                    let edits = show(
+                        player.build.schemas(),
+                        None,
+                        ui,
+                        player,
+                        tab,
+                        0x20000,
+                        WagePeriod::Weekly,
+                        None,
+                    );
+                    assert!(edits.is_empty());
+                });
+            },
+        );
+        assert_eq!(player.raw, before);
+        output
+    }
+
+    fn populated_positions(invalid: bool) -> PlayerRecord {
+        let mut player = fixture_player(crate::game_version::GameBuild::Fm26Steam);
+        for (index, field) in player
+            .build
+            .schemas()
+            .fields_for_category(Entity::Player, Category::Positions)
+            .iter()
+            .enumerate()
+        {
+            let loc = field.offset.as_ref().unwrap();
+            player.raw[loc.offset() as usize] = loc.encode_u8(index as u8 + 1);
+        }
+        if invalid {
+            let loc = player
+                .build
+                .schemas()
+                .field("pos_amr")
+                .unwrap()
+                .offset
+                .unwrap();
+            player.raw[loc.offset() as usize] = 255;
+        }
+        player
+    }
+
+    #[test]
+    fn full_profile_pitch_fits_bounded_desktop_and_scaled_workspace() {
+        for size in [
+            egui::vec2(1280.0, 800.0),
+            egui::vec2(1000.0, 640.0),
+            egui::vec2(1000.0, 590.0),
+            egui::vec2(1000.0, 580.0), // ~344px body fits the complete 340px pitch.
+        ] {
+            for enabled in [false, true] {
+                for invalid in [false, true] {
+                    let ctx = egui::Context::default();
+                    crate::ui::navigation::set_editing_enabled(&ctx, enabled);
+                    let mut player = populated_positions(invalid);
+                    let mut tab = PlayerTab::PositionsTraits;
+                    for _ in 0..3 {
+                        let output = profile_frame(&ctx, &mut player, &mut tab, size, vec![]);
+                        let text = painted_text(&output);
+                        fn pitch_rect(shape: &egui::Shape) -> Option<egui::Rect> {
+                            match shape {
+                                egui::Shape::Rect(r)
+                                    if r.fill == egui::Color32::from_rgb(26, 80, 49) =>
+                                {
+                                    Some(r.rect)
+                                }
+                                egui::Shape::Vec(shapes) => shapes.iter().find_map(pitch_rect),
+                                _ => None,
+                            }
+                        }
+                        let (pitch, pitch_clip) = output
+                            .shapes
+                            .iter()
+                            .find_map(|s| pitch_rect(&s.shape).map(|rect| (rect, s.clip_rect)))
+                            .unwrap();
+                        // Check the whole artwork, not just the final numeric box:
+                        // the bottom goal/margin was clipped in the real 125% view.
+                        assert!(
+                            pitch_clip.expand(1.0).contains_rect(pitch),
+                            "complete pitch {pitch:?} outside {pitch_clip:?} at {size:?}"
+                        );
+                        let compact = pitch.height() < 390.0;
+                        let shirt_height = if pitch.height() < 360.0 {
+                            20.0
+                        } else if compact {
+                            22.0
+                        } else {
+                            24.0
+                        };
+                        let cell_height = shirt_height + if compact { 2.0 } else { 4.0 } + 22.0;
+                        let mut cells = Vec::new();
+                        for field in player
+                            .build
+                            .schemas()
+                            .fields_for_category(Entity::Player, Category::Positions)
+                        {
+                            let labels: Vec<_> =
+                                text.iter().filter(|(s, _, _)| s == field.label).collect();
+                            assert_eq!(labels.len(), 1, "{} must appear once", field.label);
+                            let (_, shirt_text, clip) = labels[0];
+                            // Artwork anchors the label at 62% of the shirt height.
+                            let top = shirt_text.center().y - shirt_height * 0.62;
+                            let cell = egui::Rect::from_min_size(
+                                egui::pos2(shirt_text.center().x - 28.0, top),
+                                egui::vec2(56.0, cell_height),
+                            );
+                            assert!(
+                                clip.expand(1.0).contains_rect(cell),
+                                "{} cell {cell:?} outside {clip:?} at {size:?}",
+                                field.label
+                            );
+                            assert!(cell.bottom() <= size.y - 7.0);
+                            assert!(
+                                pitch.shrink(14.0).expand(1.0).contains_rect(cell),
+                                "{} outside playable pitch: {cell:?} / {pitch:?}",
+                                field.label
+                            );
+                            let raw = player.raw[field.offset.as_ref().unwrap().offset() as usize];
+                            let display = field.offset.as_ref().unwrap().decode_u8(raw);
+                            let value = if display > 20 {
+                                format!("r{raw}")
+                            } else {
+                                display.to_string()
+                            };
+                            assert!(
+                                text.iter().any(|(s, rect, clip)| s == &value
+                                    && cell.expand(1.0).contains_rect(*rect)
+                                    && clip.expand(1.0).contains_rect(*rect)),
+                                "missing value for {} in {cell:?}",
+                                field.label
+                            );
+                            cells.push(cell);
+                        }
+                        for (i, cell) in cells.iter().enumerate() {
+                            for other in &cells[i + 1..] {
+                                assert!(!cell.intersects(*other), "overlapping pitch cells");
+                            }
+                        }
+                        let pitch_right = cells.iter().map(|r| r.right()).fold(0.0, f32::max);
+                        let traits = text.iter().find(|(s, _, _)| s == "Traits").unwrap();
+                        assert!(
+                            traits.1.left() > pitch_right,
+                            "traits must use the right pane"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn overview_cards_flow_independently_in_balanced_stacks() {
+        for width in [1200.0, 700.0, 280.0, 400.0] {
+            let ctx = egui::Context::default();
+            let mut player = populated_positions(false);
+            let before = player.raw.clone();
+            let mut edits = vec![];
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(width, 3000.0),
+                    )),
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        show_attribute_stacks(
+                            player.build.schemas(),
+                            ui,
+                            &mut player,
+                            0x20000,
+                            &mut edits,
+                        );
+                    });
+                },
+            );
+            assert!(edits.is_empty());
+            assert_eq!(player.raw, before);
+            let text = painted_text(&output);
+            let heading = |name: &str| text.iter().find(|(s, _, _)| s == name).unwrap().1;
+            let tech = heading("Technical");
+            let mental = heading("Mental");
+            let physical = heading("Physical");
+            let set = heading("Set Pieces");
+            let feet = heading("Footedness");
+            let personality = heading("Personality");
+            if width >= 960.0 {
+                assert_eq!(tech.left(), set.left());
+                assert_eq!(mental.left(), feet.left());
+                assert_eq!(physical.left(), personality.left());
+                assert!(
+                    personality.top() + 40.0 < set.top(),
+                    "physical stack should reclaim its empty space: personality={personality:?}, set={set:?}"
+                );
+                assert!(personality.top() + 40.0 < feet.top());
+            } else if width >= 480.0 {
+                assert_eq!(tech.left(), heading("Goalkeeping").left());
+                assert_eq!(mental.left(), physical.left());
+                assert!(heading("Goalkeeping").top() > set.top());
+                assert!(physical.top() > feet.top());
+            } else {
+                assert!(mental.top() > set.top());
+                assert!(physical.top() > feet.top());
+                for (_, rect, _) in &text {
+                    assert!(rect.right() <= width - 7.0, "horizontal overflow: {rect:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn overview_stacks_use_viewport_width_after_an_earlier_row_expands_content() {
+        for width in [400.0, 700.0] {
+            let ctx = egui::Context::default();
+            let mut player = populated_positions(false);
+            let mut edits = vec![];
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(width, 3000.0),
+                    )),
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        ui.allocate_space(egui::vec2(1600.0, 10.0));
+                        show_attribute_stacks(
+                            player.build.schemas(),
+                            ui,
+                            &mut player,
+                            0x20000,
+                            &mut edits,
+                        );
+                    });
+                },
+            );
+            let text = painted_text(&output);
+            let heading = |label: &str| text.iter().find(|(s, _, _)| s == label).unwrap().1;
+            if width == 400.0 {
+                assert_eq!(heading("Technical").left(), heading("Mental").left());
+                assert!(heading("Mental").top() > heading("Set Pieces").top());
+            } else {
+                assert!(heading("Mental").left() > heading("Technical").left());
+                assert_eq!(heading("Technical").left(), heading("Goalkeeping").left());
+            }
+            for (_, rect, _) in text {
+                assert!(rect.right() <= width - 7.0, "card overflow: {rect:?}");
+            }
+            assert!(edits.is_empty());
+        }
+    }
+
+    fn scroll_events(pos: egui::Pos2, delta: f32) -> Vec<egui::Event> {
+        vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, delta),
+                modifiers: egui::Modifiers::NONE,
+            },
+        ]
+    }
+
+    #[test]
+    fn narrow_and_short_profiles_scroll_to_all_positions_and_projection_without_overflow() {
+        for size in [
+            egui::vec2(280.0, 700.0),
+            egui::vec2(400.0, 700.0),
+            egui::vec2(400.0, 480.0),
+            egui::vec2(1000.0, 480.0),
+            egui::vec2(1000.0, 570.0), // Below the readable pitch minimum: scrolling is required.
+        ] {
+            for enabled in [false, true] {
+                let ctx = egui::Context::default();
+                crate::ui::navigation::set_editing_enabled(&ctx, enabled);
+                let mut player = populated_positions(true);
+                let mut tab = PlayerTab::PositionsTraits;
+                let mut visible_positions = std::collections::HashSet::new();
+                let mut projection_reachable = false;
+                for frame in 0..85 {
+                    let x = if size.x >= 820.0 && frame < 25 {
+                        180.0
+                    } else {
+                        size.x - 40.0
+                    };
+                    let events = if frame == 0 {
+                        vec![]
+                    } else {
+                        scroll_events(egui::pos2(x, size.y - 50.0), -90.0)
+                    };
+                    let output = profile_frame(&ctx, &mut player, &mut tab, size, events);
+                    for (s, rect, clip) in painted_text(&output) {
+                        if clip.contains_rect(rect) {
+                            assert!(
+                                rect.left() >= 0.0 && rect.right() <= size.x - 6.0,
+                                "horizontal overflow at {size:?}: {s}: {rect:?}"
+                            );
+                            if s == "Show PA extrapolation" {
+                                projection_reachable = true;
+                            }
+                            for field in player
+                                .build
+                                .schemas()
+                                .fields_for_category(Entity::Player, Category::Positions)
+                            {
+                                if s == field.label {
+                                    visible_positions.insert(s.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                assert_eq!(
+                    visible_positions.len(),
+                    15,
+                    "positions unreachable at {size:?}: {visible_positions:?}"
+                );
+                assert!(projection_reachable, "PA toggle unreachable at {size:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn traits_and_other_tabs_do_not_scroll_the_wide_pitch() {
+        let ctx = egui::Context::default();
+        let mut player = populated_positions(false);
+        let size = egui::vec2(1000.0, 640.0);
+        let mut tab = PlayerTab::PositionsTraits;
+        let output = profile_frame(&ctx, &mut player, &mut tab, size, vec![]);
+        let initial = painted_text(&output)
+            .into_iter()
+            .find(|(s, _, _)| s == "GK")
+            .unwrap()
+            .1;
+        let mut projection_reachable = false;
+        for _ in 0..20 {
+            let output = profile_frame(
+                &ctx,
+                &mut player,
+                &mut tab,
+                size,
+                scroll_events(egui::pos2(850.0, 570.0), -500.0),
+            );
+            let text = painted_text(&output);
+            assert_eq!(text.iter().find(|(s, _, _)| s == "GK").unwrap().1, initial);
+            projection_reachable |= text
+                .iter()
+                .any(|(s, r, c)| s == "Show PA extrapolation" && c.contains_rect(*r));
+        }
+        assert!(projection_reachable);
+        tab = PlayerTab::Overview;
+        for _ in 0..10 {
+            profile_frame(
+                &ctx,
+                &mut player,
+                &mut tab,
+                size,
+                scroll_events(egui::pos2(850.0, 570.0), -500.0),
+            );
+        }
+        tab = PlayerTab::PositionsTraits;
+        let output = profile_frame(&ctx, &mut player, &mut tab, size, vec![]);
+        let text = painted_text(&output);
+        assert_eq!(text.iter().find(|(s, _, _)| s == "GK").unwrap().1, initial);
     }
 
     #[test]
