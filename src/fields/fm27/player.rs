@@ -265,7 +265,9 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "p_list_date",        label: "Listed Since",     entity: Player, category: Contract,   offset: sub_date("contract", 0x50)    },
         // Bentancur / Austin 5 (club listed); Maguire and unlisted players 0.
         Field { key: "p_list_code",        label: "Listing Code",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x58)  },
-        // Asking price, i32 pounds; -1 = not set (all five witnesses).
+        // Asking price, i32 pounds; -1 = FM's "Unspecified". Set in FM: Austin
+        // £5M and Bentancur £7.5M read 5,000,000 / 7,500,000. Editor write of
+        // 2,500,000 shown by FM after one game day, then undone (2026-11-01).
         Field { key: "p_asking_price",     label: "Asking Price",     entity: Player, category: Contract,   offset: raw_u32(0x0238) },
 
         // Names reached through sub-record chains (see PLAYER_SUB_RECORDS).

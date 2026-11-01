@@ -325,7 +325,7 @@ player base + 0x288, staff base + 0x100.
 | Squad number (u8, 255 = none) | contract+0x5D | 9 / 10 / 10 / 7 / 255 |
 | Listing flags | contract+0x57 (bit 0 transfer, bit 1 loan) | all five unlisted; Mikel Merino (Arsenal, 67211760) reads 1 and FM shows Transfer status "Listed", Loan status "Not set" (2026-10-31) |
 | Job code | contract+0x26 (FM26 "contract type") | 1 = Player for all five |
-| Asking price (i32, -1 unset) | +0x238 | -1 for all five, and also -1 for the listed Merino. Mapping unconfirmed |
+| Asking price (i32 £, -1 = "Unspecified") | +0x238 | -1 for all five and for listed players whose Transfer Status page reads "Asking Price: Unspecified" (Merino, Austin, Bentancur). Verified 2026-11-01 by setting it in FM: Austin £5M -> 5,000,000, Bentancur £7.5M -> 7,500,000. Write verified: the editor set Austin to 2,500,000 and, after one day of holiday, FM's squad Transfer view showed Asking Price £2.5M (Tue 14 Jul 2026). Undo restored 5,000,000; both were then set back to -1 (Unspecified) through the editor. While an asking price is set, FM's profile header shows it in place of the transfer value |
 | Transfer value (i32 £) | +0x234 | Bentancur 37,620,000 = "£38M"; Tonali 183,492,624 in "£183M - £200M"; Davies 8,878,733 in "£8.8M - £10.5M". 2026-10-31: Merino 45,315,000 = "£45M", Van Dijk 8,408,400 in "£8.4M - £10M", Rice 145,800,016 in "£117M - £146M" |
 | Listed since (date) | contract+0x50 | packed 1 Jan 1900 (0x076C0001) = not listed |
 | Listing code (u8) | contract+0x58 | 5 for club-listed Bentancur and Brandon Austin; 0 for loan-listed Aaron Maguire and unlisted players |
@@ -333,7 +333,7 @@ player base + 0x288, staff base + 0x100.
 | Nationality | nation (+0x2F0) → +0x18 | Norway / Spain / France / England / Portugal |
 | Place of birth | city (+0x308) → +0x18 | Leeds / Esplugues de Llobregat / Bondy / London / Funchal |
 | UID (u32) | +0x294 (FM26 read it as u16) | Haaland 29179241, Mbappé 85139014 |
-| Weekly wage | FM26 +0x248 reads 13748 for Haaland — unmapped; the panel falls back to the contract wage | |
+| Weekly wage | Not mapped. +0x248 equals the contract wage (contract+0x20) for Haaland, Mbappé, Bentancur, Austin and Tonali, and for 8,100 of 34,407 sampled players, but reads -1 or another value for the rest (Litmanen 0 / -1, Pelupessy 1,096 / 3,436). Its meaning is unknown, so the panel keeps using the contract wage, which matches FM's contract screen | |
 
 **Staff** (Arteta / Flick / Xabi Alonso / Maresca / the user's manager):
 
@@ -718,7 +718,31 @@ Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
 - Formation IDs 0, 65 and 68 and the six formation bytes FM does not show.
 - Favoured-club tie reason codes 0 and 4.
 - Stadium array root (`rva_stadium_base`) and stride.
-- Asking price (+0x238) for a listed player (see the player table).
+- Player condition, sharpness and fatigue. Leads only (2026-11-01, Spurs,
+  13 Jul): u16 +0x25C reads 10000 for every fit Spurs player and 9405-9479
+  for the five injured ones (Kudus, van de Ven, Kulusevski, Xavi Simons,
+  Odobert). u16 +0x258 reads 3500 for the same five and about 5000-6400 for
+  the rest. FM's squad SHP icon changes between Mudryk (6040, dash) and
+  Bergvall (6142, arrow), and van de Ven (3500) shows an orange icon. FM shows
+  only words ("Peak", "Lacking Sharpness", "Losing Sharpness", Energy
+  "Fresh"). Test writes to Bergvall (+0x25C 7000 and 3000, +0x258 9500) did not
+  change FM's tooltip in the same session. FM caches what it has shown, and
+  his tooltip was not read before the writes, so the test proves nothing either
+  way. All values were restored. A mid-season save with
+  tired and unfit players is needed.
+- Name editing. First, last and common names are pointers into shared
+  name records (one record serves every person with that name: Frank
+  Wiblishauser, Fahrenhorst, Berghuis and Machiels all reach the same
+  "Frank" FmString, two of them through the same sub-record). Editing a
+  record in place would rename every person who shares it, and a longer
+  string cannot be written in place, so a safe design (re-pointing to another
+  existing record, or allocating) must be chosen before any name write.
+- FM's staff "Preferred Jobs" list. It is not stored as job codes or
+  role indices in the staff object or the objects it points to (searched to
+  depth 2). It looks derived from the role ratings: one job family, rated
+  highest first, such as coaching for Cudicini and recruitment for Thorrington,
+  even when a role in another family is rated as high. How FM picks the family
+  is unknown.
 
 ### Club search membership (2026-10-30, Steam Huelva save)
 
