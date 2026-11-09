@@ -84,10 +84,13 @@ class ArchStagingTests(unittest.TestCase):
             function()
         self.assertFalse(self.output.exists())
 
-    def test_current_release_pins_match_application_workflow_and_recipe(self):
-        version = re.search(r'^version = "([^"]+)"', (ROOT / "Cargo.toml").read_text(), re.M)[1]
-        self.assertEqual(arch.VERSION, version)
+    def test_pinned_native_release_matches_workflow_and_recipe(self):
+        # Native packages wrap an immutable verified application release, not
+        # necessarily the next version currently being prepared in Cargo.toml.
+        version = arch.VERSION
         manifest = json.loads((ROOT / f"packaging/releases/v{version}.json").read_text())
+        self.assertEqual(manifest["version"], version)
+        self.assertEqual(manifest["tag"], f"v{version}")
         pin = manifest["targets"]["x86_64-unknown-linux-gnu"]
         self.assertEqual(pin["canonical_name"], arch.ARCHIVE_NAME)
         self.assertEqual(pin["canonical_sha256"], arch.ARCHIVE_SHA256)

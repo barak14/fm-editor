@@ -2,10 +2,18 @@
 
 ## Unreleased
 
+## 0.4.1 (prerelease preparation)
+
 ### Fixes
 
 - Identify FM releases from the game module's PE product metadata on Windows and Linux/Proton, using install names only as a fallback. FM24 reads `fm.exe`; FM26/FM27 read `game_plugin.dll` rather than the Unity executable's engine version. Recognise compact `FootballManager24` fallback names and report module/resource errors accurately. Preserve the existing compatibility fingerprint gate; recognised Epic installations now report that no schema is available instead of silently selecting Steam's.
 - Record process-local build-detection diagnostics: discovered modules, PE product/file versions, resource/discovery errors, identification source, storefront hints and schema-selection outcome. Persist changed reports in a bounded rotating log on Windows and Linux, including unsupported processes skipped while another game is available; retain every candidate's error when none can be identified.
+
+### Compatibility and diagnostics
+
+- This is a detection/diagnostics update, not Epic support. Recognised Epic installs have no verified schema and are rejected; no memory offsets or write behaviour changed. FM27 Game Pass remains unverified.
+- For a failed identification, include `%LOCALAPPDATA%\fm-editor\logs\game-detection.log` on Windows or `${XDG_DATA_HOME:-$HOME/.local/share}/fm-editor/logs/game-detection.log` on Linux, plus `.1` if present. Review account names in paths before sharing. See [reporter instructions](docs/release-notes/0.4.1.md#requesting-a-retest).
+- Native installers and Arch packages remain pinned to the verified 0.4.0 binaries until separate 0.4.1 packaging inputs are verified. Use the 0.4.1 portable CI artifact for the diagnostic retest; do not use a 0.4.0 installer.
 
 ## 0.4.0 (prerelease)
 
