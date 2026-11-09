@@ -133,12 +133,14 @@ logs; it does **not** add a verified Epic layout. FM27 Game Pass remains unverif
 4. Only after review, create a **new** `v0.4.1` tag at the checked commit and a
    draft GitHub prerelease. Include both portable archives, matching source and
    combined `SHA256SUMS`. Never move `v0.4.0` or replace its binaries.
-5. Native packaging is separate. The existing `packaging/releases/v0.4.0.json`,
-   Arch recipe and Native packages workflow still target the immutable 0.4.0
-   application. Leave those pins intact during 0.4.1 portable-build preparation.
-   After verified 0.4.1 binaries exist, record a new manifest with actual CI/run
-   identity and hashes, then update the native recipe/workflow/documentation
-   together. Do not relabel a 0.4.0 installer as 0.4.1.
+5. Native packaging is separate. `packaging/releases/v0.4.1.json` pins the
+   immutable `v0.4.1` tag at commit `f678f0b9771c8d992cecef96281ead4ddff89e75`
+   and successful **Build and package** run `42563692148`, with the portable
+   archive, executable and canonical-input hashes. The Arch recipe, staging
+   helper and Native packages workflow now target 0.4.1; `v0.4.0.json` remains
+   for rebuilding the 0.4.0 packages. Run the Native packages workflow for
+   `v0.4.1` and verify its installer/package before attaching them. Do not
+   relabel a 0.4.0 installer as 0.4.1.
 
 Version/changelog preparation or a CI artifact does not publish a release,
 create a tag or establish that all release gates have passed. Publication and

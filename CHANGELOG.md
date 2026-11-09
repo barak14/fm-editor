@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.4.1 (prerelease preparation)
+## 0.4.1 (prerelease)
 
 ### Fixes
 
@@ -13,7 +13,11 @@
 
 - This is a detection/diagnostics update, not Epic support. Recognised Epic installs have no verified schema and are rejected; no memory offsets or write behaviour changed. FM27 Game Pass remains unverified.
 - For a failed identification, include `%LOCALAPPDATA%\fm-editor\logs\game-detection.log` on Windows or `${XDG_DATA_HOME:-$HOME/.local/share}/fm-editor/logs/game-detection.log` on Linux, plus `.1` if present. Review account names in paths before sharing. See [reporter instructions](docs/release-notes/0.4.1.md#requesting-a-retest).
-- Native installers and Arch packages remain pinned to the verified 0.4.0 binaries until separate 0.4.1 packaging inputs are verified. Use the 0.4.1 portable CI artifact for the diagnostic retest; do not use a 0.4.0 installer.
+- Native installers and Arch packages remained pinned to the verified 0.4.0 binaries while 0.4.1 was prepared. Use the 0.4.1 portable build for the diagnostic retest; do not use a 0.4.0 installer.
+
+### Packaging
+
+- Pin the 0.4.1 native packaging identity to the immutable `v0.4.1` application tag at commit `f678f0b9771c8d992cecef96281ead4ddff89e75` from successful build `42563692148`, with an independent packaging revision. No verified installer or package is claimed yet.
 
 ## 0.4.0 (prerelease)
 
