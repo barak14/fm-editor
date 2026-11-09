@@ -710,7 +710,8 @@ The PC Game Pass (Xbox app) release of FM27 is a separate binary built on the
 Microsoft GDK instead of Steamworks. It has its own schema,
 `FM27_GAMEPASS` in `src/fields/fm27/mod.rs`, selected when the install is
 recognised as Game Pass: a `MicrosoftGame.config` next to `fm.exe`, or a path
-under `XboxGames` or `WindowsApps`. Everything else is treated as Steam.
+under `XboxGames` or `WindowsApps`. Recognised `Epic Games` installs are rejected
+because no Epic schema exists; other locations retain the historical Steam default.
 
 **Nothing in `FM27_GAMEPASS` is verified.** It is a copy of the Steam schema
 with `known_dll_hash` 0. The module hash and the module-relative values (entity
@@ -726,7 +727,8 @@ Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
    (current: 0x…)`. Record the hash. If attach fails, record the error:
    - `fm.exe is not running` — the Game Pass exe has another name; note the
      process name and path from Task Manager.
-   - `cannot determine game version` — the install path has no release year.
+   - `cannot determine game version` — no FM identity was available in the game
+     module's PE product metadata and the install directory was not recognised.
    - `cannot read …` — the module file is access-restricted (`WindowsApps`).
    - Shown as plain `FM27` — storefront detection missed; note the exe path.
 2. **Arrays.** fm-debug `attach_status` reports the player, staff and club

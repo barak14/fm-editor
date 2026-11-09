@@ -9,6 +9,9 @@
 //! Proton/Wine, so every schema offset is identical to a native Windows
 //! install; only the process-access primitives differ.
 
+mod detection_log;
+mod version_resource;
+
 #[cfg(windows)]
 mod win32;
 #[cfg(windows)]
@@ -48,39 +51,150 @@ pub fn running_games() -> Result<Vec<RunningGame>, String> {
         return Err("fm.exe is not running".to_string());
     }
     let mut games = Vec::with_capacity(pids.len());
-    let mut first_err = None;
+    let mut errors = Vec::new();
     for pid in pids {
         match detect_build(pid) {
             Ok(build) => games.push(RunningGame { pid, build }),
             Err(e) => {
-                first_err.get_or_insert(format!("pid {pid}: {e}"));
+                errors.push(format!("pid {pid}: {e}"));
             }
         }
     }
-    match (games.is_empty(), first_err) {
-        (true, Some(e)) => Err(e),
-        _ => Ok(games),
+    if games.is_empty() {
+        Err(errors.join("\n\n"))
+    } else {
+        Ok(games)
     }
 }
 
 /// Identify the build of one `fm.exe`.
 ///
-/// The version comes from the install path (it always contains the release
-/// year): FM26/FM27 keep their game logic in `game_plugin.dll`, FM24 in
-/// `fm.exe` itself, so the plugin path is tried first and the exe path is
-/// the fallback. The storefront comes from the exe's install location.
+/// Read the game module's PE product metadata first: FM24 embeds it in
+/// `fm.exe`; FM26/FM27 use `game_plugin.dll` (their exe describes Unity).
+/// The install directory is only a fallback when no FM identity is available.
+/// Storefront detection is separate and does not establish layout compatibility.
 fn detect_build(pid: u32) -> Result<GameBuild, String> {
-    let exe_path = backend::find_module_info(pid, "fm.exe").map(|m| m.2);
-    let sniff_path = match backend::find_module_info(pid, "game_plugin.dll") {
-        Ok(m) => m.2,
-        Err(e) => exe_path.clone().map_err(|_| e)?,
-    };
-    let version = sniff_version(&sniff_path)?;
-    let storefront = match &exe_path {
-        Ok(exe) => storefront_of(exe, has_gdk_config(exe)),
-        Err(_) => storefront_of(&sniff_path, false),
-    };
-    GameBuild::resolve(version, storefront).map_err(|e| format!("{e} ({sniff_path})"))
+    let (result, report) = detect_build_from_modules(
+        pid,
+        backend::find_module_info(pid, "fm.exe"),
+        backend::find_module_info(pid, "game_plugin.dll"),
+        version_resource::read,
+    );
+    detection_log::record(pid, &report);
+    result.map_err(|e| format!("{e}\n{report}"))
+}
+
+struct InspectedModule {
+    name: &'static str,
+    path: String,
+    metadata: Result<version_resource::VersionMetadata, String>,
+}
+
+fn inspect_module(
+    name: &'static str,
+    info: Result<(u64, u64, String), String>,
+    read_metadata: &mut impl FnMut(&str) -> Result<version_resource::VersionMetadata, String>,
+    report: &mut String,
+) -> Option<InspectedModule> {
+    use std::fmt::Write;
+    match info {
+        Ok((base, size, path)) => {
+            let _ = writeln!(
+                report,
+                "module {name}: path={path:?}, base=0x{base:X}, size=0x{size:X}"
+            );
+            let metadata = read_metadata(&path);
+            match &metadata {
+                Ok(info) => {
+                    let _ = writeln!(report, "  ProductName: {:?}", info.product_names);
+                    let _ = writeln!(report, "  ProductVersion: {:?}", info.product_versions);
+                    let _ = writeln!(report, "  FileVersion: {:?}", info.file_versions);
+                }
+                Err(e) => {
+                    let _ = writeln!(report, "  PE version resource unavailable: {e}");
+                }
+            }
+            Some(InspectedModule {
+                name,
+                path,
+                metadata,
+            })
+        }
+        Err(e) => {
+            let _ = writeln!(report, "module {name}: discovery failed for this PID: {e}");
+            None
+        }
+    }
+}
+
+/// Keep discovery, file metadata and selection in one process-local report.
+/// Dependency injection lets tests prove that a missing plugin never borrows
+/// another process's path or metadata, without starting or attaching to FM.
+fn detect_build_from_modules(
+    pid: u32,
+    exe_info: Result<(u64, u64, String), String>,
+    plugin_info: Result<(u64, u64, String), String>,
+    mut read_metadata: impl FnMut(&str) -> Result<version_resource::VersionMetadata, String>,
+) -> (Result<GameBuild, String>, String) {
+    use std::fmt::Write;
+    let mut report = format!("FM build detection: PID {pid}\n");
+    let exe = inspect_module("fm.exe", exe_info, &mut read_metadata, &mut report);
+    let plugin = inspect_module(
+        "game_plugin.dll (optional)",
+        plugin_info,
+        &mut read_metadata,
+        &mut report,
+    );
+    let result = (|| {
+        let selected = plugin.as_ref().or(exe.as_ref()).ok_or_else(|| {
+            "cannot identify game: neither game module nor executable could be located".to_string()
+        })?;
+        let _ = writeln!(
+            report,
+            "selected module: {} ({:?})",
+            selected.name, selected.path
+        );
+        let storefront_path = exe.as_ref().map_or(&selected.path, |exe| &exe.path);
+        let gdk = has_gdk_config(storefront_path);
+        let storefront = storefront_of(storefront_path, gdk);
+        let _ = writeln!(
+            report,
+            "storefront hint: {}; path={storefront_path:?}; MicrosoftGame.config present={gdk}",
+            storefront.display_name()
+        );
+        let identity = selected.metadata.as_ref().ok().map(version_from_metadata);
+        let source = if matches!(identity, Some(Ok(Some(_)))) {
+            "PE ProductName"
+        } else {
+            let _ = writeln!(
+                report,
+                "PE identity unavailable or unsupported: {identity:?}; resource error: {:?}",
+                selected.metadata.as_ref().err()
+            );
+            "install-directory fallback"
+        };
+        let version = identify_version(&selected.path, selected.metadata.clone())?;
+        let _ = writeln!(
+            report,
+            "release: {}; source: {source}",
+            version.display_name()
+        );
+        GameBuild::resolve(version, storefront)
+    })();
+    match &result {
+        Ok(build) => {
+            let _ = writeln!(
+                report,
+                "result: selected {} schema {}; layout compatibility still requires the attachment fingerprint gate",
+                build.display_name(),
+                build.schema_name()
+            );
+        }
+        Err(e) => {
+            let _ = writeln!(report, "result: {e}");
+        }
+    }
+    (result, report)
 }
 
 /// True when a `MicrosoftGame.config` (the Microsoft GDK package manifest
@@ -90,17 +204,23 @@ fn has_gdk_config(exe_path: &str) -> bool {
         Some(i) => &exe_path[..i],
         None => return false,
     };
-    std::path::Path::new(dir).join("MicrosoftGame.config").is_file()
+    std::path::Path::new(dir)
+        .join("MicrosoftGame.config")
+        .is_file()
 }
 
 /// Storefront of an install, from its exe (or module) path and whether the
 /// GDK manifest sits next to the exe. Game Pass installs live under an
 /// `XboxGames` folder (any drive, the Xbox app default) or, for older Store
-/// packages, `Program Files\WindowsApps`; anything else is the Steam build.
+/// packages, `Program Files\WindowsApps`. Recognised Epic installs must not
+/// inherit Steam's schema. Other locations retain the historical Steam default;
+/// metadata identifies the release, not the storefront or compatible offsets.
 fn storefront_of(path: &str, has_gdk_config: bool) -> Storefront {
     let lower = path.to_lowercase().replace('\\', "/");
     if has_gdk_config || lower.contains("/xboxgames/") || lower.contains("/windowsapps/") {
         Storefront::GamePass
+    } else if lower.contains("/epic games/") {
+        Storefront::Epic
     } else {
         Storefront::Steam
     }
@@ -138,7 +258,11 @@ impl FmProcess {
             _ => Err(format!(
                 "{} games are running: {}. Choose one by PID.",
                 games.len(),
-                games.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "),
+                games
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
             )),
         }
     }
@@ -294,30 +418,74 @@ impl FmProcess {
         if len == 0 || len > 256 {
             return Err(format!("bad name length: {len}"));
         }
-        String::from_utf8(buf[4..4 + len].to_vec())
-            .map_err(|e| format!("name UTF-8 error: {e}"))
+        String::from_utf8(buf[4..4 + len].to_vec()).map_err(|e| format!("name UTF-8 error: {e}"))
     }
 }
 
-/// Determine the game version from the full path of `game_plugin.dll`.
-///
-/// The Football Manager install directory always contains the release year
-/// (e.g. `…\Football Manager 2026\game_plugin.dll`), which is the only
-/// reliable distinguisher when every version shares the `fm.exe` exe name.
-fn sniff_version(dll_path: &str) -> Result<GameVersion, String> {
-    let lower = dll_path.to_lowercase();
-    // Match both "Football Manager 2026" and "Football Manager 26" naming conventions.
-    if lower.contains("2027") || lower.contains("manager 27") {
-        Ok(GameVersion::Fm27)
-    } else if lower.contains("2026") || lower.contains("manager 26") {
-        Ok(GameVersion::Fm26)
-    } else if lower.contains("2024") || lower.contains("manager 24") {
-        Ok(GameVersion::Fm24)
-    } else {
-        Err(format!(
-            "cannot determine game version from game_plugin.dll path: {dll_path}"
-        ))
+/// Recognise an FM product name, without interpreting engine version numbers.
+/// An explicit unsupported or conflicting FM identity must not fall back to a
+/// directory that happens to name a supported release.
+fn version_from_metadata(
+    metadata: &version_resource::VersionMetadata,
+) -> Result<Option<GameVersion>, String> {
+    let mut found = None;
+    for name in &metadata.product_names {
+        let lower = name.trim().to_ascii_lowercase();
+        let Some(release) = lower.strip_prefix("football manager ") else {
+            continue;
+        };
+        let version = match release {
+            "24" | "2024" => GameVersion::Fm24,
+            "26" | "2026" => GameVersion::Fm26,
+            "27" | "2027" => GameVersion::Fm27,
+            _ => return Err(format!("unsupported Football Manager product: {name}")),
+        };
+        if found.is_some_and(|previous| previous != version) {
+            return Err("conflicting Football Manager product names in version resource".into());
+        }
+        found = Some(version);
     }
+    Ok(found)
+}
+
+fn identify_version(
+    module_path: &str,
+    metadata: Result<version_resource::VersionMetadata, String>,
+) -> Result<GameVersion, String> {
+    let reason = match metadata {
+        Ok(metadata) => match version_from_metadata(&metadata) {
+            Ok(Some(version)) => return Ok(version),
+            Ok(None) => format!(
+                "no Football Manager product identity (product names: {:?}, product versions: {:?}, file versions: {:?})",
+                metadata.product_names, metadata.product_versions, metadata.file_versions,
+            ),
+            Err(e) => return Err(format!("{e} ({module_path})")),
+        },
+        Err(e) => e,
+    };
+    sniff_version(module_path).map_err(|e| format!("{e}; version resource: {reason}"))
+}
+
+/// Legacy fallback for missing product metadata. Match an installation-directory
+/// component, not an arbitrary year elsewhere in the path. Compact Epic-style
+/// names and the spaced Steam names are both accepted.
+fn sniff_version(module_path: &str) -> Result<GameVersion, String> {
+    for component in module_path.split(['/', '\\']) {
+        let compact: String = component
+            .chars()
+            .filter(|c| !c.is_whitespace() && *c != '-' && *c != '_')
+            .flat_map(char::to_lowercase)
+            .collect();
+        match compact.as_str() {
+            "footballmanager24" | "footballmanager2024" => return Ok(GameVersion::Fm24),
+            "footballmanager26" | "footballmanager2026" => return Ok(GameVersion::Fm26),
+            "footballmanager27" | "footballmanager2027" => return Ok(GameVersion::Fm27),
+            _ => {}
+        }
+    }
+    Err(format!(
+        "cannot determine game version from module path: {module_path}"
+    ))
 }
 
 /// Project fingerprint of the first 64 KB of a module file.
@@ -348,9 +516,15 @@ mod tests {
 
     #[test]
     fn running_game_label_names_build_and_pid() {
-        let game = RunningGame { pid: 4242, build: GameBuild::Fm27Steam };
+        let game = RunningGame {
+            pid: 4242,
+            build: GameBuild::Fm27Steam,
+        };
         assert_eq!(game.to_string(), "FM27 (PID 4242)");
-        let game = RunningGame { pid: 4242, build: GameBuild::Fm27GamePass };
+        let game = RunningGame {
+            pid: 4242,
+            build: GameBuild::Fm27GamePass,
+        };
         assert_eq!(game.to_string(), "FM27 Game Pass (PID 4242)");
     }
 
@@ -361,6 +535,256 @@ mod tests {
         assert_eq!(sniff_version(fm24), Ok(GameVersion::Fm24));
         assert_eq!(sniff_version(fm27), Ok(GameVersion::Fm27));
         assert!(sniff_version(r"C:\Games\fm.exe").is_err());
+        assert_eq!(
+            sniff_version(r"C:\Program Files\Epic Games\FootballManager24\fm.exe"),
+            Ok(GameVersion::Fm24)
+        );
+        assert!(sniff_version(r"C:\2024\UnknownGame\fm.exe").is_err());
+    }
+
+    fn metadata(name: &str, version: &str) -> version_resource::VersionMetadata {
+        version_resource::VersionMetadata {
+            product_names: vec![name.into()],
+            product_versions: vec![version.into()],
+            file_versions: vec![],
+        }
+    }
+
+    fn module_info(path: &str) -> Result<(u64, u64, String), String> {
+        Ok((0x140000000, 0x100000, path.into()))
+    }
+
+    #[test]
+    fn failed_detection_reports_only_this_process_modules_and_raw_metadata() {
+        let path = r"C:\Custom\fm.exe";
+        let (result, report) = detect_build_from_modules(
+            25592,
+            module_info(path),
+            Err("module not mapped".into()),
+            |requested| {
+                assert_eq!(requested, path);
+                let mut info = metadata("Unknown game", "99.2+123");
+                info.file_versions.push("99.2".into());
+                Ok(info)
+            },
+        );
+        assert!(result.is_err());
+        for expected in [
+            "PID 25592",
+            "module fm.exe:",
+            "base=0x140000000",
+            "size=0x100000",
+            "Unknown game",
+            "99.2+123",
+            "FileVersion: [\"99.2\"]",
+            "game_plugin.dll (optional): discovery failed for this PID: module not mapped",
+            "selected module: fm.exe",
+            "cannot determine game version",
+        ] {
+            assert!(report.contains(expected), "missing {expected:?}: {report}");
+        }
+        assert!(!report.contains("FM27"), "{report}");
+        assert!(!report.contains("Football Manager 27"), "{report}");
+    }
+
+    #[test]
+    fn detection_report_retains_metadata_when_schema_is_unsupported() {
+        let path = r"C:\Program Files\Epic Games\FootballManager24\fm.exe";
+        let (result, report) =
+            detect_build_from_modules(1, module_info(path), Err("not mapped".into()), |_| {
+                Ok(metadata("Football Manager 2024", "24.4.2+2081827"))
+            });
+        assert!(
+            result
+                .unwrap_err()
+                .contains("no schema for the Epic build of FM24")
+        );
+        assert!(report.contains("24.4.2+2081827"), "{report}");
+        assert!(
+            report.contains("release: FM24; source: PE ProductName"),
+            "{report}"
+        );
+        assert!(report.contains("storefront hint: Epic"), "{report}");
+    }
+
+    #[test]
+    fn detection_report_explains_successful_directory_fallback() {
+        let (result, report) = detect_build_from_modules(
+            2,
+            module_info("/Football Manager 2024/fm.exe"),
+            Err("not mapped".into()),
+            |_| Err("permission denied reading resource".into()),
+        );
+        assert_eq!(result, Ok(GameBuild::Fm24Steam));
+        assert!(
+            report.contains("permission denied reading resource"),
+            "{report}"
+        );
+        assert!(
+            report.contains("source: install-directory fallback"),
+            "{report}"
+        );
+        assert!(
+            report.contains("layout compatibility still requires"),
+            "{report}"
+        );
+    }
+
+    #[test]
+    fn detection_report_distinguishes_unity_exe_from_fm_plugin() {
+        let (result, report) = detect_build_from_modules(
+            3,
+            module_info("/custom/fm.exe"),
+            module_info("/custom/game_plugin.dll"),
+            |path| {
+                if path.ends_with(".exe") {
+                    Ok(metadata("Unity", "6000.3.18f1"))
+                } else {
+                    Ok(metadata("Football Manager 27", "27.0.0+2493426"))
+                }
+            },
+        );
+        assert_eq!(result, Ok(GameBuild::Fm27Steam));
+        assert!(
+            report.contains("Unity") && report.contains("6000.3.18f1"),
+            "{report}"
+        );
+        assert!(
+            report.contains("selected module: game_plugin.dll"),
+            "{report}"
+        );
+        assert!(report.contains("27.0.0+2493426"), "{report}");
+    }
+
+    #[test]
+    fn failed_module_discovery_retains_both_errors_without_reading_files() {
+        let (result, report) = detect_build_from_modules(
+            4,
+            Err("exe enumeration denied".into()),
+            Err("plugin not mapped".into()),
+            |_| panic!("must not read an undiscovered module"),
+        );
+        assert!(result.is_err());
+        assert!(
+            report.contains("exe enumeration denied") && report.contains("plugin not mapped"),
+            "{report}"
+        );
+        assert!(!report.contains("selected module:"), "{report}");
+    }
+
+    #[test]
+    fn conflicting_identity_report_retains_all_product_versions() {
+        let (result, report) = detect_build_from_modules(
+            5,
+            module_info("/Football Manager 2024/fm.exe"),
+            Err("not mapped".into()),
+            |_| {
+                let mut info = metadata("Football Manager 2024", "24.4.2");
+                info.product_names.push("Football Manager 27".into());
+                info.product_versions.push("27.0.0".into());
+                Ok(info)
+            },
+        );
+        assert!(result.unwrap_err().contains("conflicting"));
+        assert!(
+            report.contains("24.4.2") && report.contains("27.0.0"),
+            "{report}"
+        );
+        assert!(
+            !report.contains("source: install-directory fallback"),
+            "{report}"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires FM_VERSION_TEST_MODULE pointing to an installed game module"]
+    fn diagnose_installed_module_from_metadata() {
+        let path = std::env::var("FM_VERSION_TEST_MODULE").expect("set FM_VERSION_TEST_MODULE");
+        let info = version_resource::read(&path);
+        let result = identify_version(&path, info.clone());
+        let report = format!(
+            "FILE-ONLY PE diagnostic (no process/module discovery or memory reads); test-runner PID {}\npath: {path:?}\nmetadata: {info:#?}\nrelease: {result:?}",
+            std::process::id()
+        );
+        println!("{report}");
+        detection_log::record(std::process::id(), &report);
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn product_metadata_identifies_release_without_install_directory() {
+        let fm24 = metadata("Football Manager 2024", "24.4.2+2081827");
+        assert_eq!(
+            identify_version(r"C:\Custom\fm.exe", Ok(fm24)),
+            Ok(GameVersion::Fm24)
+        );
+        let fm27 = metadata("Football Manager 27", "27.0.0+2493426");
+        // Metadata wins over a stale or misleading directory name.
+        assert_eq!(
+            identify_version("/Football Manager 2024/game_plugin.dll", Ok(fm27)),
+            Ok(GameVersion::Fm27)
+        );
+        assert_eq!(
+            version_from_metadata(&metadata("Football Manager 2026", "26.3.2")),
+            Ok(Some(GameVersion::Fm26))
+        );
+    }
+
+    #[test]
+    fn missing_or_generic_metadata_uses_path_fallback() {
+        let path = r"C:\Epic Games\FootballManager24\fm.exe";
+        assert_eq!(
+            identify_version(path, Err("resource missing".into())),
+            Ok(GameVersion::Fm24)
+        );
+        // Unity's version number is not an FM release.
+        assert_eq!(
+            version_from_metadata(&metadata("Unity", "6000.3.18f1")),
+            Ok(None)
+        );
+        assert_eq!(
+            identify_version(
+                "/Football Manager 27/fm.exe",
+                Ok(metadata("Unity", "6000.3.18f1"))
+            ),
+            Ok(GameVersion::Fm27)
+        );
+        let err = identify_version("/custom/fm.exe", Err("cannot read file".into())).unwrap_err();
+        assert!(
+            err.contains("module path") && err.contains("cannot read file"),
+            "{err}"
+        );
+        assert!(!err.contains("game_plugin.dll"), "{err}");
+    }
+
+    #[test]
+    fn explicit_unsupported_or_conflicting_metadata_never_uses_path_fallback() {
+        let path = "/Football Manager 2024/fm.exe";
+        assert!(
+            identify_version(path, Ok(metadata("Football Manager 2025", "25.0")))
+                .unwrap_err()
+                .contains("unsupported")
+        );
+        let mut conflict = metadata("Football Manager 2024", "24.4.2");
+        conflict.product_names.push("Football Manager 27".into());
+        assert!(
+            identify_version(path, Ok(conflict))
+                .unwrap_err()
+                .contains("conflicting")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires FM_VERSION_TEST_MODULE pointing to an installed game module"]
+    fn identify_installed_module_from_metadata() {
+        let path = std::env::var("FM_VERSION_TEST_MODULE").expect("set FM_VERSION_TEST_MODULE");
+        let info = version_resource::read(&path).expect("read version resource");
+        let version = version_from_metadata(&info)
+            .expect("unambiguous FM identity")
+            .expect("FM product name");
+        println!("{path}: {info:?}; identified {}", version.display_name());
+        // A neutral path proves the result is independent of the install folder.
+        assert_eq!(identify_version("/neutral/game.bin", Ok(info)), Ok(version));
     }
 
     #[test]
@@ -373,8 +797,14 @@ mod tests {
         assert_eq!(storefront_of(proton, false), Storefront::Steam);
         assert_eq!(storefront_of(xbox, false), Storefront::GamePass);
         assert_eq!(storefront_of(store, false), Storefront::GamePass);
+        let epic = r"C:\Program Files\Epic Games\FootballManager24\fm.exe";
+        assert_eq!(storefront_of(epic, false), Storefront::Epic);
+        assert!(GameBuild::resolve(GameVersion::Fm24, storefront_of(epic, false)).is_err());
         // A moved Game Pass install is still recognised by its GDK manifest.
-        assert_eq!(storefront_of(r"E:\Games\FM27\fm.exe", true), Storefront::GamePass);
+        assert_eq!(
+            storefront_of(r"E:\Games\FM27\fm.exe", true),
+            Storefront::GamePass
+        );
     }
 
     #[test]

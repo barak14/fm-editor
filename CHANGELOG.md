@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixes
+
+- Identify FM releases from the game module's PE product metadata on Windows and Linux/Proton, using install names only as a fallback. FM24 reads `fm.exe`; FM26/FM27 read `game_plugin.dll` rather than the Unity executable's engine version. Recognise compact `FootballManager24` fallback names and report module/resource errors accurately. Preserve the existing compatibility fingerprint gate; recognised Epic installations now report that no schema is available instead of silently selecting Steam's.
+- Record process-local build-detection diagnostics: discovered modules, PE product/file versions, resource/discovery errors, identification source, storefront hints and schema-selection outcome. Persist changed reports in a bounded rotating log on Windows and Linux, including unsupported processes skipped while another game is available; retain every candidate's error when none can be identified.
+
 ## 0.4.0 (prerelease)
 
 ### Features

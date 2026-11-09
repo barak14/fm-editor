@@ -17,6 +17,15 @@ Linux backend also matches the basename of argv[0] (`S:\…\fm.exe`).
 
 Version gate: `known_dll_hash` = hash of the first 64 KB of `fm.exe`.
 
+Release identification now reads the PE version resource before consulting the
+install directory. Read-only file inspection on 2026-11-09 of the installed Steam
+`fm.exe` found `ProductName = Football Manager 2024`, `FileVersion = 24.4.2`
+and `ProductVersion = 24.4.2+2081827`. These identify the release/build, not
+field-layout compatibility; the existing module fingerprint gate is unchanged.
+No mappings or writes were tested by this metadata inspection. Epic metadata
+and offsets remain unverified; recognised Epic installs have no schema and are
+rejected rather than routed to Steam's layout.
+
 ## Entity arrays (RVA relative to fm.exe)
 
 | Entity | Count | data / end | Object vtable | Stride |

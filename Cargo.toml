@@ -21,6 +21,7 @@ rfd = "0.14"
 # built but unused in release binaries.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync"] }
 axum = "0.7"
+pelite = { version = "0.10", default-features = false, features = ["mmap"] }
 
 # Platform process-access backends (src/process/): Win32 APIs on Windows,
 # /proc + process_vm_readv on Linux (targets fm.exe under Proton/Wine).

@@ -68,13 +68,31 @@ Live name/UID filtering, ability and age filters, and sortable results.
 | FM27 | In progress — most fields verified against a live save | [docs/fm27/memory-layout.md](docs/fm27/memory-layout.md) |
 | FM27 (Game Pass) | Unverified — attaches with the Steam layout; may not read correctly | [Game Pass build](docs/fm27/memory-layout.md#game-pass-build) |
 
-The version is detected from the game's install path when the editor attaches, and so is the
-storefront: a PC Game Pass (Xbox app) install is a different build from Steam's and gets its own
-schema. Only the Steam builds are mapped; FM27 on Game Pass is an untested starting point.
+The release is detected from the game module's Windows PE product metadata:
+`fm.exe` for FM24, `game_plugin.dll` for FM26/FM27 (their exe reports the Unity
+engine version). If no FM product identity is available, the editor falls back
+to a recognised install-directory name, including compact `FootballManager24`
+names. Explicit unsupported/conflicting FM product names are rejected rather
+than overridden by the directory. This works on Windows and Linux/Proton.
+
+Storefront detection remains separate, using install-location hints and the
+Game Pass manifest. Recognised `Epic Games` installs are reported as unsupported:
+there is no verified Epic schema, and identifying FM24 does not prove Steam's
+offsets work on Epic. Unrecognised locations retain the historical Steam default.
+Only the Steam builds are mapped; FM27 on Game Pass is an untested starting point.
+
 A game patch can move fields. For builds with a recorded module fingerprint, the
 editor rejects a mismatch. Uncalibrated builds (currently FM27) can attach with a
 warning, without that fingerprint guard; a successful attachment does not prove
 that their layouts are verified.
+
+For identification failures, include the [game-detection log](docs/development.md#release-identification-diagnostics)
+in your bug report. It records the candidate PID, actual module paths, PE product
+and file versions, discovery/resource errors and the selection result. Windows:
+`%LOCALAPPDATA%\fm-editor\logs\game-detection.log`; Linux:
+`~/.local/share/fm-editor/logs/game-detection.log` (or under `XDG_DATA_HOME`).
+Review paths for personal information before sharing. Repeated identical reports
+are suppressed and the log rotates with one backup to keep its size bounded.
 
 Several versions can be open at once (they all run as `fm.exe`). The editor then attaches to
 none of them on its own: the toolbar shows one button per running game, labelled with its

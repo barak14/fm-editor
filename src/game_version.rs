@@ -11,17 +11,17 @@
 //! of Steamworks), so its module hash and module-relative RVAs can differ
 //! even when the struct layouts match.
 //!
-//! Detection is automatic: FM24, FM26 and FM27 all run as `fm.exe`, so
-//! `process::running_games()` lists them and reads each one's on-disk
-//! module path — the install directory always contains the release year,
-//! and a Game Pass install is recognisable by its install location — to
-//! determine which build, and so which schema, it uses.
+//! Detection is automatic: FM24, FM26 and FM27 all run as `fm.exe`.
+//! `process::running_games()` reads the game module's PE product metadata,
+//! falling back to the install directory if no FM identity is available.
+//! Storefront hints are separate; identifying a release does not verify its
+//! offsets. Attachment retains the per-schema module fingerprint gate.
 //!
 //! Adding a build (e.g. FM26 on Game Pass) is a new `GameBuild` variant,
 //! its arms in the `GameBuild` matches, and its schema static under
 //! `crate::fields::`.
 
-use crate::fields::{fm24, fm26, fm27, VersionedSchemas};
+use crate::fields::{VersionedSchemas, fm24, fm26, fm27};
 
 /// Which Football Manager release a process is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,14 +61,16 @@ impl GameVersion {
     }
 }
 
-/// Where a game install came from. Anything not recognised as Game Pass is
-/// treated as the Steam build, which is what every schema was mapped
-/// against (on Windows and under Proton).
+/// Where a game install came from. Recognised Epic installs have no schema
+/// yet and are rejected; locations not recognised as Game Pass or Epic retain
+/// the historical Steam default, subject to the schema's fingerprint gate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Storefront {
     Steam,
     /// PC Game Pass / Microsoft Store (Xbox app) install.
     GamePass,
+    /// Epic Games Store; identified but no verified schema is available yet.
+    Epic,
 }
 
 impl Storefront {
@@ -77,6 +79,7 @@ impl Storefront {
         match self {
             Storefront::Steam => "Steam",
             Storefront::GamePass => "Game Pass",
+            Storefront::Epic => "Epic",
         }
     }
 }
@@ -129,9 +132,7 @@ impl GameBuild {
 
     pub fn storefront(self) -> Storefront {
         match self {
-            GameBuild::Fm24Steam | GameBuild::Fm26Steam | GameBuild::Fm27Steam => {
-                Storefront::Steam
-            }
+            GameBuild::Fm24Steam | GameBuild::Fm26Steam | GameBuild::Fm27Steam => Storefront::Steam,
             GameBuild::Fm27GamePass => Storefront::GamePass,
         }
     }
@@ -175,7 +176,10 @@ mod tests {
     #[test]
     fn resolve_round_trips_every_build() {
         for build in GameBuild::ALL {
-            assert_eq!(GameBuild::resolve(build.version(), build.storefront()), Ok(build));
+            assert_eq!(
+                GameBuild::resolve(build.version(), build.storefront()),
+                Ok(build)
+            );
         }
     }
 
@@ -183,6 +187,13 @@ mod tests {
     fn resolve_rejects_unmapped_storefront() {
         let err = GameBuild::resolve(GameVersion::Fm26, Storefront::GamePass).unwrap_err();
         assert!(err.contains("Game Pass") && err.contains("FM26"), "{err}");
+        for version in [GameVersion::Fm24, GameVersion::Fm26, GameVersion::Fm27] {
+            let err = GameBuild::resolve(version, Storefront::Epic).unwrap_err();
+            assert!(
+                err.contains("Epic") && err.contains(version.display_name()),
+                "{err}"
+            );
+        }
     }
 
     #[test]

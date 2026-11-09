@@ -141,6 +141,58 @@ check. Verification is specific to the attached build, not a project-wide stamp.
 Schema paths are per version/build under `src/fields/<version>/`; there are no flat
 `src/fields/player.rs` or `docs/memory-layout.md` files to update.
 
+## Release identification diagnostics
+
+The release comes from PE `ProductName`, not the executable's filename or its
+parent directory. FM24 embeds the FM identity in `fm.exe`; FM26/FM27 embed it
+in `game_plugin.dll`, while their exe can report only the Unity engine version.
+`ProductVersion` and `FileVersion` are collected for diagnostics, not used as
+proof of layout compatibility. Missing/non-FM metadata permits a recognised
+directory-name fallback; an explicit unsupported/conflicting FM identity fails.
+
+Every discovered `fm.exe` candidate gets a process-local detection report with:
+PID; discovered module paths, bases and sizes; all available `ProductName`,
+`ProductVersion` and `FileVersion` strings; resource/module-discovery failures;
+the selected module and metadata/directory identification source; storefront
+path/manifest hints; and the schema-selection result. Optional plugin discovery
+is labelled explicitly; it never substitutes a DLL path from a different PID.
+If no candidate can be identified, the error retains all candidates' reports,
+not only the first failure. Skipped candidates are logged even if another game
+is supported. These reports do not verify offsets or bypass the fingerprint gate.
+
+Reports go to stderr and a persistent JSON-lines log, including in release builds:
+
+- Windows: `%LOCALAPPDATA%\fm-editor\logs\game-detection.log`
+- Linux: `${XDG_DATA_HOME:-$HOME/.local/share}/fm-editor/logs/game-detection.log`
+
+Include that file and, if present, `game-detection.log.1` in an identification
+bug report. Each entry includes the editor version, OS/architecture and Unix
+timestamp. Review paths before sharing: they may include your account name.
+Identical repeated reports for the same PID are suppressed (up to 64 remembered
+PIDs); changed reports are recorded again. Each file is capped at 512 KiB with
+one backup, and individual reports are truncated at 32 KiB with a marker.
+An auxiliary `game-detection.lock` file coordinates multiple editor processes;
+do not remove it while editors are running. Logging never waits for that lock.
+Log-write failures or contention produce a stderr warning and are retried on the
+next detection attempt, without preventing attachment.
+
+To inspect an installed module without starting FM, attaching or reading game
+memory, run from the worktree (the path can be anywhere; no install name is needed):
+
+```bash
+FM_VERSION_TEST_MODULE='/path/to/fm.exe' cargo test --lib identify_installed_module_from_metadata -- --ignored --nocapture
+# For FM26/FM27, point FM_VERSION_TEST_MODULE at game_plugin.dll instead.
+```
+
+This check requires FM product metadata and tests identification again using a
+neutral path. It does not exercise the fallback or verify offsets. On 2026-11-09
+the local Steam FM24 EXE reported `Football Manager 2024`, `24.4.2+2081827`;
+the local Steam FM27 plugin reported `Football Manager 27`, `27.0.0+2493426`.
+FM27's EXE reported Unity `6000.3.18f1-custom (96cdb67fb884)`, not an FM release.
+Epic file metadata and layouts remain untested. Storefront hints still depend
+on paths/manifests; renamed/moved Epic installs are not reliably distinguished
+from Steam. Do not infer storefront or field compatibility from ProductName.
+
 ## Read-only memory tools
 
 Debug editor builds serve streamable HTTP MCP at `http://localhost:7799/mcp`.
