@@ -99,10 +99,44 @@ the `home_stadium` sub-record, so `rva_stadium_base` is 0.
   not the band.
 - Other leads read but not confirmed in game: condition u16 0x1F8 (10000 for
   fit players; injured Moder 9321, Scherpen 9325), jadedness i16 0x1F6 (-125
-  for most players, Scherpen 0), asking price i32 0x1D4 (-1 = none), looks
-  0x309..0x30C. Cristian Romero (Tottenham) is consistent with FM's condition
-  popup: condition 10000 "Peak", sharpness 5100 "Needs match practice",
-  jadedness -125 "Fresh" (one witness).
+  for most players, Scherpen 0), looks 0x309..0x30C. Cristian Romero
+  (Tottenham) is consistent with FM's condition popup: condition 10000
+  "Peak", sharpness 5100 "Needs match practice", jadedness -125 "Fresh" (one
+  witness).
+- Mapped 2026-11-09 (24.4.2+2081827 Steam, Tottenham test save, 3 Jul 2023),
+  from FM27 leads checked with `Tools/fm-research.py` against FM24's own screens:
+  - **Contract start** contract+**0x3C** (FM27's "signed" date; FM24's
+    Contract tab calls it "Started"). 7/7: Son 23/7/2021, Romero 30/8/2022,
+    Davies 25/7/2022, Dier 21/7/2020 (on loan at Bayern), Porro 1/7/2023,
+    Kulusevski 17/6/2023, Maddison 28/6/2023.
+  - **Listing** contract+**0x4F** flags, bit 0 transfer listed, bit 1 loan
+    listed; contract+**0x50** code (5 when transfer listed); contract+**0x48**
+    listed date (packed 1 Jan 1900 = 0x076C0001 when not listed). FM's
+    Transfer Status shows "Transfer listed" for Hennessey, Sinclair, Heaton,
+    Pearce and Brandon Austin (all flags bit 0, code 5) and "Available for
+    loan" for Gelhardt and Angol (bit 1); 13 unlisted Spurs read 0. The
+    listed date is the game date for listed players, but FM24 shows no
+    listing date to compare it with. Turning on Austin's Loan listed in the
+    editor made FM show "Available for loan"; Undo restored the byte.
+  - **Asking price** i32 **0x1D4**, -1 = "Unspecified". Set through FM's
+    Transfer Status: Son £0 → 0, £7.5M → 7,500,000; Romero £5M → 5,000,000;
+    both reset to Unspecified → -1. An editor write of £12M on Oliver Skipp
+    showed £12M in FM; Undo restored -1.
+  - **Transfer value** i32 **0x1D0**, inside FM's displayed range for Kane
+    (224,724,320 in £168M-£225M), Maddison, Son, Romero, Udogie and van de
+    Ven. The player panel shows value only on builds with mapped player
+    lists, so FM24 does not display it yet.
+  - **Common name** pointer **0x2E0** (same sub-record as first/last name):
+    Emerson Royal, Vinícius Júnior, Richarlison, as FM displays them; null for
+    Harry Kane.
+  - Still unmapped: wage at contract+0x18 matches 6/7 contract screens but
+    reads 197,000 for Son where FM shows £195,000 (unexplained). Join-date
+    candidates 0x1EC, 0x3C4 and contract+0x44 agree for most players (Son
+    28/8/2015, Davies 23/7/2014) but FM24 shows no joined date, and Messi
+    reads 15/7/2023 vs 3/7/2023 between them. FM's senior debuts (Son
+    24/3/2010, Kane 15/1/2011, Davies 25/8/2012, Kulusevski 20/1/2019) are not
+    in the player object; the FM27 debut lead 0x3C8 holds something else.
+    FM27's previous-club lead lands on FM24's club pointer 0x3B0.
 
 ## Staff (vs FM26)
 
@@ -209,7 +243,7 @@ r=0.89, DL/WBL r=0.82, attribute bytes ≤ 100, max(left, right foot) = 20 for a
 
 ## Unmapped worklist
 
-Player: value, condition (sharpness band confirmed, see above), apps/goals,
-dates (transfer/join/debut/listing), secondary name block, contract clauses and
-listing. Staff: the four hidden attributes above, nationality, contract wage
+Player: condition (sharpness band confirmed, see above), apps/goals, dates
+(transfer/join/debut, see leads above), secondary name block, contract clauses,
+appearance. Staff: the four hidden attributes above, nationality, contract wage
 and expiry (employment dates are a lead). Club and stadium: see above.

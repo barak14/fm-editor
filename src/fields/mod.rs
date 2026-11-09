@@ -1132,10 +1132,10 @@ mod player_schema_tests {
         for schemas in [&fm24::FM24, &fm26::FM26] {
             assert!(schemas.player_lists.is_none());
             assert_eq!(schemas.rva_current_date, 0);
-            for key in ["p_list_date", "p_list_flags", "p_list_code"] {
-                assert!(schemas.field(key).unwrap().offset.is_none(), "{key}");
-                assert_eq!(schemas.offset_of(key), None);
-            }
+        }
+        for key in ["p_list_date", "p_list_flags", "p_list_code"] {
+            assert!(fm26::FM26.field(key).unwrap().offset.is_none(), "{key}");
+            assert_eq!(fm26::FM26.offset_of(key), None);
         }
         assert!(fm26::FM26.morale_labels.is_empty());
         assert_eq!(fm26::FM26.morale_label(10), "Level 10");
@@ -1161,6 +1161,37 @@ mod player_schema_tests {
         assert_eq!(schemas.morale_label(13), "Good");
         assert_eq!(schemas.morale_label(19), "Exceptional");
         assert_eq!(schemas.morale_label(5), "Level 5");
+        // Contract-tab and transfer-status fields witnessed in FM24's own UI.
+        let contract = |key: &str| match schemas.field(key).unwrap().offset.unwrap() {
+            FieldLocation::SubRecord {
+                container, offset, ..
+            } => {
+                assert_eq!(container, "contract", "{key}");
+                offset as usize
+            }
+            other => panic!("unexpected location {other:?}"),
+        };
+        assert_eq!(contract("p_contract_signed"), 0x3C);
+        let (date, flags, code) = (
+            contract("p_list_date"),
+            contract("p_list_flags"),
+            contract("p_list_code"),
+        );
+        assert_eq!((date, flags, code), (0x48, 0x4F, 0x50));
+        // The transfer-listing edit spans date..=code as one write.
+        assert!(flags >= date + 4 && flags < code);
+        assert_eq!(schemas.offset_of("p_asking_price"), Some(0x1D4));
+        assert_eq!(schemas.offset_of("p_value"), Some(0x1D0));
+        assert_eq!(schemas.offset_of("p_name_common_sub"), Some(0x2E0));
+        // Dates FM24 does not display stay unmapped until a screen confirms them.
+        for key in [
+            "p_contract_start",
+            "p_join_date",
+            "p_debut_date",
+            "p_transfer_date",
+        ] {
+            assert_eq!(schemas.offset_of(key), None, "{key}");
+        }
         // Condition leads that FM's own screens did not confirm stay unmapped.
         for key in ["p_sharpness", "p_fitness", "p_fatigue"] {
             assert_eq!(schemas.offset_of(key), None, "{key}");

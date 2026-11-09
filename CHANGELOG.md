@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Features
+
+- FM24 Steam players: the Contract tab shows the contract start ("Signed"), transfer/loan listing and Listed since, and an editable Asking Price (-1/Not set = Unspecified). Loan listed is editable; Transfer listed is read-only because FM24 has no mapped game date. Common names are used for display (Emerson Royal, Vinícius Júnior). Transfer value is mapped but not yet shown on FM24. Witnessed on FM24's Contract and Transfer screens; editor writes of asking price and loan listing were confirmed in FM and undone.
+- Add `Tools/fm-research.py`, a read-only field-research helper for fm-debug: cross-version offset leads, multi-witness checks and scans, array surveys and value filters, plus headless-FM search, menu navigation and OCR of FM's screens.
+
 ### Fixes
 
 - FM24 Steam: staff and human-manager headers show their current club instead of "Club: Unknown", read-only through the staff contract's team (Guardiola Man City, Emery Aston Villa, the test save's manager Tottenham; unemployed staff such as Postecoglou stay Unknown). Staff contract wage/expiry and nationality remain unmapped on FM24.

@@ -11,7 +11,7 @@
 //! handling/reflexes r=0.89, DL/WBL r=0.82, every attribute byte <= 100,
 //! max(left, right foot) = 20 for 100%, CA <= PA, world rep <= home rep 99.7%.
 
-use crate::fields::{date, direct, encoded, fm_string, pointer, raw, sub_date, sub_direct, sub_fm_string, sub_raw_u32, Field, SubRecord, SubRecordParent};
+use crate::fields::{date, direct, encoded, fm_string, pointer, raw, raw_u32, sub_date, sub_direct, sub_fm_string, sub_raw_u32, Field, SubRecord, SubRecordParent};
 use crate::fields::Category::*;
 use crate::fields::Entity::Player;
 
@@ -111,6 +111,9 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "p_name",             label: "Name",             entity: Player, category: General,  offset: fm_string(0x02C0) },
     Field { key: "p_name_first_sub",   label: "Name First Sub",   entity: Player, category: Internal, offset: pointer(0x02D0) },
     Field { key: "p_name_last_sub",    label: "Name Last Sub",     entity: Player, category: Internal, offset: pointer(0x02D8) },
+    // Common name (the name FM displays when set), same sub-record layout:
+    // Emerson Royal, Vinícius Júnior, Richarlison; null for Harry Kane.
+    Field { key: "p_name_common_sub",  label: "Name Common Sub",  entity: Player, category: Internal, offset: pointer(0x02E0) },
     // Weight u16 kg: Kane 86 matches FM's profile; Maddison edited 73 -> 80 showed 80 kg.
     Field { key: "p_weight",       label: "Weight",           entity: Player, category: General,     offset: raw(0x014C) },
     Field { key: "p_height",       label: "Height",           entity: Player, category: General,     offset: raw(0x014E) },
@@ -154,6 +157,24 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "p_contract_expiry",  label: "Contract Expiry",  entity: Player, category: Contract,   offset: sub_date("contract", 0x40) },
     Field { key: "p_squad_status",     label: "Squad Status",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x4C) },
     Field { key: "p_squad_number",     label: "Squad Number",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x55) },
+    // Contract start ("Started" on FM24's Contract tab), the FM27 signed date:
+    // Son 23/7/2021, Romero 30/8/2022, Davies 25/7/2022, Dier 21/7/2020 (on
+    // loan), Porro 1/7/2023, Kulusevski 17/6/2023, Maddison 28/6/2023.
+    Field { key: "p_contract_signed",  label: "Contract Signed",  entity: Player, category: Contract,   offset: sub_date("contract", 0x3C) },
+    // Listing flags: bit 0 transfer listed (Hennessey, Sinclair, Heaton, Pearce,
+    // Austin "Transfer listed"/"Listed"; 13 unlisted Spurs read 0), bit 1 loan
+    // listed (Gelhardt, Angol "Available for loan"). Listed players carry code
+    // 5 and a listed date; unlisted ones 0 and 1 Jan 1900 (0x076C0001).
+    Field { key: "p_list_flags",       label: "Listing Flags",    entity: Player, category: Contract,   offset: sub_direct("contract", 0x4F)  },
+    Field { key: "p_list_date",        label: "Listed Since",     entity: Player, category: Contract,   offset: sub_date("contract", 0x48)    },
+    Field { key: "p_list_code",        label: "Listing Code",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x50)  },
+    // Transfer value, i32 pounds: inside FM's displayed range for Maddison,
+    // Son, Romero, Udogie, van de Ven and Kane. Not shown in the FM24 UI yet:
+    // the player panel shows it only on builds with mapped player lists.
+    Field { key: "p_value",            label: "Market Value",     entity: Player, category: General,    offset: raw_u32(0x01D0) },
+    // Asking price, i32 pounds; -1 = FM's "Unspecified". Set in FM: Son £7.5M
+    // and Romero £5M read 7,500,000 / 5,000,000, then Unspecified read -1.
+    Field { key: "p_asking_price",     label: "Asking Price",     entity: Player, category: Contract,   offset: raw_u32(0x01D4) },
 
     // Not yet located in FM24.
     Field { key: "p_sharpness",    label: "Sharpness",        entity: Player, category: Condition,   offset: None },
@@ -162,7 +183,7 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "p_name2",            label: "Name (secondary)",  entity: Player, category: Internal, offset: None },
     Field { key: "p_name2_first_sub",  label: "Name2 First Sub",   entity: Player, category: Internal, offset: None },
     Field { key: "p_name2_last_sub",   label: "Name2 Last Sub",    entity: Player, category: Internal, offset: None },
-    Field { key: "p_value",        label: "Market Value",     entity: Player, category: General,     offset: None },
+    // Not shown by FM24's UI (no witnesses); candidates in docs/fm24/memory-layout.md.
     Field { key: "p_weekly_wage",  label: "Weekly Wage",      entity: Player, category: General,     offset: None },
     Field { key: "p_senior_apps",  label: "Snr Apps",         entity: Player, category: General,     offset: None },
     Field { key: "p_senior_goals", label: "Snr Goals",        entity: Player, category: General,     offset: None },
@@ -174,15 +195,10 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "p_listing_date",   label: "Listing Date",     entity: Player, category: Contract,    offset: None },
     Field { key: "p_squad_ptr",      label: "Squad Record",      entity: Player, category: Internal,    offset: None },
     Field { key: "p_contract_type",    label: "Contract Type",    entity: Player, category: Contract,   offset: None     },
-    Field { key: "p_contract_signed",  label: "Contract Signed",  entity: Player, category: Contract,   offset: None    },
     // Morale level 1..20 (as FM26/FM27 +0x26C): 24 Brighton players' bytes
     // match FM's Dynamics labels (MORALE_LABELS). 0x25E is a different value.
     Field { key: "p_morale",       label: "Morale",           entity: Player, category: Condition,   offset: direct(0x025F) },
     // 64-bit bitmask, bit = PPM_ID - 1 (as FM26/FM27). Kane 0x00000A0000080080
     // decodes to FM's four traits; Maddison 0x0000200000080100 to his.
     Field { key: "p_traits",       label: "Traits (PPMs)",    entity: Player, category: Traits,      offset: raw(0x0368) },
-    // FM27 listing metadata has not been mapped on FM24.
-    Field { key: "p_list_flags",   label: "Listing Flags",    entity: Player, category: Contract,    offset: None },
-    Field { key: "p_list_date",    label: "Listed Since",     entity: Player, category: Contract,    offset: None },
-    Field { key: "p_list_code",    label: "Listing Code",     entity: Player, category: Contract,    offset: None },
 ];

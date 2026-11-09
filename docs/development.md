@@ -210,6 +210,40 @@ that the client targets a different port; check the actual configuration first.
   access, keep live inspection in the session that has it; do not assume a universal
   SSE limitation or change authentication settings to work around missing tools.
 
+### Scripted research (`Tools/fm-research.py`)
+
+A command-line client for the same read-only fm-debug tools, plus helpers that
+read FM's own screens on the headless display. It uses `.mcp-port` from the
+current directory (otherwise 7799; override with `--port`) and the attached
+build's schema files. It never writes game memory.
+
+```bash
+R="python3 Tools/fm-research.py"
+$R leads player --from fm27                 # unmapped FM27 fields with shifted leads
+$R check player contract+0x3c:date "James Maddison=2023-06-28" "Heung-Min Son=2021-07-23"
+$R scan player date "James Maddison=2023-06-28" --in contract --size 0x70
+$R survey player contract+0x4f:u8           # value distribution over the array
+$R where player contract+0x4f:u8 'v & 2'    # entities matching a condition
+$R check player "0x2e0>0x0:fmstr" "uid:19325045"   # follow a pointer, decode a string
+$R ui-search "Harry Kane" --open 0          # FM search box, click the result row
+$R ui-menu History Milestones --then Landmarks --crop 150,180,1300,800   # navigate + OCR
+```
+
+Locations are an entity offset (`0x1d4`), a schema sub-record (`contract+0x3c`) or
+a pointer chain (`0x2e0>0x0`). Encodings: `u8 u16 i16 u32 i32 u64 ptr date
+fmstr bits8`. Witness specs are a name, `uid:N` or `idx:N` (from `where`),
+optionally `=expected`; `=-` expects a missing or zero value. `check` exits
+non-zero unless every expected value matches.
+
+The UI commands drive FM24's layout on the 1920x1080 headless display using
+`xdotool`, `grim`, ImageMagick and `tesseract`. OCR narrows the search and
+reads tables, but read values off the screenshot before recording them as
+evidence (it misreads digits, e.g. `£BBK`). FM confirms Transfer Status
+changes only on **Confirm**; cancel any FM panel still showing a test value
+before leaving it. A typical loop: `leads` for candidates, FM screens for
+witness values, `check`/`scan` across at least two witnesses, `survey` for
+plausibility over the whole array, then the editor's write/Undo check.
+
 Fallback diagnostics (with `--pid <n>` when several games are running):
 
 ```bash
