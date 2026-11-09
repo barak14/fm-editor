@@ -24,6 +24,10 @@ undone. FM26, FM27 and Game Pass behaviour is unchanged.
 ### Compatibility
 
 - Native installers and Arch packages for 0.4.2 are built from the 0.4.2 portable binaries only after those are verified; the 0.4.1 packages remain pinned to 0.4.1.
+
+### Packaging
+
+- Pin the 0.4.2 native packaging identity to the immutable `v0.4.2` application tag at commit `eeb27582e6461477893788581db6bfbc4da6699d` from successful build `42606593149`, with an independent packaging revision.
 - Known FM24 limits: injury light/full training dates follow FM27's labels (FM24 shows only an expected return between them); Heung-Min Son's wage and one bonus read about 1% above FM's display (unexplained); languages and name editing remain FM27-only.
 
 ## 0.4.1 (prerelease)
