@@ -224,6 +224,7 @@ $R check player contract+0x3c:date "James Maddison=2023-06-28" "Heung-Min Son=20
 $R scan player date "James Maddison=2023-06-28" --in contract --size 0x70
 $R survey player contract+0x4f:u8           # value distribution over the array
 $R where player contract+0x4f:u8 'v & 2'    # entities matching a condition
+$R path player "Rodrigo Bentancur" --text cruciate --depth 5   # pointer chain to a value
 $R check player "0x2e0>0x0:fmstr" "uid:19325045"   # follow a pointer, decode a string
 $R ui-search "Harry Kane" --open 0          # FM search box, click the result row
 $R ui-menu History Milestones --then Landmarks --crop 150,180,1300,800   # navigate + OCR

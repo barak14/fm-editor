@@ -15,6 +15,73 @@ use crate::fields::{date, direct, encoded, fm_string, pointer, raw, raw_u32, sub
 use crate::fields::Category::*;
 use crate::fields::Entity::Player;
 
+/// FM24 Steam (24.4.2+2081827), Tottenham test save, 3 Jul 2023. Witnessed on
+/// FM24's own screens 2026-11-09; see docs/fm24/memory-layout.md.
+///
+/// - Medical at player+0xF8 with FM27's layout. Injuries: Bentancur "damaged
+///   cruciate ligaments" injured 11/2/2023, Gil, Whiteman and Sessegnon on
+///   3/7/2023 (Medical Centre > Current Injuries). Absences: holiday 0x1F for
+///   van de Ven (27 Jun + 22 days = "return on Wednesday 19th July 2023") and
+///   Skipp (1 Jun + 59 = 30 Jul); ban 0x19 for Toney (16 May 2023 + 245 days =
+///   "until 16/1/2024") and Lomónaco (10 May 2023 + 372 = "until 16/5/2024").
+/// - Ties at player+0x2F8 (FM27 +0x300): Kane Irish + Tottenham supporter,
+///   Kulusevski Macedonian + Arsenal supporter, Son Tottenham player.
+/// - Clauses at contract+0x60 (FM27 +0x68), same entries and bonus types;
+///   the relegation wage drop is type 0x0F here (FM27 0x05): Maddison, Porro
+///   and Son 25%. FM27's extension type 0x16 has no FM24 witness yet.
+pub(crate) const FM24_PLAYER_LISTS: crate::fields::PlayerListLayout = crate::fields::PlayerListLayout {
+    medical_ptr: 0xF8,
+    // 96% of players: null for Kane and Guido Rodríguez, whom FM shows with
+    // no injury, ban or holiday.
+    medical_null_is_empty: true,
+    // FM restored Ben Davies's value 21,870,000 overnight after an editor
+    // write of 55,000,000 (2026-11-09), so the value is shown read-only.
+    transfer_value_editable: false,
+    injuries_vec: 0x00,
+    injury_size: 0x38,
+    injury_type_ptr: 0x08,
+    injury_type_name: 0x20,
+    injury_start: 0x20,
+    injury_full_days: 0x28,
+    injury_light_days: 0x2A,
+    absences_vec: 0x18,
+    absence_size: 0x20,
+    absence_kind: 0x05,
+    absence_start: 0x10,
+    absence_days: 0x16,
+    absence_ban: 0x19,
+    absence_holiday: 0x1F,
+    absence_kinds: &[(0x19, "Suspension/ban"), (0x1F, "Holiday")],
+    relations_ptr: 0x2F8,
+    relations_vec: 0x00,
+    relation_size: 16,
+    relation_target: 0x00,
+    relation_kind: 0x0A,
+    relation_type: 0x0B,
+    relation_strength: 0x0C,
+    relation_reason: 0x08,
+    kind_club: 1,
+    kind_nation: 8,
+    type_other_nationality: 9,
+    type_favoured_club: 3,
+    nation_name: 0x18,
+    club_name: 0xC0,
+    favoured_club_reasons: &[(1, "As a supporter"), (2, "As a player")],
+    clauses_vec: 0x60,
+    clause_size: 8,
+    clause_amount: 0x00,
+    clause_value: 0x04,
+    clause_type: 0x06,
+    clause_types: &[
+        (0x20, "Appearance Fee"), (0x21, "Goal Bonus"), (0x22, "Clean Sheet Bonus"),
+        (0x26, "Unused Substitute Fee"), (0x27, "Assist Bonus"),
+        (0x0F, "Relegation Wage Drop"),
+    ],
+    clause_amount_types: &[0x20, 0x21, 0x22, 0x26, 0x27],
+    clause_percent_types: &[0x0F],
+    clause_year_types: &[],
+};
+
 /// FM24 morale level names, from Brighton's squad Dynamics view (3 Jul 2023
 /// test save, 24 players). Only witnessed levels are named; others stay
 /// numeric. Levels 8 and 10..14 match FM27's names.

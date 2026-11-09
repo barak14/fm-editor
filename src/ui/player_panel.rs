@@ -890,7 +890,17 @@ fn show_player_status(
         }
     }
     if let Some(off) = layout.and_then(|_| schemas.offset_of("p_value")) {
-        if let Some(bytes) = player.raw.get(off..off.saturating_add(4)) {
+        let editable = layout.is_some_and(|l| l.transfer_value_editable);
+        if let (Some(bytes), false) = (player.raw.get(off..off.saturating_add(4)), editable) {
+            if let Ok(bytes) = <[u8; 4]>::try_from(bytes) {
+                // FM recalculates it every game day on this build.
+                field_widget::info_label(
+                    ui,
+                    "Transfer Value",
+                    format!("£{} (read-only)", i32::from_le_bytes(bytes)),
+                );
+            }
+        } else if let Some(bytes) = player.raw.get(off..off.saturating_add(4)) {
             if let (Ok(bytes), Some(at)) = (bytes.try_into(), addr.checked_add(off as u64)) {
                 if let Some(edit) = field_widget::money_edit_at(
                     ui,
@@ -1617,7 +1627,7 @@ mod tests {
     }
 
     #[test]
-    fn fm24_shows_only_morale_and_fm26_renders_no_new_player_sections() {
+    fn fm24_renders_list_sections_and_fm26_renders_no_new_player_sections() {
         use crate::game_version::GameBuild;
         for build in [GameBuild::Fm24Steam, GameBuild::Fm26Steam] {
             let ctx = egui::Context::default();
@@ -1637,15 +1647,16 @@ mod tests {
                 collect_text(&s.shape, &mut text);
             }
             if build == GameBuild::Fm24Steam {
-                // FM24 shows only the witnessed morale level: no transfer
-                // value, injury or absence rows, and no writes from rendering.
-                assert!(text.iter().any(|t| t.contains("Morale")), "{text:?}");
-                for absent in ["Transfer Value", "Injuries", "Unavailability"] {
+                // FM24 has mapped lists: the status, medical and clause
+                // sections render, still without writes from rendering.
+                for present in ["Morale", "Transfer Value", "Injuries", "Unavailability"] {
                     assert!(
-                        !text.iter().any(|t| t.contains(absent)),
-                        "{absent}: {text:?}"
+                        text.iter().any(|t| t.contains(present)),
+                        "{present}: {text:?}"
                     );
                 }
+                // FM24 recalculates the value daily: it is a label, not an editor.
+                assert!(text.iter().any(|t| t.contains("(read-only)")), "{text:?}");
             } else {
                 assert!(text.is_empty(), "{build:?}: {text:?}");
             }

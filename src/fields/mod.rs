@@ -510,6 +510,13 @@ pub fn read_field_f32<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Opti
 #[derive(Debug)]
 pub struct PlayerListLayout {
     pub medical_ptr: u64,
+    /// A null medical pointer means the player has no medical history (empty
+    /// injury and absence lists). Only builds witnessed that way set this;
+    /// elsewhere a null pointer stays "unavailable".
+    pub medical_null_is_empty: bool,
+    /// Whether the transfer value (`p_value`, shown with these lists) holds an
+    /// editor write. FM24 recalculates it every game day, so writes do not last.
+    pub transfer_value_editable: bool,
     pub injuries_vec: usize,
     pub injury_size: usize,
     pub injury_type_ptr: usize,
@@ -1126,10 +1133,24 @@ mod player_schema_tests {
 
     #[test]
     fn fm24_and_fm26_leave_new_player_paths_unmapped() {
-        for schemas in [&fm24::FM24, &fm26::FM26] {
-            assert!(schemas.player_lists.is_none());
-        }
+        assert!(fm26::FM26.player_lists.is_none());
         assert_eq!(fm26::FM26.rva_current_date, 0);
+        // FM24's lists differ from FM27 only where FM24's own screens showed it.
+        let fm24 = fm24::FM24
+            .player_lists
+            .expect("FM24 player lists are mapped");
+        let fm27 = fm27::FM27.player_lists.unwrap();
+        assert_eq!(
+            (fm24.medical_ptr, fm24.relations_ptr, fm24.clauses_vec),
+            (0xF8, 0x2F8, 0x60)
+        );
+        assert_eq!((fm27.relations_ptr, fm27.clauses_vec), (0x300, 0x68));
+        assert_eq!(fm24.clause_percent_types, &[0x0F]);
+        assert!(fm24.clause_year_types.is_empty());
+        assert_eq!(fm24.injury_light_days, fm24.injury_full_days + 2);
+        assert_eq!((fm24.absence_ban, fm24.absence_holiday), (0x19, 0x1F));
+        assert!(fm24.medical_null_is_empty && !fm27.medical_null_is_empty);
+        assert!(!fm24.transfer_value_editable && fm27.transfer_value_editable);
         for key in ["p_list_date", "p_list_flags", "p_list_code"] {
             assert!(fm26::FM26.field(key).unwrap().offset.is_none(), "{key}");
             assert_eq!(fm26::FM26.offset_of(key), None);

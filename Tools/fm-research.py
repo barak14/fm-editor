@@ -13,6 +13,9 @@ never writes game memory. It replaces ad-hoc probing with repeatable steps:
   scan ENTITY ENC W=V..       offsets (struct or --in SUB) where every
                               witness matches its expected value
   survey ENTITY LOC:ENC       value distribution across the whole array
+  where ENTITY LOC:ENC EXPR   entities whose value satisfies EXPR over v
+  path ENTITY WHO --text T    pointer chains from one entity reaching text,
+                              a pointer, a value or a date (breadth-first)
   ui-search NAME              type NAME into FM's search box (headless FM)
   ui-menu TAB [ITEM]          open a profile menu item (--then TEXT clicks more)
   ui-holiday [--days N]       Calendar > Go On Holiday for N days (no inbox prompts)
@@ -460,6 +463,79 @@ def cmd_where(ctx, args):
     return 0
 
 
+def cmd_path(ctx, args):
+    """Breadth-first walk through pointers from one entity, reporting chains that reach a target.
+
+    Targets: --text (case-insensitive ASCII/UTF-8 bytes), --ptr (pointer value),
+    --u32 / --u16 (little-endian value) or --date YYYY-MM-DD (DateDayYear, flags ignored).
+    A chain like `0xf8>0x0>0x8 +0x24` means: read the pointer at entity+0xF8, then
+    the pointer at +0x0 of that object, then at +0x8; the match is at +0x24 there.
+    """
+    w = witness(ctx.mcp, args.entity, args.who)
+    status = ctx.mcp.json("attach_status")
+    module = (int(status["module_base"], 16), int(status["module_end"], 16))
+    needles = []
+    if args.text:
+        needles.append(("text", args.text.lower().encode()))
+    if args.ptr:
+        needles.append(("bytes", int(args.ptr, 0).to_bytes(8, "little")))
+    if args.u32 is not None:
+        needles.append(("bytes", (args.u32 & 0xFFFFFFFF).to_bytes(4, "little")))
+    if args.u16 is not None:
+        needles.append(("bytes", (args.u16 & 0xFFFF).to_bytes(2, "little")))
+    if args.date:
+        d = dt.date.fromisoformat(args.date)
+        needles.append(("date", (d.timetuple().tm_yday, d.year)))
+    if not needles:
+        raise SystemExit("give --text, --ptr, --u32, --u16 or --date")
+
+    def hits(buf):
+        low = buf.lower()
+        for kind, needle in needles:
+            if kind == "text":
+                start = low.find(needle)
+                while start >= 0:
+                    yield start
+                    start = low.find(needle, start + 1)
+            elif kind == "bytes":
+                for off in range(0, len(buf) - len(needle) + 1, args.align):
+                    if buf[off:off + len(needle)] == needle:
+                        yield off
+            else:
+                day, year = needle
+                for off in range(0, len(buf) - 3, 4):
+                    if (int.from_bytes(buf[off:off + 2], "little") & 0x1FF == day
+                            and int.from_bytes(buf[off + 2:off + 4], "little") == year):
+                        yield off
+
+    root_size = args.root_size or STRUCT_READ.get(args.entity, 0x400)
+    queue = collections.deque([(w["addr"], (), root_size)])
+    seen = {w["addr"]}
+    found = reads = 0
+    while queue and reads < args.max_reads:
+        addr, chain, size = queue.popleft()
+        buf = ctx.mcp.read(addr, size)
+        reads += 1
+        if not buf:
+            continue
+        for off in sorted(set(hits(buf))):
+            where = ">".join(hex(h) for h in chain) or "(entity)"
+            print(f"{where} +{off:#x}   [{addr + off:#x}]")
+            found += 1
+            if found >= args.limit:
+                return 0
+        if len(chain) >= args.depth:
+            continue
+        for off in range(0, len(buf) - 7, 8):
+            p = int.from_bytes(buf[off:off + 8], "little")
+            if not VALID(p) or p in seen or module[0] <= p < module[1]:
+                continue
+            seen.add(p)
+            queue.append((p, chain + (off,), args.size))
+    print(f"{found} hits, {reads} objects read (depth {args.depth}, {args.size:#x} bytes each)", file=sys.stderr)
+    return 0 if found else 1
+
+
 def fmh_env():
     out = subprocess.run(["bash", str(ROOT / "Tools" / "fm-headless.sh"), "env"],
                          capture_output=True, text=True)
@@ -520,8 +596,13 @@ def cmd_ui_search(ctx, args):
             print(text)
         return 0
     # Skip FM's recent-search rows ("Home<query>"); take the open-th matching result.
-    wanted = args.name.lower()
-    hits = [r for r in rows if wanted in r[0].lower() and not re.search(r"home\s*" + re.escape(wanted), r[0].lower())]
+    # OCR confuses capital I with lowercase l ("lvan Toney"); compare with both folded.
+    # Also drop accents: OCR reads "Gómez" as "Gomez" or "Gémez".
+    import unicodedata
+    fold = lambda t: "".join(c for c in unicodedata.normalize("NFKD", t.lower())  # noqa: E731
+                             if not unicodedata.combining(c)).replace("l", "i")
+    wanted = fold(args.name)
+    hits = [r for r in rows if wanted in fold(r[0]) and not re.search(r"home\s*" + re.escape(wanted), fold(r[0]))]
     if len(hits) <= args.open:
         print(f"no result row {args.open} for {args.name!r}; OCR saw: {[r[0] for r in rows]}", file=sys.stderr)
         return 1
@@ -717,6 +798,12 @@ def main(argv=None):
     p.add_argument("--step", type=int, default=1)
     p = sub.add_parser("survey"); p.add_argument("entity"); p.add_argument("loc")
     p.add_argument("--samples", type=int, default=2000); p.add_argument("--top", type=int, default=15)
+    p = sub.add_parser("path"); p.add_argument("entity"); p.add_argument("who")
+    p.add_argument("--text"); p.add_argument("--ptr"); p.add_argument("--u32", type=lambda v: int(v, 0))
+    p.add_argument("--u16", type=lambda v: int(v, 0)); p.add_argument("--date")
+    p.add_argument("--depth", type=int, default=3); p.add_argument("--size", type=lambda v: int(v, 0), default=0x100)
+    p.add_argument("--root-size", type=lambda v: int(v, 0)); p.add_argument("--align", type=int, default=4)
+    p.add_argument("--max-reads", type=int, default=40000); p.add_argument("--limit", type=int, default=40)
     p = sub.add_parser("where"); p.add_argument("entity"); p.add_argument("loc"); p.add_argument("expr")
     p.add_argument("--limit", type=int, default=25)
     p = sub.add_parser("ui-search"); p.add_argument("name"); p.add_argument("--open", type=int)
@@ -744,7 +831,8 @@ def main(argv=None):
         raise SystemExit(f"no schema directory for {status.get('version')}")
     ctx = Ctx(mcp, version_dir)
     handler = {"status": cmd_status, "find": cmd_find, "leads": cmd_leads, "check": cmd_check,
-               "scan": cmd_scan, "survey": cmd_survey, "where": cmd_where}[args.cmd]
+               "scan": cmd_scan, "survey": cmd_survey, "where": cmd_where,
+               "path": cmd_path}[args.cmd]
     return handler(ctx, args) or 0
 
 

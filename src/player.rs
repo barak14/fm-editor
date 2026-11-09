@@ -169,6 +169,15 @@ fn parse_clause(bytes: &[u8], addr: u64, layout: &fields::PlayerListLayout) -> O
     })
 }
 
+/// A medical list: empty when the build's null pointer means no history.
+fn medical_list_state<T>(no_medical: bool, items: Option<Vec<T>>) -> ListState<T> {
+    if no_medical {
+        ListState::Items(Vec::new())
+    } else {
+        list_state(items)
+    }
+}
+
 fn list_state<T>(items: Option<Vec<T>>) -> ListState<T> {
     match items {
         Some(items) => ListState::Items(items),
@@ -281,9 +290,19 @@ fn read_player_lists(
     };
     let medical = root_pointer(l.medical_ptr);
     let relations = root_pointer(l.relations_ptr);
+    // An exactly-null medical slot (read successfully) means no medical
+    // history on builds that witnessed it; unreadable or invalid stays None.
+    let no_medical = l.medical_null_is_empty
+        && medical.is_none()
+        && usize::try_from(player_phys_offset(fm.schemas(), l.medical_ptr, shift))
+            .ok()
+            .and_then(|off| range_addr(addr, off, 8))
+            .and_then(|slot| read(slot, 8))
+            .and_then(|b| le_u64(&b, 0))
+            == Some(0);
     (
-        list_state(read_injuries(&read, medical, l)),
-        list_state(read_absences(&read, medical, l)),
+        medical_list_state(no_medical, read_injuries(&read, medical, l)),
+        medical_list_state(no_medical, read_absences(&read, medical, l)),
         list_state(read_relations(&read, relations, l)),
         list_state(read_clauses(&read, contract, l)),
     )
@@ -1239,6 +1258,26 @@ mod tests {
     }
 
     #[test]
+    fn null_medical_is_empty_only_where_the_build_says_so() {
+        let failed: Option<Vec<u8>> = None;
+        assert!(matches!(
+            medical_list_state(true, failed.clone()),
+            ListState::Items(v) if v.is_empty()
+        ));
+        assert!(matches!(
+            medical_list_state(false, failed),
+            ListState::Unreadable
+        ));
+        assert!(matches!(
+            medical_list_state(false, Some(vec![1u8])),
+            ListState::Items(v) if v == [1]
+        ));
+        let fm24 = GameBuild::Fm24Steam.schemas().player_lists.unwrap();
+        assert!(fm24.medical_null_is_empty);
+        assert!(!layout().medical_null_is_empty);
+    }
+
+    #[test]
     fn list_reads_distinguish_missing_empty_and_failed_data() {
         let l = layout();
         let missing = |_, _| None;
@@ -1280,9 +1319,7 @@ mod tests {
             list_state(read_injuries(&bad_item, Some(0x20000), l)),
             ListState::Unreadable
         ));
-        for build in [GameBuild::Fm24Steam, GameBuild::Fm26Steam] {
-            assert!(build.schemas().player_lists.is_none());
-        }
+        assert!(GameBuild::Fm26Steam.schemas().player_lists.is_none());
     }
 
     #[test]

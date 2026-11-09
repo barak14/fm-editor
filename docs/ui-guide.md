@@ -191,7 +191,7 @@ is distinct from the blue outfield shirts; familiarity is always numeric.
 
 ## FM27 player data
 
-These player rows and actions are mapped for **FM27 Steam**, except where a row names FM24. FM27 Game Pass inherits the Steam schema but remains unverified; FM26 does not show these new controls.
+These player rows and actions are mapped for **FM27 Steam** and **FM24 Steam**, except where a row says otherwise. FM27 Game Pass inherits the Steam schema but remains unverified; FM26 does not show these new controls. On FM24, languages and name editing are FM27-only; the transfer value is read-only because FM24 recalculates it every game day; and players without a medical record show Injuries and Unavailability as **None**.
 
 - **Status**, below Identity, shows editable numeric morale (1–20) and transfer value in pounds. Morale uses the attached build's mapped field; descriptive morale words are not used in the control.
 - **Injuries** lists the injury name, injured-on date, and dates for returning to light and full training. **Heal** shortens the remaining durations to the elapsed time since the injury began; it never lengthens an injury. Both training durations are one undoable edit.

@@ -46,7 +46,7 @@ pub static FM24: VersionedSchemas = VersionedSchemas {
     staff_sub_records: STAFF_SUB_RECORDS,
     club_sub_records: CLUB_SUB_RECORDS,
     stadium_sub_records: &[],
-    player_lists: None,
+    player_lists: Some(&player::FM24_PLAYER_LISTS),
     morale_labels: player::MORALE_LABELS,
     person_profile: None,
 

@@ -243,6 +243,67 @@ UID 0x0C, name 0x38, alt name 0x40, capacity/seated/used/all-seater/expansion
 u32 0x6C/0x70/0x74/0x78/0x7C, owner club ptr 0x80, pitch length/width ×10
 0x88/0x8A. Standing, environment, condition unmapped.
 
+## Player lists (medical, ties, clauses)
+
+Mapped 2026-11-09 on 24.4.2+2081827 Steam (Tottenham test save, 3 Jul 2023)
+from FM27's layout (`FM24_PLAYER_LISTS`). Found with `fm-research.py path`
+(Bentancur's record to the text "cruciate"), then checked on FM24's screens.
+
+- **Medical** pointer player+**0xF8**, the same object as FM27: injuries
+  vector +0x00 of pointers to 0x38-byte entries (type pointer +0x08, name
+  FmString at type+0x20, start date +0x20, u16 durations +0x28/+0x2A),
+  absences vector +0x18 of pointers to 0x20-byte entries (kind +0x05, start
+  +0x10, u16 days +0x16; 0x19 ban, 0x1F holiday).
+  - Injuries match Medical Centre > Current Injuries: Bentancur "damaged
+    cruciate ligaments" injured 11/2/2023, Gil "a torn groin muscle", Whiteman
+    "a broken ankle" and Sessegnon "a torn hamstring" all 3/7/2023.
+  - The two durations always differ by 30 days. FM24 shows only an "Expected
+    Return" between them (Bentancur 221/251 days, expected 2/10/2023), so the
+    light/full training labels come from FM27 and are not separately witnessed
+    here.
+  - Holidays: van de Ven 27 Jun + 22 days and Skipp 1 Jun + 59, matching FM's
+    "return on Wednesday 19th July 2023" and "Sunday 30th July 2023". Bans:
+    Toney 16 May 2023 + 245 days and Lomónaco 10 May 2023 + 372, matching
+    FM's Bans panel "until 16/1/2024" and "until 16/5/2024". Other kind codes
+    (0x5, 0x6, 0xA, ...) exist and stay unlabelled.
+  - **Null medical pointer = no medical history** (about 96% of players):
+    Kane, Rodri and Guido Rodríguez read null and FM shows them with no
+    injury, ban or holiday. FM24's layout sets `medical_null_is_empty`, so
+    the editor shows "None" for them; an unreadable or invalid pointer still
+    shows as unavailable. Over the whole array 1,233 absence lists and 1,702
+    of 1,703 injuries parse; one injury has a 7,808-day duration and that
+    player's list shows as unavailable.
+- **Ties** pointer player+**0x2F8** (FM27 +0x300), FM27's 16-byte entries:
+  Kane Republic of Ireland + Tottenham "Supporter", Kulusevski North
+  Macedonia + Arsenal "Supporter", Son Tottenham "Player" (FM's Overview >
+  Information). 78,716 tie lists parse; 4,303 are empty (null vector).
+- **Clauses** vector contract+**0x60** (FM27 +0x68), 8-byte entries as FM27.
+  Bonus types 0x20/0x21/0x22/0x26/0x27 as FM27; the relegation wage drop is
+  type **0x0F** with the percent at +0x04 (FM27 0x05). Maddison £20,000 /
+  £35,000 / £25,500 assist / £8,500 / 25% and Porro £20,000 / £35,000 /
+  £20,000 clean sheet / £6,500 / 25% match FM's Contract Details. Son reads
+  9,850 where FM shows an unused-substitute fee of £9,750, the same 1.0103
+  ratio as his wage (197,000 vs £195,000), unexplained.
+
+Live write/Undo (same session, editor builds of this branch):
+
+- **Lift ban:** Jonathan Rivas (ban 1 Jul 2023 + 183 days, FM "until
+  31/12/2023"). The editor set the days to 2; FM, showing his profile for the
+  first time, read "French National (until 3/7/2023)". Undo restored 183, and
+  after a game day FM showed "until 31/12/2023".
+- **Heal:** Bentancur 251/221 days → 142/142 (elapsed). After a game day FM
+  showed no injury. Undo restored 251/221 (the entry stays in the vector), and
+  after the next day FM showed "Damaged cruciate ligaments, 3 to 4 months".
+- **Clause:** Maddison appearance fee £20,000 → £77,000; FM's Contract
+  Details showed £77,000 after a day. Undo restored 20,000, and FM showed
+  £20,000 after the next day.
+- **Transfer value is read-only on FM24:** an editor write of £55,000,000 to
+  Ben Davies (0x1D0) was back at 21,870,000 after a game day and FM kept
+  showing £21M-£26M. FM recalculates the value daily, so FM24's layout sets
+  `transfer_value_editable` false. The Undo of that write was refused (memory
+  had changed), which also blocks the older entries in the chronological Undo
+  stack until the save is reloaded.
+
 ## Witnesses
 
 | Entity | Identifier | Confirmed |
@@ -262,6 +323,6 @@ r=0.89, DL/WBL r=0.82, attribute bytes ≤ 100, max(left, right foot) = 20 for a
 ## Unmapped worklist
 
 Player: condition (sharpness band confirmed, see above), apps/goals, dates
-(transfer/join/debut, see leads above), secondary name block, contract clauses,
-appearance. Staff: the four hidden attributes above, nationality, contract wage
+(transfer/join/debut, see leads above), secondary name block, appearance, the
+clause extension option and unlabelled absence kinds. Staff: the four hidden attributes above, nationality, contract wage
 and expiry (employment dates are a lead). Club and stadium: see above.

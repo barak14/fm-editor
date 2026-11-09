@@ -22,6 +22,9 @@ pub(crate) const MORALE_LABELS: &[(u8, &str)] = &[
 /// Bentancur / van Hecke / Gray (favoured clubs). Clauses: Kudus / van Hecke.
 pub(crate) const FM27_PLAYER_LISTS: crate::fields::PlayerListLayout = crate::fields::PlayerListLayout {
     medical_ptr: 0xF8,
+    medical_null_is_empty: false,
+    // An editor write of £55M showed in FM after a game day (2026-10-31).
+    transfer_value_editable: true,
     injuries_vec: 0x00,
     injury_size: 0x38,
     injury_type_ptr: 0x08,
