@@ -51,6 +51,34 @@ fn sections(fm: &FmProcess) -> Result<Vec<Section>, String> {
         .collect()
 }
 
+/// Print every 4-aligned word in `ranges` whose DateDayYear decodes to one of `dates`.
+fn scan_dates(fm: &FmProcess, ranges: &[(u64, u64)], dates: &[(u16, u16)]) {
+    const CHUNK: usize = 1024 * 1024;
+    for &(day, year) in dates {
+        println!("\n=== Static words reading day {day} of {year} ===");
+        let mut hits = 0;
+        for &(start, end) in ranges {
+            let mut rva = start;
+            while rva < end {
+                let want = CHUNK.min((end - rva) as usize);
+                if let Ok(buf) = fm.read_bytes(fm.gp_base + rva, want) {
+                    for (i, word) in buf.chunks_exact(4).enumerate() {
+                        let d = u16::from_le_bytes([word[0], word[1]]);
+                        let y = u16::from_le_bytes([word[2], word[3]]);
+                        if y == year && d & 0x1FF == day {
+                            let at = rva + 4 * i as u64;
+                            println!("  gp+0x{at:08X}  raw 0x{y:04X}{d:04X}");
+                            hits += 1;
+                        }
+                    }
+                }
+                rva += CHUNK as u64;
+            }
+        }
+        println!("  {hits} hits");
+    }
+}
+
 fn is_heap_ptr(p: u64) -> bool {
     (0x10000..0x7FFF_FFFF_FFFF).contains(&p)
 }
@@ -116,6 +144,23 @@ fn main() {
         schema.rva_clubs_data,
         schema.rva_stadium_base,
     );
+
+    // `--date DAY/YEAR` (repeatable): list static DateDayYear words for that
+    // day of the year, whatever FM's flag bits above bit 8 hold, instead of
+    // scanning for arrays. Used to locate the current game date: scan, let a
+    // game day pass, and keep the RVA that moved to the next day.
+    let dates: Vec<(u16, u16)> = args
+        .windows(2)
+        .filter(|w| w[0] == "--date")
+        .filter_map(|w| {
+            let (day, year) = w[1].split_once('/')?;
+            Some((day.parse().ok()?, year.parse().ok()?))
+        })
+        .collect();
+    if !dates.is_empty() {
+        scan_dates(&fm, &ranges, &dates);
+        return;
+    }
     let total: u64 = ranges.iter().map(|(s, e)| e.saturating_sub(*s)).sum();
     println!("\nScanning {} MB for pointer pairs...", total / (1024 * 1024));
 

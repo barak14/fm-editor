@@ -249,7 +249,14 @@ Fallback diagnostics (with `--pid <n>` when several games are running):
 ```bash
 bash Tools/dump-manager.sh
 bash Tools/scan-arrays.sh
+bash Tools/scan-arrays.sh --date 184/2023   # static DateDayYear words for a day/year
 ```
+
+`--date DAY/YEAR` (repeatable) lists the module's static words that decode to
+that day of the year, ignoring FM's flag bits, instead of scanning for arrays.
+To locate a game clock, scan for today's date, let FM advance (calendar >
+**Go On Holiday**, return after 1 day, avoids the inbox), scan for the next day
+and keep the RVA that moved. Repeat once more before mapping it.
 
 `.mcp.json` is a tracked client example. Worktree creation patches its port locally;
 those generated port changes are not feature changes and should not be committed.

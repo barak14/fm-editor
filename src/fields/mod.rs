@@ -801,11 +801,8 @@ mod schema_lookup_tests {
     #[test]
     fn current_date_rva_is_specific_to_the_verified_build() {
         assert_eq!(GameBuild::Fm27Steam.schemas().rva_current_date, 0x56AD378);
-        for build in [
-            GameBuild::Fm27GamePass,
-            GameBuild::Fm24Steam,
-            GameBuild::Fm26Steam,
-        ] {
+        assert_eq!(GameBuild::Fm24Steam.schemas().rva_current_date, 0x631D5BC);
+        for build in [GameBuild::Fm27GamePass, GameBuild::Fm26Steam] {
             assert_eq!(build.schemas().rva_current_date, 0, "{build:?}");
         }
     }
@@ -1131,8 +1128,8 @@ mod player_schema_tests {
     fn fm24_and_fm26_leave_new_player_paths_unmapped() {
         for schemas in [&fm24::FM24, &fm26::FM26] {
             assert!(schemas.player_lists.is_none());
-            assert_eq!(schemas.rva_current_date, 0);
         }
+        assert_eq!(fm26::FM26.rva_current_date, 0);
         for key in ["p_list_date", "p_list_flags", "p_list_code"] {
             assert!(fm26::FM26.field(key).unwrap().offset.is_none(), "{key}");
             assert_eq!(fm26::FM26.offset_of(key), None);

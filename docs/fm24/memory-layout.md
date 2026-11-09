@@ -46,6 +46,24 @@ Kane by his UID) and finding which arrays point at them.
 The stadium array root is not located; stadiums are reached per club through
 the `home_stadium` sub-record, so `rva_stadium_base` is 0.
 
+## Current game date
+
+**`fm.exe+0x631D5BC`** (`rva_current_date`), a static DateDayYear: day of the
+year with FM's flag bits above bit 8, then the year (as FM27). Found
+2026-11-09 with `scan_arrays --date` on 24.4.2+2081827 Steam: two statics read
+Mon 3 Jul 2023 (raw 0x07E71AB8 at 09:00); after one-day holidays only this one
+followed FM's date, reading 185, 186 and 187/2023 on Tue 4, Wed 5 and Thu 6 Jul
+(00:00, flag bits 0). `+0x642F458` kept 3 Jul (the game start date FM shows);
+`+0x6356C90` read 184 and later 187 but skipped 185/186, so it is not the
+clock.
+
+The editor reads it on attach and each status poll. FM24 ages are now exact
+(Heung-Min Son, born 8/7/1992: 30 on 5 Jul 2023, as FM shows; the old
+birth-year estimate gave 31). It also enables transfer listing: the editor
+listed Son on Wed 5 Jul (flags bit 0, code 5, listed date 5 Jul 2023) and FM
+showed "Transfer listed"; Undo restored flag 0, code 0 and 1 Jan 1900 in
+memory, and after the next game day FM showed "Transfer status not set".
+
 ## Player (vs FM26)
 
 - Positions + attributes keep the FM26 order shifted **+0xB8**: positions

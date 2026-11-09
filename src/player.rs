@@ -1282,7 +1282,6 @@ mod tests {
         ));
         for build in [GameBuild::Fm24Steam, GameBuild::Fm26Steam] {
             assert!(build.schemas().player_lists.is_none());
-            assert_eq!(build.schemas().rva_current_date, 0);
         }
     }
 

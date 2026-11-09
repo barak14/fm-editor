@@ -65,7 +65,13 @@ pub static FM24: VersionedSchemas = VersionedSchemas {
     rva_clubs_data: 0x642EF58,
     rva_clubs_end: 0x642EF60,
     rva_stadium_base: 0,
-    rva_current_date: 0,
+    // Current game date, static DateDayYear (day of year with flag bits above
+    // bit 8, then the year). Found with `scan_arrays --date`: of two statics
+    // reading Mon 3 Jul 2023 (raw 0x07E71AB8 at 09:00), only this one moved
+    // with FM's clock, reading 185/2023 on Tue 4 Jul and 186/2023 on Wed
+    // 5 Jul after one-day holidays (2026-11-09). fm.exe+0x642F458 kept 3 Jul
+    // (the game start date).
+    rva_current_date: 0x631D5BC,
 
     // Counts observed in the mapping save (used by scan_arrays.rs labels).
     fmrte_players: 83426,
