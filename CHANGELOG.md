@@ -7,7 +7,7 @@
 - FM24 Steam players: the Contract tab shows the contract start ("Signed"), transfer/loan listing and Listed since, and an editable Asking Price (-1/Not set = Unspecified). Transfer listed and Loan listed are editable. Common names are used for display (Emerson Royal, Vinícius Júnior). Transfer value is mapped but not yet shown on FM24. Witnessed on FM24's Contract and Transfer screens; editor writes of asking price and loan listing were confirmed in FM and undone.
 - FM24 Steam: read the current game date (`fm.exe+0x631D5BC`, followed over four game days). Ages are now exact on FM24 (Heung-Min Son 30 on 5 Jul 2023, as FM shows, not 31), and transfer listing is enabled; an editor listing of Son showed "Transfer listed" in FM and Undo restored it.
 - `scan_arrays --date DAY/YEAR` lists static date words for locating game clocks.
-- Add `Tools/fm-research.py`, a read-only field-research helper for fm-debug: cross-version offset leads, multi-witness checks and scans, array surveys and value filters, plus headless-FM search, menu navigation and OCR of FM's screens.
+- Add `Tools/fm-research.py`, a read-only field-research helper for fm-debug: cross-version offset leads, multi-witness checks and scans, array surveys and value filters, plus headless-FM search, menu navigation, `ui-holiday --days N` (advance the game through Calendar > Go On Holiday, skipping inbox prompts) and OCR of FM's screens.
 
 ### Fixes
 

@@ -14,6 +14,8 @@ never writes game memory. It replaces ad-hoc probing with repeatable steps:
                               witness matches its expected value
   survey ENTITY LOC:ENC       value distribution across the whole array
   ui-search NAME              type NAME into FM's search box (headless FM)
+  ui-menu TAB [ITEM]          open a profile menu item (--then TEXT clicks more)
+  ui-holiday [--days N]       Calendar > Go On Holiday for N days (no inbox prompts)
   ui-shot [--crop X,Y,W,H]    screenshot FM's headless display, OCR the crop
 
 Locations: ``0x204`` (entity offset), ``contract+0x3C`` (attached schema's
@@ -531,17 +533,18 @@ def cmd_ui_search(ctx, args):
     return 0
 
 
-def find_text(env, label, region, attempts=4):
-    """Centre of `label` in region (x, y, w, h); retries while menus/pages are still animating."""
+def find_text(env, label, region, attempts=4, box=False):
+    """Centre of `label` in region (x, y, w, h), or its (x, y, w, h) box with box=True.
+    Retries while menus/pages are still animating."""
     for attempt in range(attempts):
-        hit = find_text_once(env, label, region)
+        hit = find_text_once(env, label, region, box)
         if hit:
             return hit
         subprocess.run(["sleep", "1"])
     return None
 
 
-def find_text_once(env, label, region):
+def find_text_once(env, label, region, box=False):
     """Centre of the OCR word sequence matching `label` inside region (x, y, w, h)."""
     shot = tempfile.mktemp(prefix="fm-", suffix=".png")
     subprocess.run(["grim", shot], env=env, check=True)
@@ -565,6 +568,8 @@ def find_text_once(env, label, region):
     for i in range(len(words) - len(target) + 1):
         if all(words[i + j][0] == t for j, t in enumerate(target)):
             first, last = words[i], words[i + len(target) - 1]
+            if box:
+                return first[1], first[2], last[1] + last[3] - first[1], first[4]
             return (first[1] + last[1] + last[3]) // 2, first[2] + first[4] // 2
     return None
 
@@ -595,6 +600,93 @@ def cmd_ui_menu(ctx, args):
         fm_click(env, *hit)
         subprocess.run(["sleep", "2"])
     return cmd_ui_shot(ctx, argparse.Namespace(crop=args.crop, out=args.out))
+
+
+DATE_RE = re.compile(r"(\d{1,2})\s*([A-Z][a-z]{2})\s*(\d{4})")
+
+
+def fm_date(env):
+    """FM24's top-bar game date (e.g. '6 Jul 2023'), read by OCR, or None."""
+    shot = tempfile.mktemp(prefix="fm-", suffix=".png")
+    subprocess.run(["grim", shot], env=env, check=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        part = Path(tmp) / "date.png"
+        subprocess.run(["magick", shot, "-crop", "300x60+1600+10", "-colorspace", "Gray", "-negate",
+                        "-resize", "300%", str(part)], check=True)
+        text = subprocess.run(["tesseract", str(part), "-", "--psm", "6"], capture_output=True, text=True).stdout
+    m = DATE_RE.search(text)
+    return " ".join(m.groups()) if m else None
+
+
+def screen_text(env, crop):
+    """OCR of one tight single-line crop (x, y, w, h) of FM's display."""
+    shot = tempfile.mktemp(prefix="fm-", suffix=".png")
+    subprocess.run(["grim", shot], env=env, check=True)
+    x, y, w, h = crop
+    with tempfile.TemporaryDirectory() as tmp:
+        part = Path(tmp) / "line.png"
+        subprocess.run(["magick", shot, "-crop", f"{w}x{h}+{x}+{y}", "-resize", "300%", "-colorspace", "Gray",
+                        "-negate", str(part)], check=True)
+        return subprocess.run(["tesseract", str(part), "-", "--psm", "7"], capture_output=True, text=True).stdout
+
+
+def expect(env, crop, words, what, attempts=5):
+    """Wait until a crop of FM's screen reads all `words` (case-insensitive, spaces ignored)."""
+    squash = lambda t: re.sub(r"\s+", "", t.lower())  # noqa: E731
+    for _ in range(attempts):
+        if all(squash(w) in squash(screen_text(env, crop)) for w in words):
+            return True
+        subprocess.run(["sleep", "1"])
+    print(f"{what} not found on screen", file=sys.stderr)
+    return False
+
+
+# FM24 at 1920x1080: the top-bar date opens the calendar; its Go On Holiday
+# button opens a centred dialog. Each click is checked against the expected
+# text first, so a different screen fails instead of clicking blindly.
+HOLIDAY_CALENDAR_BUTTON = (1725, 398, 160, 44)
+HOLIDAY_DIALOG_TITLE = (800, 255, 240, 34)
+HOLIDAY_AFTER_LABEL = (680, 676, 200, 30)
+HOLIDAY_GO_BUTTON = (1040, 773, 150, 36)
+
+
+def centre(crop):
+    x, y, w, h = crop
+    return x + w // 2, y + h // 2
+
+
+def cmd_ui_holiday(ctx, args):
+    """Advance FM by N days with Calendar > Go On Holiday (skips inbox/continue prompts)."""
+    env = fmh_env()
+    subprocess.run(["xdotool", "key", "Escape"], env=env, check=True)
+    subprocess.run(["sleep", "0.8"])
+    before = fm_date(env)
+    fm_click(env, 1660, 32)
+    if not expect(env, HOLIDAY_CALENDAR_BUTTON, ["Go On Holiday"], "calendar 'Go On Holiday' button"):
+        return 1
+    fm_click(env, *centre(HOLIDAY_CALENDAR_BUTTON))
+    if not (expect(env, HOLIDAY_DIALOG_TITLE, ["Holiday Options"], "holiday dialog")
+            and expect(env, HOLIDAY_AFTER_LABEL, ["Return", "after"], "'Return from holiday after' option")):
+        return 1
+    x, y, _, h = HOLIDAY_AFTER_LABEL
+    fm_click(env, x - 6, y + h // 2)            # the radio button left of the label
+    fm_click(env, 1014, y + h // 2)             # the day-count field
+    subprocess.run(["xdotool", "key", "--repeat", "4", "BackSpace"], env=env, check=True)
+    subprocess.run(["xdotool", "type", str(args.days)], env=env, check=True)
+    subprocess.run(["sleep", "0.5"])
+    if not expect(env, HOLIDAY_GO_BUTTON, ["Go On Holiday"], "dialog 'Go On Holiday' button"):
+        return 1
+    fm_click(env, *centre(HOLIDAY_GO_BUTTON))
+    deadline = 60 + 20 * args.days
+    for _ in range(deadline // 2):
+        subprocess.run(["sleep", "2"])
+        after = fm_date(env)
+        if after and after != before:
+            subprocess.run(["sleep", "3"])      # let the day's processing settle
+            print(f"{before} -> {fm_date(env) or after}")
+            return 0
+    print(f"date still {before} after {deadline}s", file=sys.stderr)
+    return 1
 
 
 def cmd_ui_shot(ctx, args):
@@ -632,11 +724,13 @@ def main(argv=None):
     p = sub.add_parser("ui-menu"); p.add_argument("tab"); p.add_argument("item", nargs="?")
     p.add_argument("--then", action="append", help="click this on-screen text afterwards (repeatable)")
     p.add_argument("--crop"); p.add_argument("--out")
+    p = sub.add_parser("ui-holiday"); p.add_argument("--days", type=int, default=1)
     p = sub.add_parser("ui-shot"); p.add_argument("--crop"); p.add_argument("--out")
     args = parser.parse_args(argv)
 
     if args.cmd.startswith("ui-"):
-        return {"ui-search": cmd_ui_search, "ui-shot": cmd_ui_shot, "ui-menu": cmd_ui_menu}[args.cmd](None, args) or 0
+        return {"ui-search": cmd_ui_search, "ui-shot": cmd_ui_shot, "ui-menu": cmd_ui_menu,
+                "ui-holiday": cmd_ui_holiday}[args.cmd](None, args) or 0
     port = args.port
     if port is None:
         port_file = Path.cwd() / ".mcp-port"

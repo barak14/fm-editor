@@ -227,6 +227,7 @@ $R where player contract+0x4f:u8 'v & 2'    # entities matching a condition
 $R check player "0x2e0>0x0:fmstr" "uid:19325045"   # follow a pointer, decode a string
 $R ui-search "Harry Kane" --open 0          # FM search box, click the result row
 $R ui-menu History Milestones --then Landmarks --crop 150,180,1300,800   # navigate + OCR
+$R ui-holiday --days 1                      # advance the game N days, prints old -> new date
 ```
 
 Locations are an entity offset (`0x1d4`), a schema sub-record (`contract+0x3c`) or
@@ -243,6 +244,10 @@ changes only on **Confirm**; cancel any FM panel still showing a test value
 before leaving it. A typical loop: `leads` for candidates, FM screens for
 witness values, `check`/`scan` across at least two witnesses, `survey` for
 plausibility over the whole array, then the editor's write/Undo check.
+`ui-holiday` also refreshes FM's cached profiles after a write/Undo test (FM
+redraws a profile it has already shown only after a game day passes); it
+checks each dialog's text before clicking and fails rather than clicking an
+unexpected screen.
 
 Fallback diagnostics (with `--pid <n>` when several games are running):
 
@@ -254,9 +259,10 @@ bash Tools/scan-arrays.sh --date 184/2023   # static DateDayYear words for a day
 
 `--date DAY/YEAR` (repeatable) lists the module's static words that decode to
 that day of the year, ignoring FM's flag bits, instead of scanning for arrays.
-To locate a game clock, scan for today's date, let FM advance (calendar >
-**Go On Holiday**, return after 1 day, avoids the inbox), scan for the next day
-and keep the RVA that moved. Repeat once more before mapping it.
+To locate a game clock, scan for today's date, let FM advance
+(`python3 Tools/fm-research.py ui-holiday --days 1`, which uses Calendar > **Go
+On Holiday** and so skips inbox prompts), scan for the next day and keep the RVA
+that moved. Repeat once more before mapping it.
 
 `.mcp.json` is a tracked client example. Worktree creation patches its port locally;
 those generated port changes are not feature changes and should not be committed.

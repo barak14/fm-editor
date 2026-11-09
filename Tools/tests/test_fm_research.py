@@ -42,6 +42,21 @@ class ParsingTests(unittest.TestCase):
         self.assertIsNone(fm_research.matches(3, None))
 
 
+class UiTests(unittest.TestCase):
+    def test_top_bar_date_tolerates_ocr_spacing(self):
+        for text, expected in [("Mon 09:00\n3 Jul 2023", ("3", "Jul", "2023")),
+                               ("Thu 00:00\n6Jul 2023", ("6", "Jul", "2023")),
+                               ("Wed 00:00 15 Aug2023", ("15", "Aug", "2023"))]:
+            self.assertEqual(fm_research.DATE_RE.search(text).groups(), expected)
+        self.assertIsNone(fm_research.DATE_RE.search("INBOX"))
+
+    def test_holiday_crops_are_inside_the_headless_display(self):
+        for crop in (fm_research.HOLIDAY_CALENDAR_BUTTON, fm_research.HOLIDAY_DIALOG_TITLE,
+                     fm_research.HOLIDAY_AFTER_LABEL, fm_research.HOLIDAY_GO_BUTTON):
+            x, y, w, h = crop
+            self.assertTrue(0 <= x and x + w <= 1920 and 0 <= y and y + h <= 1080, crop)
+
+
 class LeadTests(unittest.TestCase):
     def test_translate_uses_nearest_anchor_shifts(self):
         anchors = [(0x200, 0x100), (0x300, 0x320)]
