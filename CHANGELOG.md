@@ -2,18 +2,29 @@
 
 ## Unreleased
 
+## 0.4.2 (prerelease)
+
+FM24 Steam (24.4.2) parity work. Every new mapping was checked against FM24's own
+screens in the Tottenham test save, and every new edit was confirmed in game and
+undone. FM26, FM27 and Game Pass behaviour is unchanged.
+
 ### Features
 
-- FM24 Steam players: the Contract tab shows the contract start ("Signed"), transfer/loan listing and Listed since, and an editable Asking Price (-1/Not set = Unspecified). Transfer listed and Loan listed are editable. Common names are used for display (Emerson Royal, Vinícius Júnior). Transfer value is mapped but not yet shown on FM24. Witnessed on FM24's Contract and Transfer screens; editor writes of asking price and loan listing were confirmed in FM and undone.
-- FM24 Steam: read the current game date (`fm.exe+0x631D5BC`, followed over four game days). Ages are now exact on FM24 (Heung-Min Son 30 on 5 Jul 2023, as FM shows, not 31), and transfer listing is enabled; an editor listing of Son showed "Transfer listed" in FM and Undo restored it.
-- FM24 Steam player lists: injuries with **Heal**, suspensions with **Lift ban**, holidays, other nationalities and favoured clubs, and contract bonuses/clauses (editable bonus amounts, relegation wage drop). Heal, Lift ban and a clause edit were confirmed in FM24 and undone. Players without a medical record show "None". The transfer value appears on FM24 but is read-only: FM recalculates it each game day, so writes do not last.
-- `fm-research.py path` walks pointers breadth-first from an entity to find where a text, pointer, value or date is stored; `ui-search` tolerates OCR accent and I/l confusions.
+- FM24 Steam player lists: injuries with **Heal**, suspensions with **Lift ban**, holidays, other nationalities and favoured clubs, and contract bonuses/clauses (editable bonus amounts, relegation wage drop). Heal, Lift ban and a clause edit were confirmed in FM24 and undone. Players without a medical record show "None".
+- FM24 Steam player contracts: the Contract tab shows the contract start ("Signed"), transfer/loan listing and Listed since, and an editable Asking Price (Not set = Unspecified). Transfer listed and Loan listed are editable; listing Heung-Min Son showed "Transfer listed" in FM, and asking-price and loan-listing writes were confirmed in FM and undone.
+- FM24 Steam: read the current game date (`fm.exe+0x631D5BC`, followed over four game days). Ages are exact (Heung-Min Son 30 on 5 Jul 2023, as FM shows, not 31) and transfer listing uses the game date.
+- FM24 Steam: the transfer value is shown read-only (FM recalculates it every game day, so an editor write did not last), and common names display as FM shows them (Emerson Royal, Vinícius Júnior).
+- Add `Tools/fm-research.py`, a read-only field-research helper for fm-debug: cross-version offset leads, multi-witness checks and scans, array surveys and value filters, pointer-path search (`path`), plus headless-FM search, menu navigation, `ui-holiday --days N` (advance the game through Calendar > Go On Holiday) and OCR of FM's screens.
 - `scan_arrays --date DAY/YEAR` lists static date words for locating game clocks.
-- Add `Tools/fm-research.py`, a read-only field-research helper for fm-debug: cross-version offset leads, multi-witness checks and scans, array surveys and value filters, plus headless-FM search, menu navigation, `ui-holiday --days N` (advance the game through Calendar > Go On Holiday, skipping inbox prompts) and OCR of FM's screens.
 
 ### Fixes
 
 - FM24 Steam: staff and human-manager headers show their current club instead of "Club: Unknown", read-only through the staff contract's team (Guardiola Man City, Emery Aston Villa, the test save's manager Tottenham; unemployed staff such as Postecoglou stay Unknown). Staff contract wage/expiry and nationality remain unmapped on FM24.
+
+### Compatibility
+
+- Native installers and Arch packages for 0.4.2 are built from the 0.4.2 portable binaries only after those are verified; the 0.4.1 packages remain pinned to 0.4.1.
+- Known FM24 limits: injury light/full training dates follow FM27's labels (FM24 shows only an expected return between them); Heung-Min Son's wage and one bonus read about 1% above FM's display (unexplained); languages and name editing remain FM27-only.
 
 ## 0.4.1 (prerelease)
 

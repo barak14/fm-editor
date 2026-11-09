@@ -110,37 +110,34 @@ A branch push triggers the workflow immediately once the workflow file is pushed
 The Actions **Run workflow** button/manual dispatch requires the workflow to exist
 on the repository's default branch first. No push or dispatch publishes a release.
 
-## Preparing 0.4.1
+## Preparing 0.4.2
 
-The application version is `0.4.1`; the intended new tag is `v0.4.1`. Use the
-0.4.1 section of [the changelog](../CHANGELOG.md) and the
-[draft release notes and reporter instructions](release-notes/0.4.1.md).
-This update adds metadata-based release identification and persistent detection
-logs; it does **not** add a verified Epic layout. FM27 Game Pass remains unverified.
+The application version is `0.4.2`; the new tag is `v0.4.2`. Use the 0.4.2
+section of [the changelog](../CHANGELOG.md) and the
+[release notes](release-notes/0.4.2.md). This release adds FM24 Steam parity
+(player lists, contract and listing fields, game date, staff club) and the
+research tools; FM26/FM27 behaviour is unchanged. `v0.4.1` stays at
+`f678f0b9771c8d992cecef96281ead4ddff89e75` with its published assets.
 
-1. Commit and push the prepared source, then require both **Build and package**
-   jobs to pass for that exact commit. Download the Windows and Linux portable
-   artifacts before they expire; their `BUILD-INFO.json` must say `0.4.1` and
-   identify that commit. Do not substitute binaries from 0.4.0.
-2. The GitHub reporter can retest using the successful Windows portable artifact
-   before a release is published. Ask for the detection log, not speculative
-   edits or an offset/write test. Record that Epic remains unsupported even if
-   its FM release can now be identified.
-3. Complete the public-prerelease checks below, including extracted-package live
-   attach/edit/Undo checks on supported builds and the dependency licence/source
-   review (including the new PE parser dependencies). Record missing evidence
-   honestly; the local metadata tests are not Windows/Epic runtime verification.
-4. Only after review, create a **new** `v0.4.1` tag at the checked commit and a
-   draft GitHub prerelease. Include both portable archives, matching source and
-   combined `SHA256SUMS`. Never move `v0.4.0` or replace its binaries.
-5. Native packaging is separate. `packaging/releases/v0.4.1.json` pins the
-   immutable `v0.4.1` tag at commit `f678f0b9771c8d992cecef96281ead4ddff89e75`
-   and successful **Build and package** run `42563692148`, with the portable
-   archive, executable and canonical-input hashes. The Arch recipe, staging
-   helper and Native packages workflow now target 0.4.1; `v0.4.0.json` remains
-   for rebuilding the 0.4.0 packages. Run the Native packages workflow for
-   `v0.4.1` and verify its installer/package before attaching them. Do not
-   relabel a 0.4.0 installer as 0.4.1.
+1. Push the prepared source and require both **Build and package** jobs to pass
+   for that exact commit. Download the Windows and Linux portable artifacts;
+   their `BUILD-INFO.json` must say `0.4.2` and identify that commit.
+2. Smoke-test the extracted Linux release binary against FM24 Steam: attach, one
+   controlled edit and Undo. Dependencies are unchanged since 0.4.1 (only the
+   package's own `Cargo.lock` version line differs), so the 0.4.1 licence review
+   still covers them.
+3. Create the **new** `v0.4.2` tag at the checked commit and a draft GitHub
+   prerelease with both portable archives, the matching source and combined
+   `SHA256SUMS`. Never move `v0.4.1` or replace its binaries.
+4. Pin native packaging in a follow-up commit: record
+   `packaging/releases/v0.4.2.json` from the successful run (commit, run,
+   archive/executable/canonical hashes), then update the Arch recipe, staging
+   helper, workflow default and [native packages guide](native-packages.md)
+   together. Attach the installer, Arch package and packaging source from that
+   run's **Native packages** artifacts and regenerate `SHA256SUMS`.
+
+The [0.4.1 notes](release-notes/0.4.1.md) keep that release's reporter retest
+instructions; they still apply to 0.4.2's detection logs.
 
 Version/changelog preparation or a CI artifact does not publish a release,
 create a tag or establish that all release gates have passed. Publication and
