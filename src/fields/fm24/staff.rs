@@ -13,9 +13,29 @@
 //! hidden ones FM does not display stay unmapped. A 1500-staff sample has CA <= PA,
 //! attribute bytes <= 100, personality 1..20 and plausible DOBs for 100%.
 
-use crate::fields::{date, direct, encoded, fm_string, pointer, raw, raw_capped, role_index, Field};
+use crate::fields::{date, direct, encoded, fm_string, pointer, raw, raw_capped, role_index, sub_fm_string, Field, SubRecord, SubRecordParent};
 use crate::fields::Category::*;
 use crate::fields::Entity::Staff;
+
+/// Staff sub-records, resolved from the staff base (the human manager's from
+/// base + `HUMAN_MANAGER_SHIFT`). Employment is FM24's staff contract object:
+/// its +0x08 points back at base + 0xF8, +0x10 is the employing team and
+/// the club is at team+0x30, as for players. It is deliberately not named
+/// `contract`: FM24 staff wage/expiry are unmapped, and that id enables the
+/// staff Contract editor. Only the read-only club name uses it.
+///
+/// Verified 2026-11-09 (24.4.2+2081827 Steam, Tottenham test save, 3 Jul 2023)
+/// against FM's own staff search: Pep Guardiola (1120) -> Man City, Unai Emery
+/// (5193) -> Aston Villa, Ange Postecoglou (129295) -> Unemployed (null
+/// pointer), the human manager -> Tottenham (shifted). Of 33,835 staff, 19,214
+/// have the back-pointer and resolve to a club, 14,620 are null; the only other
+/// entry is the human manager read unshifted.
+#[rustfmt::skip]
+pub(crate) const STAFF_SUB_RECORDS: &[SubRecord] = &[
+    SubRecord { id: "employment", parent: SubRecordParent::Direct,           ptr_offset: 0x1C0, size: 0x58 },
+    SubRecord { id: "team",       parent: SubRecordParent::In("employment"), ptr_offset: 0x10,  size: 0xB0 },
+    SubRecord { id: "club",       parent: SubRecordParent::In("team"),       ptr_offset: 0x30,  size: 0xD0 },
+];
 
 pub(crate) const FIELDS: &[Field] = &[
     Field { key: "s_goalkeeping",  label: "Goalkeeping",      entity: Staff, category: Coaching,      offset: encoded(0x033) },
@@ -99,7 +119,7 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "s_weekly_wage",     label: "Weekly Wage",     entity: Staff, category: Contract, offset: None },
     Field { key: "s_contract_expiry", label: "Contract Expiry", entity: Staff, category: Contract, offset: None },
     Field { key: "s_nationality",     label: "Nationality",     entity: Staff, category: General,  offset: None },
-    Field { key: "s_club",            label: "Club",            entity: Staff, category: General,  offset: None },
+    Field { key: "s_club",            label: "Club",            entity: Staff, category: General,  offset: sub_fm_string("club", 0xC0) },
 ];
 
 /// Byte offset added to a standard staff field offset to reach the overlaid

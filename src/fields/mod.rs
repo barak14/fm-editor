@@ -855,6 +855,33 @@ mod schema_lookup_tests {
     }
 
     #[test]
+    fn fm24_resolves_staff_club_through_employment_without_contract_editor() {
+        let schemas = GameBuild::Fm24Steam.schemas();
+        let find = |id: &str| schemas.staff_sub_records.iter().find(|s| s.id == id);
+        let employment = find("employment").unwrap();
+        assert!(matches!(employment.parent, SubRecordParent::Direct));
+        assert_eq!(employment.ptr_offset, 0x1C0);
+        let team = find("team").unwrap();
+        assert!(matches!(team.parent, SubRecordParent::In("employment")));
+        assert_eq!(team.ptr_offset, 0x10);
+        let club = find("club").unwrap();
+        assert!(matches!(club.parent, SubRecordParent::In("team")));
+        assert_eq!(club.ptr_offset, 0x30);
+        // A `contract` sub-record would expose the staff Contract editor while
+        // FM24 staff wage/expiry remain unmapped.
+        assert!(find("contract").is_none());
+        assert!(schemas.field("s_weekly_wage").unwrap().offset.is_none());
+        assert!(matches!(
+            schemas.field("s_club").unwrap().offset,
+            Some(FieldLocation::SubRecord {
+                container: "club",
+                offset: 0xC0,
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn fm26_resolves_player_and_staff_clubs_through_teams() {
         let schemas = GameBuild::Fm26Steam.schemas();
         let find = |subs: &'static [SubRecord], id: &str| subs.iter().find(|s| s.id == id).unwrap();

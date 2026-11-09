@@ -124,11 +124,28 @@ the `home_stadium` sub-record, so `rva_stadium_base` is 0.
 - Reps 0xD0/0xD2/0xD4, CA/PA 0xD6/0xD8 (4 earlier than FM26), staff ID 0x104,
   name 0x140, name subs 0x150/0x158, DOB 0x13C, personality 0x170 (unchanged),
   role-ratings ptr 0x1F8.
+- **Current club** (read-only, mapped 2026-11-09 on 24.4.2+2081827 Steam):
+  staff+**0x1C0** → employment (FM24's staff contract object) → +0x10 team →
+  +0x30 club → full name FmString +0xC0; the team → club step matches FM24
+  players. FM26 keeps this contract pointer at +0x1A8. The employment object's
+  +0x08 points back at staff+0xF8, and it holds 2022/2025 dates for
+  Guardiola, apparently contract start/end, not yet mapped. The schema
+  names it `employment`, not `contract`, so the staff Contract editor stays off
+  while FM24 staff wage/expiry are unmapped. Witnesses against FM's own staff
+  search (Tottenham test save, 3 Jul 2023): Pep Guardiola "Manager - Man City"
+  → Manchester City; Unai Emery "Manager - Aston Villa" → Aston Villa; Ange
+  Postecoglou "Manager - Unemployed" → null pointer; the human manager
+  (Tottenham's manager on FM's Home screen) → Tottenham Hotspur through the
+  shifted slot below. All 33,835 staff: 19,214 resolve with the back-pointer,
+  14,620 are null; the only other entry is the human manager read unshifted.
+  staff+0x58 points to a list of dated team entries (its first entry also
+  reaches the current team); it is undecoded and not used for the club.
 
 ### Human manager
 
 Last entry of the staff array (vtable fm.exe+0x5A6A318). Identity fields live
-at `offset + 0x358` (FM26: 0x350): IDs, DOB, name subs, personality, role ptr.
+at `offset + 0x358` (FM26: 0x350): IDs, DOB, name subs, personality, role ptr,
+and the employment pointer (0x1C0 + 0x358).
 Unlike FM26 the direct name FmString is null in both slots — the name comes
 from the sub-records. Verified on the test save's human manager (role ratings Manager 20).
 
@@ -179,8 +196,9 @@ u32 0x6C/0x70/0x74/0x78/0x7C, owner club ptr 0x80, pitch length/width ×10
 | Entity | Identifier | Confirmed |
 |--------|-----------|-----------|
 | Harry Kane | Player UID 28049320 | name, DOB 209/1993, height 188, CA/PA 184/185, reps 9250/9200/8750, positions (ST 20, AMC 15, MC/AML 12, AMR 10), attributes, club → Tottenham |
-| Josep Guardiola | Staff ID 1120 | name, DOB 18/1971, CA/PA 190/200, reps 9500, personality, roles, 31/38 attributes |
-| The human manager (test save) | Human manager | shifted identity block, roles |
+| Josep Guardiola | Staff ID 1120 | name, DOB 18/1971, CA/PA 190/200, reps 9500, personality, roles, 31/38 attributes, club → Man City |
+| Unai Emery / Ange Postecoglou | Staff ID 5193 / 129295 | club → Aston Villa / unemployed (null employment) |
+| The human manager (test save) | Human manager | shifted identity block, roles, club → Tottenham |
 | FC Bayern | Club UID 915 | names, abbreviations, founded 1900, facilities, supporters, attendance |
 | Tottenham | Club UID 728 | as Bayern; ticket prices 65 / 1296 |
 | Allianz-Arena, Tottenham Hotspur Stadium | Stadium | capacity, expansion, owner, pitch |
@@ -193,4 +211,5 @@ r=0.89, DL/WBL r=0.82, attribute bytes ≤ 100, max(left, right foot) = 20 for a
 
 Player: value, condition (sharpness band confirmed, see above), apps/goals,
 dates (transfer/join/debut/listing), secondary name block, contract clauses and
-listing. Staff: the four hidden attributes above. Club and stadium: see above.
+listing. Staff: the four hidden attributes above, nationality, contract wage
+and expiry (employment dates are a lead). Club and stadium: see above.

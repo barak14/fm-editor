@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- FM24 Steam: staff and human-manager headers show their current club instead of "Club: Unknown", read-only through the staff contract's team (Guardiola Man City, Emery Aston Villa, the test save's manager Tottenham; unemployed staff such as Postecoglou stay Unknown). Staff contract wage/expiry and nationality remain unmapped on FM24.
+
 ## 0.4.1 (prerelease)
 
 ### Fixes
