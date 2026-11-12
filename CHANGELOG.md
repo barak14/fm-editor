@@ -2,7 +2,18 @@
 
 ## Unreleased
 
-- FM27 Game Pass: read and edit the save on Store package 0.9.2435.0. The entity arrays, current date, full-finance, player-coach and human-manager classes and the `game_plugin.dll` fingerprint are recorded for that package; struct offsets are the Steam ones. Two Spurs players matched FM on attributes, dates, caps and contract expiry, and one edit was confirmed in game and undone. Manager discovery uses the verified class and skips the Xbox-account placeholder, as on Steam. Club finances, stadium, club membership and club policy remain unverified/disabled on Game Pass.
+## 0.4.3 (prerelease)
+
+FM27 PC Game Pass bring-up. FM24, FM26 and FM27 Steam behaviour is unchanged.
+
+### Features
+
+- FM27 Game Pass: read and edit the save on Store package 0.9.2435.0. The entity arrays, current date, full-finance, player-coach and human-manager classes and the `game_plugin.dll` fingerprint are recorded for that package; struct offsets are the Steam ones. Two Spurs players matched FM on attributes, dates, caps and contract expiry, and one edit was confirmed in game and undone. Manager discovery uses the verified class and skips the Xbox-account placeholder, as on Steam.
+
+### Compatibility
+
+- Only Game Pass Store package 0.9.2435.0 is mapped; a `game_plugin.dll` with a different fingerprint is rejected until that package is brought up. Club finances, stadium, club membership / My clubs and club policy remain unverified/disabled on Game Pass.
+- Native installers and Arch packages for 0.4.3 are built from the 0.4.3 portable binaries only after those are verified; the 0.4.2 packages remain pinned to 0.4.2.
 
 ## 0.4.2 (prerelease)
 

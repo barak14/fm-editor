@@ -110,34 +110,36 @@ A branch push triggers the workflow immediately once the workflow file is pushed
 The Actions **Run workflow** button/manual dispatch requires the workflow to exist
 on the repository's default branch first. No push or dispatch publishes a release.
 
-## Preparing 0.4.2
+## Preparing 0.4.3
 
-The application version is `0.4.2`; the new tag is `v0.4.2`. Use the 0.4.2
+The application version is `0.4.3`; the new tag is `v0.4.3`. Use the 0.4.3
 section of [the changelog](../CHANGELOG.md) and the
-[release notes](release-notes/0.4.2.md). This release adds FM24 Steam parity
-(player lists, contract and listing fields, game date, staff club) and the
-research tools; FM26/FM27 behaviour is unchanged. `v0.4.1` stays at
-`f678f0b9771c8d992cecef96281ead4ddff89e75` with its published assets.
+[release notes](release-notes/0.4.3.md). This release maps FM27 PC Game Pass
+Store package 0.9.2435.0; FM24, FM26 and FM27 Steam behaviour is unchanged.
+`v0.4.2` stays at `eeb27582e6461477893788581db6bfbc4da6699d` with its
+published assets.
 
 1. Push the prepared source and require both **Build and package** jobs to pass
    for that exact commit. Download the Windows and Linux portable artifacts;
-   their `BUILD-INFO.json` must say `0.4.2` and identify that commit.
-2. Smoke-test the extracted Linux release binary against FM24 Steam: attach, one
-   controlled edit and Undo. Dependencies are unchanged since 0.4.1 (only the
-   package's own `Cargo.lock` version line differs), so the 0.4.1 licence review
-   still covers them.
-3. Create the **new** `v0.4.2` tag at the checked commit and a draft GitHub
+   their `BUILD-INFO.json` must say `0.4.3` and identify that commit.
+2. Smoke-test the extracted **Windows** release binary against FM27 Game Pass
+   (package 0.9.2435.0): attach, confirm the toolbar names the Game Pass build
+   with no fingerprint warning, one controlled edit and Undo. Smoke-test the
+   Linux binary against a Steam build. Dependencies are unchanged since 0.4.1
+   (only the package's own `Cargo.lock` version line differs), so the 0.4.1
+   licence review still covers them.
+3. Create the **new** `v0.4.3` tag at the checked commit and a draft GitHub
    prerelease with both portable archives, the matching source and combined
-   `SHA256SUMS`. Never move `v0.4.1` or replace its binaries.
+   `SHA256SUMS`. Never move `v0.4.2` or replace its binaries.
 4. Pin native packaging in a follow-up commit: record
-   `packaging/releases/v0.4.2.json` from the successful run (commit, run,
+   `packaging/releases/v0.4.3.json` from the successful run (commit, run,
    archive/executable/canonical hashes), then update the Arch recipe, staging
    helper, workflow default and [native packages guide](native-packages.md)
    together. Attach the installer, Arch package and packaging source from that
    run's **Native packages** artifacts and regenerate `SHA256SUMS`.
 
 The [0.4.1 notes](release-notes/0.4.1.md) keep that release's reporter retest
-instructions; they still apply to 0.4.2's detection logs.
+instructions; they still apply to 0.4.3's detection logs.
 
 Version/changelog preparation or a CI artifact does not publish a release,
 create a tag or establish that all release gates have passed. Publication and
