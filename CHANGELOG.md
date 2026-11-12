@@ -15,6 +15,10 @@ FM27 PC Game Pass bring-up. FM24, FM26 and FM27 Steam behaviour is unchanged.
 - Only Game Pass Store package 0.9.2435.0 is mapped; a `game_plugin.dll` with a different fingerprint is rejected until that package is brought up. Club finances, stadium, club membership / My clubs and club policy remain unverified/disabled on Game Pass.
 - Native installers and Arch packages for 0.4.3 are built from the 0.4.3 portable binaries only after those are verified; the 0.4.2 packages remain pinned to 0.4.2.
 
+### Packaging
+
+- Pin the 0.4.3 native packaging identity to the immutable `v0.4.3` application tag at commit `a990a238c79669aa458c85e5dc7d80740bbc22a7` from successful build `43151204445`, with an independent packaging revision.
+
 ## 0.4.2 (prerelease)
 
 FM24 Steam (24.4.2) parity work. Every new mapping was checked against FM24's own
