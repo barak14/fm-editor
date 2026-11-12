@@ -98,15 +98,31 @@ pub static FM27: VersionedSchemas = STEAM;
 
 /// FM27 schema, PC Game Pass build (Microsoft GDK, Xbox app install).
 ///
-/// UNVERIFIED: a copy of the Steam build. The Game Pass binary is a separate
-/// build, so its `game_plugin.dll` hash and module-relative RVAs (entity
-/// arrays, stadium root, vtables) are expected to differ; struct field
-/// offsets are likely, not known, to match. Bring-up checklist in
-/// docs/fm27/memory-layout.md ("Game Pass build").
+/// The Steam struct layouts with this binary's own module hash and
+/// module-relative RVAs (entity arrays, current date, class vtables).
+/// Evidence and remaining gaps in docs/fm27/memory-layout.md ("Game Pass build").
 pub static FM27_GAMEPASS: VersionedSchemas = VersionedSchemas {
-    // Not calibrated: attach reports the running game_plugin.dll hash.
-    known_dll_hash: 0,
-    // Game Pass RVAs differ: never inherit the Steam date address.
-    rva_current_date: 0,
+    // game_plugin.dll of Store package 0.9.2435.0 (2026-11-12).
+    known_dll_hash: 0xAAD1_D2D3_AD51_8F23,
+    // Current game date, same encoding as Steam: raw 0x07EA1AC2 (day 194,
+    // Mon 13 Jul 2026) on a new save. Only date-shaped static with that value.
+    rva_current_date: 0x53597C8,
+    // Same array cluster as Steam, shifted -0x34B9F0 as a block. Found by
+    // decoding names at the Steam struct offsets in every heap vector.
+    rva_humans_data: 0x53B7DE0,
+    rva_humans_end: 0x53B7DE8,
+    rva_staff_data: 0x53B7E28,
+    rva_staff_end: 0x53B7E30,
+    rva_clubs_data: 0x53B7F98,
+    rva_clubs_end: 0x53B7FA0,
+    // Same shift applied; not yet checked.
+    rva_stadium_base: 0x53B7D60,
+    // Class RVAs, matched to the Steam classes by a vtable census of each
+    // array: 158 full-finance clubs (Arsenal, Aston Villa; small class
+    // +0x4A2F518, 0x4D0 below it as on Steam), 77 player-coaches (staff-side
+    // class +0x4C5FE6C), and the last two staff entries for the human manager.
+    full_finance_vtable_rva: 0x4A2F9E8,
+    player_coach_vtable_rva: 0x4C5FE88,
+    human_manager_vtable_rva: 0x4A072BC,
     ..STEAM
 };

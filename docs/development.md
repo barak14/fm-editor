@@ -95,7 +95,7 @@ launched on it can take focus and swallow clicks. Before typing, run
 does not move keyboard focus to the editor.
 
 **Every local save is a test save.** All FM saves on this machine (the FM27
-Spurs save, the FM24 "Andre Webster - Tottenham" save and any other) exist for
+Spurs save, the FM24 Tottenham save and any other) exist for
 testing. Controlled test writes are acceptable, including writing a candidate
 offset to see which on-screen value changes, and a test value that cannot be
 restored is recorded as a finding rather than treated as damage. Restore what

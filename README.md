@@ -66,7 +66,7 @@ Live name/UID filtering, ability and age filters, and sortable results.
 | FM24 | Players, staff, clubs, stadiums | [docs/fm24/memory-layout.md](docs/fm24/memory-layout.md) |
 | FM26 | Main target (2026-10 patch) | [docs/fm26/memory-layout.md](docs/fm26/memory-layout.md) |
 | FM27 | In progress — most fields verified against a live save | [docs/fm27/memory-layout.md](docs/fm27/memory-layout.md) |
-| FM27 (Game Pass) | Unverified — attaches with the Steam layout; may not read correctly | [Game Pass build](docs/fm27/memory-layout.md#game-pass-build) |
+| FM27 (Game Pass) | Bring-up on Store package 0.9.2435.0 — players, staff, clubs, date and manager read correctly; one edit/Undo checked in game | [Game Pass build](docs/fm27/memory-layout.md#game-pass-build) |
 
 The release is detected from the game module's Windows PE product metadata:
 `fm.exe` for FM24, `game_plugin.dll` for FM26/FM27 (their exe reports the Unity
@@ -79,8 +79,8 @@ Storefront detection remains separate, using install-location hints and the
 Game Pass manifest. Recognised `Epic Games` installs are reported as unsupported:
 there is no verified Epic schema, and identifying FM24 does not prove Steam's
 offsets work on Epic. Unrecognised locations retain the historical Steam default.
-Only the Steam builds are mapped; FM27 on Game Pass is an untested starting point.
-
+FM27 Game Pass uses the Steam struct layouts with its own module addresses, recorded for
+one Store package; features that depend on unmapped Game Pass addresses stay disabled.
 A game patch can move fields. For builds with a recorded module fingerprint, the
 editor rejects a mismatch. Uncalibrated builds (currently FM27) can attach with a
 warning, without that fingerprint guard; a successful attachment does not prove

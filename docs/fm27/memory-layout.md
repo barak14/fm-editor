@@ -139,7 +139,7 @@ although it reads the same date. The four bytes after the heap copy read
 
 The editor reads the date on attach and on each two-second status poll. It
 calculates ages from it and uses it for Heal, Lift ban and transfer listing.
-Game Pass has no mapping (`rva_current_date` 0).
+Game Pass has its own address (0x53597C8); see [Game Pass build](#game-pass-build).
 
 ## Entity arrays (RVA relative to game_plugin.dll)
 
@@ -713,14 +713,77 @@ recognised as Game Pass: a `MicrosoftGame.config` next to `fm.exe`, or a path
 under `XboxGames` or `WindowsApps`. Recognised `Epic Games` installs are rejected
 because no Epic schema exists; other locations retain the historical Steam default.
 
-**Nothing in `FM27_GAMEPASS` is verified.** It is a copy of the Steam schema
-with `known_dll_hash` 0. The module hash and the module-relative values (entity
-array RVAs, stadium root, finance / player-coach / human-manager vtable RVAs)
-are expected to differ. Struct field offsets probably match, since the source
-and compiler are the same, but that is unconfirmed.
+### Store package 0.9.2435.0 (2026-11-12)
 
-Bring-up checklist (Windows, Game Pass FM27 with a save loaded, debug build via
-`cargo build`). Compare against a Steam build at the same patch where possible.
+Install: `C:\Program Files\WindowsApps\SportsInteractive.FootballManager27_0.9.2435.0_x64__5w3tn6tb6stnm`.
+`game_plugin.dll` reports ProductName `Football Manager 27`, ProductVersion
+`27.0.1+2494687`, so the release comes from PE metadata (detection log:
+`release: FM27; source: PE ProductName`). `fm.exe`'s resource cannot be mapped
+under `WindowsApps` (access denied), which is harmless because FM27 reads the
+plugin. The plugin file itself is readable, so the fingerprint gate works.
+`game_plugin.dll` fingerprint `0xAAD1D2D3AD518F23` (recorded; the version gate
+is active). The save used had a small database (13,633 players, 10,304 staff,
+17,178 clubs); counts are save-specific.
+
+The PE section table differs from Steam (names do not match their usual
+contents, e.g. a 72 MB executable section named `.rsrc`). The writable data
+section `.link` (gp+0x531D000) holds the entity cluster.
+
+| Value | Steam | Game Pass | Evidence |
+|---|---|---|---|
+| Players data/end | 0x57037D0 | 0x53B7DE0 / 0x53B7DE8 | Names decode at p_name 0x2C8 and subs 0x2D8/0x2E0 (Litmanen, Micevski) |
+| Staff data/end | 0x5703818 | 0x53B7E28 / 0x53B7E30 | s_name 0x140, subs 0x150/0x158 (Reiziger, Davids) |
+| Clubs data/end | 0x5703988 | 0x53B7F98 / 0x53B7FA0 | c_full_name 0xC0 / c_name 0xC8 (Tottenham Hotspur / Spurs, Arsenal) |
+| Stadium root | 0x5703750 | 0x53B7D60 | Same −0x34B9F0 cluster shift; **unverified** |
+| Current date | 0x56AD378 | 0x53597C8 | Raw 0x07EA1AC2 (day 194 2026); FM shows MON 13/7/2026 (user screenshot, 2026-11-12). Only date-shaped static with that value |
+| Full-finance class | 0x4CF0CC8 | 0x4A2F9E8 | 158 clubs incl. Arsenal, Aston Villa; small class 0x4A2F518 is 0x4D0 lower, as on Steam (17,017 clubs) |
+| Player-coach class | 0x4F75A08 | 0x4C5FE88 | 77 players with blank names at plain offsets; Keisuke Honda reads at +0xF8: UID 788585 (= his staff UID), DOB day 164 1986 = 13 Jun 1986 |
+| Human-manager class | 0x4CC086C | 0x4A072BC | Last two staff entries. At the 0x340 shift: the user's manager (name and DOB set), and the account placeholder "(<Xbox gamertag>)" (staff id 11498, DOB year 1900, as the Steam placeholder) |
+
+Other classes seen: plain player 0x4A54258, AI staff 0x4AB4D60, player-coach
+staff 0x4C5FE6C, club 0x4A1D638, non-club entries in the club array
+0x4C4FE48 (3, as on Steam). Class RVAs do not share one shift (player
+−0x2D2FD0, staff −0x2D70A8, club −0x2BCBC0), so each was matched by a vtable
+census of its array.
+
+Struct field offsets match Steam for every field checked: names, UID, DOB
+(Litmanen 20 Feb 1971, Honda 13 Jun 1986), the player-coach +0xF8 and
+human-manager 0x340 shifts, and club names/UIDs. The user confirmed in the
+editor that the manager and his club are correct.
+
+In-game comparison (user screenshots of FM and the editor, 2026-11-12, Spurs
+save): Archie Gray and Sandro Tonali match FM on all 36 visible attributes,
+DOB (12/3/2006, 8/5/2000), age, club, nation, international and U21
+caps/goals, and squad status (contract+0x54: Tonali 2 = Important Player,
+Gray 10 = Breakthrough Prospect). Gray's height 182 and wage £75K p/w match.
+Contract expiry (contract+0x48) reads 30/6/2030 and 30/6/2032, as FM shows.
+Transfer values (£59.03M, £183.49M) sit at an end of FM's scouted ranges.
+One edit was made in the editor, confirmed in FM and undone (user report).
+
+Wages: contract+0x20 is the exact stored wage; FM rounds it for display.
+Spurs squad screen against raw values (2026-11-12): Sarr 91,850 → £92K,
+Vicario 76,486 → £76K, Davies 82,000 → £82K (below £100K: nearest £1K);
+Maddison 147,000 → £145K, Kulusevski 128,000 → £130K, van de Ven 240,000 →
+£240K (£100K–£250K: nearest £5K); Marmoush 260,000 → £250K, Tonali 265,000 →
+£275K (above £250K: nearest £25K). Tonali's contract screen also shows £275K;
+its start date 6/7/2026 matches contract+0x44 (day 187 of 2026).
+
+The contract object resolves as on Steam (player+0x330, owner at +0x08), with
+vtable gp+0x4859618 on Game Pass (Steam 0x4B00AE8). `contract_vtable_rva` in
+`src/fields/fm27/contract.rs` is still Steam's and its tooling is
+fingerprint-gated to Steam.
+
+Still disabled or unverified on Game Pass: club finances, stadium, the
+contract-type tooling, club membership / My clubs and club policy
+(fingerprint-gated to Steam).
+
+A new Store package needs this redone: run `scan_arrays`, find the cluster by
+decoding names, census the vtables, and record the new fingerprint.
+
+### Bring-up checklist for a new package
+
+Windows, Game Pass FM27 with a save loaded, debug build via `cargo build`.
+Compare against a Steam build at the same patch where possible.
 
 1. **Attach.** The toolbar should show `FM27 Game Pass (PID n)`, and the
    status bar the notice `FM27 Game Pass game_plugin.dll hash not calibrated
@@ -803,7 +866,7 @@ Steam; Game Pass and other builds have not been verified for this capability.
 No game-memory writes were performed for this read-only feature.
 
 Verified module SHA-256: `BC940E472418FC5C214208D7CF30FECF600F689B6F9D71C11BA19A2DF0FE057F`.
-On FM27 Steam, manager discovery now requires the already-mapped human-manager vtable and excludes the platform-account placeholder. Game Pass keeps the previous heuristic because its inherited vtable RVA is unverified.
+On FM27 Steam and Game Pass, manager discovery requires the mapped human-manager vtable and excludes the platform-account placeholder (Game Pass since its class was mapped; see [Game Pass build](#game-pass-build)).
 
 Live feature UI: manual current Club ID 1751 returned 24 players; My clubs returned 41, including the reserve group and both incoming-loan witnesses. Counts are save-specific, not constants.
 

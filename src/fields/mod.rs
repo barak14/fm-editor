@@ -809,7 +809,8 @@ mod schema_lookup_tests {
     fn current_date_rva_is_specific_to_the_verified_build() {
         assert_eq!(GameBuild::Fm27Steam.schemas().rva_current_date, 0x56AD378);
         assert_eq!(GameBuild::Fm24Steam.schemas().rva_current_date, 0x631D5BC);
-        for build in [GameBuild::Fm27GamePass, GameBuild::Fm26Steam] {
+        assert_eq!(GameBuild::Fm27GamePass.schemas().rva_current_date, 0x53597C8);
+        for build in [GameBuild::Fm26Steam] {
             assert_eq!(build.schemas().rva_current_date, 0, "{build:?}");
         }
     }
@@ -1127,8 +1128,21 @@ mod player_schema_tests {
         let gamepass = &fm27::FM27_GAMEPASS;
         assert!(std::ptr::eq(layout, gamepass.player_lists.unwrap()));
         assert_eq!(schemas.morale_labels, gamepass.morale_labels);
-        // Game Pass RVAs differ: the Steam date address is never inherited.
-        assert_eq!(gamepass.rva_current_date, 0);
+        // Module-relative addresses are per binary: none come from Steam.
+        let steam = &fm27::FM27;
+        for (name, gp, st) in [
+            ("date", gamepass.rva_current_date, steam.rva_current_date),
+            ("players", gamepass.rva_humans_data, steam.rva_humans_data),
+            ("staff", gamepass.rva_staff_data, steam.rva_staff_data),
+            ("clubs", gamepass.rva_clubs_data, steam.rva_clubs_data),
+            ("stadium", gamepass.rva_stadium_base, steam.rva_stadium_base),
+            ("finance", gamepass.full_finance_vtable_rva, steam.full_finance_vtable_rva),
+            ("player-coach", gamepass.player_coach_vtable_rva, steam.player_coach_vtable_rva),
+            ("manager", gamepass.human_manager_vtable_rva, steam.human_manager_vtable_rva),
+            ("hash", gamepass.known_dll_hash, steam.known_dll_hash),
+        ] {
+            assert_ne!(gp, st, "Game Pass {name} inherits the Steam value");
+        }
     }
 
     #[test]

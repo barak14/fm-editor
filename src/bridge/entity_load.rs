@@ -345,12 +345,13 @@ pub fn find_human_manager(fm: &FmProcess) -> Result<u64, String> {
         if vtable < gp_base || vtable >= gp_end {
             return false;
         }
-        // FM27 Steam has a verified human-manager class. Generic staff can
-        // otherwise pass the shifted-name heuristic by reading bytes in
-        // neighbouring objects. Game Pass inherits the Steam RVA unverified, so
-        // enforcing it there could reject the real manager.
-        if fm.build == crate::game_version::GameBuild::Fm27Steam
-            && schema.human_manager_vtable_rva != 0
+        // FM27 has a verified human-manager class on Steam and Game Pass.
+        // Generic staff can otherwise pass the shifted-name heuristic by
+        // reading bytes in neighbouring objects.
+        if matches!(
+            fm.build,
+            crate::game_version::GameBuild::Fm27Steam | crate::game_version::GameBuild::Fm27GamePass
+        ) && schema.human_manager_vtable_rva != 0
         {
             if gp_base.checked_add(schema.human_manager_vtable_rva) != Some(vtable) {
                 return false;
