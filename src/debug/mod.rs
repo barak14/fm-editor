@@ -77,6 +77,8 @@ pub struct DebugState {
     /// process_vm_readv) support concurrent access from multiple attachers.
     /// Every tool reads through this process's own schema (`fm.schemas()`).
     pub fm:         Mutex<Option<crate::process::FmProcess>>,
+    pub tool_call: Mutex<()>,
+    pub save_identity: Mutex<Option<Vec<u64>>>,
     /// PID the GUI is attached to (0 = none). `attach_status` follows it
     /// when no `pid` is given, so with several games open the MCP tools
     /// inspect the same game the editor shows.
@@ -100,6 +102,8 @@ impl DebugState {
     pub fn new(log: DebugLog, port: u16) -> Self {
         Self {
             fm:               Mutex::new(None),
+            tool_call:        Mutex::new(()),
+            save_identity:    Mutex::new(None),
             editor_pid:       AtomicU32::new(0),
             log,
             mini_cache:       Mutex::new(None),

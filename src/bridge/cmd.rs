@@ -162,7 +162,7 @@ pub enum BridgeResult {
     /// Several games are running (they all run as `fm.exe`) and no PID was
     /// given. Nothing was attached; the UI asks which one to use.
     ChooseGame(Vec<crate::process::RunningGame>),
-    GamesDiscovered(Vec<crate::process::RunningGame>),
+    GamesDiscovered(Option<Vec<crate::process::RunningGame>>),
     /// fm.exe still alive but the save got unloaded, replaced by another
     /// save (its identity changed) or returned to the main menu. Caller
     /// should wipe entity state, including Undo, and wait.

@@ -80,10 +80,10 @@ outside `VersionedSchemas`:
   (`contract_vtable_rva`, `module_header_hash`), gated in
   `src/debug/tools/contracts.rs:14` the same way.
 
-They are not detected. On every detected build they stay unavailable, and
-they do not count towards the Complete/Partial outcomes below. After the
-`GameBuild` change, those `== GameBuild::Fm27Steam` checks must remain true
-only for the recorded FM27 Steam build (test required, see Phase 1).
+They are not detected and do not count towards the Complete/Partial outcomes
+below. They require the recorded FM27 Steam address set and storefront plus
+their exact witnessed module hash, independently of recognition status. FM27
+Steam's unpinned fingerprint therefore does not disable these hash-gated features.
 
 ## Schema split (Phase 1)
 
@@ -123,7 +123,8 @@ pub enum Recognition { Recorded, Detected(DetectionOutcome) }
 with associated constants (`GameBuild::FM24_STEAM`, `FM24_EPIC`, `FM26_STEAM`,
 `FM27_STEAM`, `FM27_GAMEPASS`) for the recorded builds and tests, and derived
 `PartialEq` over all fields. A detected build therefore never compares equal
-to a recorded constant, which keeps the policy/contract gates recorded-only.
+to a recorded constant; recorded-build feature gates ignore recognition while
+retaining their address, storefront and exact module-hash checks.
 No schema is ever built at runtime, so nothing is leaked or interned.
 
 Call sites (about 300 uses of `schemas()`): `fm.schemas()` and
@@ -156,14 +157,19 @@ a build available here gives the wrong answer, and record the change here:
   PA encoding (negative range codes count as valid).
 - **Staff:** 128 entries, at least 95% with a valid name, unique non-zero UID
   and date of birth in range.
-- **Clubs:** 128 entries, at least 95% with a valid name. Where the address
-  set has a non-zero `full_finance_vtable_rva`, at least one sampled or
-  scanned club must carry that class and decode plausible budget values.
-- **Related records:** for sampled players with a contract pointer, at least
-  90% must resolve and decode the contract. Where `rva_stadium_base` is
-  non-zero, the stadium chain must resolve and its first entries decode.
+- **Clubs:** 128 entries, at least 95% with a valid name.
+- **Club finance:** where `full_finance_vtable_rva` is non-zero, scan at most
+  4096 clubs spread evenly over the array, stopping at the first matching finance
+  class whose transfer budget decodes through the club panel's signed i32 path
+  and is non-negative. Otherwise the check is not applicable.
+- **Contracts:** sample only successfully read players with a non-null contract
+  pointer; at least 90% must resolve and decode the contract. If none has a
+  contract, pass with "not applicable: no sampled player has a contract".
+- **Stadium:** not implemented and reported as not applicable: the stadium root
+  chain has no schema mapping, and nothing reads `rva_stadium_base` at runtime yet.
 - Every dereference uses the existing pointer and range checks; a read error
-  counts as a failed sample, never a panic.
+  counts as a failed sample, except players that could not be read are excluded
+  from the contract sample. Read errors never panic.
 
 The gate's report names each check, its count and pass rate, so a refusal
 message can name the failing step.

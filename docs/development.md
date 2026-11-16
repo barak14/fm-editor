@@ -222,6 +222,10 @@ hash, pinning, candidate order, chosen address set, status and last gate checks.
 it is not the GUI worker's validation state. Attach diagnostics also log the hash
 and selection via the game-detection log above.
 
+Before every write, on all builds (including pinned builds), the worker re-reads
+the save identity. A changed or unavailable identity blocks the write and
+invalidates the previous editing context.
+
 To exercise the unpinned path on a recorded build, launch a **debug build** with
 `FME_IGNORE_FINGERPRINT=1`. Release builds ignore this environment variable. The
 override removes fingerprint pinning, not validation or write guards; it must not

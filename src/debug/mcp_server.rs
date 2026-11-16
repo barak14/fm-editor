@@ -137,6 +137,11 @@ async fn call_tool(name: &str, args: Value, state: &DebugState) -> Result<Value,
         .unwrap_or(0);
     state.last_activity_ms.store(now_ms, Ordering::Relaxed);
 
+    let _call = state.tool_call.lock().unwrap_or_else(|e| e.into_inner());
+    if !matches!(name, "attach_status" | "read_logs" | "get_known_schema") {
+        attach::require_validated_save(state)?;
+    }
+
     let text = match name {
         "attach_status"       => attach::run(args, state)?,
         "snapshot_player_contract" => contracts::run(args, state)?,
@@ -354,4 +359,35 @@ fn tool_list() -> Value {
             }
         }
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn memory_tools_require_attachment_before_decoding_arguments() {
+        let state = DebugState::new(super::super::new_log(), 7799);
+        for name in [
+            "snapshot_player_contract",
+            "preview_club_policy_trial",
+            "get_entity_address",
+            "search_entities",
+            "dump_struct",
+            "probe_range",
+            "scan_for_value",
+            "follow_pointers",
+            "probe_pointer_chain",
+            "compare_entities",
+            "read_name_debug",
+            "read_entity_fields",
+        ] {
+            let error = call_tool(name, json!({}), &state).await.unwrap_err();
+            assert!(
+                error.contains("Call attach_status first"),
+                "{name}: {error}"
+            );
+        }
+        assert!(call_tool("read_logs", json!({}), &state).await.is_ok());
+    }
 }

@@ -205,7 +205,7 @@ fn supported(fm: &FmProcess) -> Result<&'static PolicyLayout, String> {
 }
 
 fn layout_for(build: GameBuild, hash: u64, windows: bool) -> Result<&'static PolicyLayout, String> {
-    if !windows || build != GameBuild::FM27_STEAM || hash != WINDOWS_STEAM.hash {
+    if !windows || !build.same_recorded_build(GameBuild::FM27_STEAM) || hash != WINDOWS_STEAM.hash {
         return Err("Policy trial unsupported for this platform/build/fingerprint".into());
     }
     Ok(&WINDOWS_STEAM)
@@ -1038,15 +1038,20 @@ mod tests {
         assert!(layout_for(GameBuild::FM27_STEAM, WINDOWS_STEAM.hash, false).is_err());
         assert!(layout_for(GameBuild::FM27_GAMEPASS, WINDOWS_STEAM.hash, true).is_err());
         for recorded in GameBuild::ALL {
-            assert!(
-                layout_for(
-                    GameBuild::detected(recorded.recorded, recorded.storefront()),
-                    WINDOWS_STEAM.hash,
-                    true,
-                )
-                .is_err()
+            let detected = GameBuild::detected(recorded.recorded, recorded.storefront());
+            assert_eq!(
+                layout_for(detected, WINDOWS_STEAM.hash, true).is_ok(),
+                recorded == GameBuild::FM27_STEAM
             );
+            assert!(layout_for(detected, 0, true).is_err());
+            assert!(layout_for(detected, WINDOWS_STEAM.hash ^ 1, true).is_err());
+            assert!(layout_for(detected, WINDOWS_STEAM.hash, false).is_err());
         }
+        let detected_gamepass = GameBuild::detected(
+            GameBuild::FM27_STEAM.recorded,
+            crate::game_version::Storefront::GamePass,
+        );
+        assert!(layout_for(detected_gamepass, WINDOWS_STEAM.hash, true).is_err());
     }
 
     #[test]

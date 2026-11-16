@@ -11,7 +11,9 @@ use crate::player::is_valid_ptr;
 type ReadMemory<'a> = dyn Fn(u64, usize) -> Result<Vec<u8>, String> + 'a;
 
 fn inspection(build: GameBuild, hash: u64) -> Result<&'static ContractInspection, String> {
-    if build != GameBuild::FM27_STEAM || hash != STEAM_INSPECTION.module_header_hash {
+    if !build.same_recorded_build(GameBuild::FM27_STEAM)
+        || hash != STEAM_INSPECTION.module_header_hash
+    {
         return Err(
             "Contract inspection unsupported for this build/fingerprint; no conversion is enabled"
                 .into(),
@@ -393,14 +395,19 @@ mod tests {
             );
             assert!(inspection(build, 0).is_err());
             assert!(inspection(build, STEAM_INSPECTION.module_header_hash ^ 1).is_err());
-            assert!(
-                inspection(
-                    GameBuild::detected(build.recorded, build.storefront()),
-                    STEAM_INSPECTION.module_header_hash,
-                )
-                .is_err()
+            let detected = GameBuild::detected(build.recorded, build.storefront());
+            assert_eq!(
+                inspection(detected, STEAM_INSPECTION.module_header_hash).is_ok(),
+                build == GameBuild::FM27_STEAM
             );
+            assert!(inspection(detected, 0).is_err());
+            assert!(inspection(detected, STEAM_INSPECTION.module_header_hash ^ 1).is_err());
         }
+        let detected_gamepass = GameBuild::detected(
+            GameBuild::FM27_STEAM.recorded,
+            crate::game_version::Storefront::GamePass,
+        );
+        assert!(inspection(detected_gamepass, STEAM_INSPECTION.module_header_hash).is_err());
         assert!(
             GameBuild::FM27_STEAM
                 .schemas()

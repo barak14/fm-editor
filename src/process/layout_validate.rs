@@ -1,20 +1,22 @@
 //! Read-only decoding gate for a candidate set of module addresses.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use crate::bridge::entity_load::{load_club_view, read_club_field_u32, resolve_club_sub_ptr};
 use crate::fields::Encoding;
+use crate::game_version::GameBuild;
 use crate::player::{self, is_valid_ptr};
 use crate::staff;
 
-use super::FmProcess;
+use super::{DetectionStatus, FmProcess};
 
 const PLAYER_SAMPLES: usize = 256;
 const STAFF_SAMPLES: usize = 128;
 const CLUB_SAMPLES: usize = 128;
+const FINANCE_SAMPLES: usize = 4096;
 const ENTITY_PERCENT: u8 = 95;
 const CONTRACT_PERCENT: u8 = 90;
-const MAX_TRANSFER_BUDGET: u64 = 10_000_000_000;
 
 pub struct GateCheck {
     pub name: &'static str,
@@ -218,6 +220,113 @@ fn contract_valid(record: &player::PlayerRecord) -> bool {
             .is_some()
 }
 
+fn contract_sample(record: Option<&player::PlayerRecord>) -> Option<bool> {
+    let record = record?;
+    (record.field_u64("p_contract_ptr")? != 0).then(|| contract_valid(record))
+}
+
+fn score_contracts(samples: &[bool]) -> GateCheck {
+    if samples.is_empty() {
+        not_applicable("contracts", "no sampled player has a contract")
+    } else {
+        score("contracts", samples, CONTRACT_PERCENT)
+    }
+}
+
+fn finance_budget_valid(raw: u32) -> bool {
+    raw as i32 >= 0
+}
+
+fn candidate_counts(fm: &FmProcess) -> Option<(usize, usize, usize)> {
+    let addresses = fm.addresses();
+    let (humans, _, humans_count) =
+        array(fm, addresses.rva_humans_data, addresses.rva_humans_end).ok()?;
+    let (staff, _, staff_count) =
+        array(fm, addresses.rva_staff_data, addresses.rva_staff_end).ok()?;
+    let (clubs, _, clubs_count) =
+        array(fm, addresses.rva_clubs_data, addresses.rva_clubs_end).ok()?;
+    if ![humans, staff, clubs].into_iter().all(is_valid_ptr)
+        || !(1000..=2_000_000).contains(&humans_count)
+        || !(1000..=2_000_000).contains(&staff_count)
+        || !(100..=200_000).contains(&clubs_count)
+    {
+        return None;
+    }
+    for index in 0..clubs_count.min(8) {
+        entry(fm, clubs, index, 1).ok()?;
+    }
+    Some((humans_count, staff_count, clubs_count))
+}
+
+/// Select the first plausible candidate while waiting for a save.
+pub fn select_waiting_candidate(fm: &mut FmProcess) -> bool {
+    let original = fm.build;
+    for candidate in GameBuild::candidates(original.version(), original.storefront()) {
+        fm.build = GameBuild::detected(candidate, original.storefront());
+        if candidate_counts(fm).is_some() {
+            return true;
+        }
+    }
+    fm.build = original;
+    false
+}
+
+fn stable_candidate_counts(
+    mut read: impl FnMut() -> Option<(usize, usize, usize)>,
+    pause: impl FnOnce(Duration),
+) -> bool {
+    let Some(first) = read() else {
+        return false;
+    };
+    pause(Duration::from_millis(200));
+    read() == Some(first)
+}
+
+/// Validate the current save, trying stable fallback candidates for unpinned builds.
+pub fn validate_save(fm: &mut FmProcess) -> Result<Option<String>, String> {
+    let report = run_gate(fm);
+    let passed = report.passed();
+    let summary = report.summary();
+    let first_failure = report.first_failure().map(|check| check.name);
+    fm.detection.gate = Some(report);
+    if fm.detection.pinned {
+        return Ok((!passed).then(|| format!("Layout validation warning: {summary}")));
+    }
+    let mut failures = vec![format!("{}: {summary}", fm.build.schema_name())];
+    if !passed {
+        let initial = fm.build;
+        for candidate in GameBuild::candidates(initial.version(), initial.storefront()) {
+            if std::ptr::eq(candidate, initial.recorded) {
+                continue;
+            }
+            fm.build = GameBuild::detected(candidate, initial.storefront());
+            if !stable_candidate_counts(|| candidate_counts(fm), std::thread::sleep) {
+                continue;
+            }
+            let report = run_gate(fm);
+            let passed = report.passed();
+            failures.push(format!("{}: {}", fm.build.schema_name(), report.summary()));
+            fm.detection.gate = Some(report);
+            if passed {
+                fm.detection.chosen = Some(fm.build.schema_name());
+                fm.detection.status = DetectionStatus::Validated;
+                return Ok(None);
+            }
+        }
+        let message = format!(
+            "Layout validation failed ({}): {}",
+            first_failure.unwrap_or("unknown check"),
+            failures.join("\n")
+        );
+        fm.detection.chosen = None;
+        fm.detection.status = DetectionStatus::Failed(message.clone());
+        return Err(message);
+    }
+    fm.detection.chosen = Some(fm.build.schema_name());
+    fm.detection.status = DetectionStatus::Validated;
+    Ok(None)
+}
+
 /// Validate the attached process's current build (fm.build / fm.addresses()).
 pub fn run_gate(fm: &FmProcess) -> GateReport {
     let layout = fm.schemas();
@@ -228,7 +337,6 @@ pub fn run_gate(fm: &FmProcess) -> GateReport {
     let mut player_samples = Vec::new();
     let mut contract_samples = Vec::new();
     let mut player_note = humans.as_ref().err().cloned();
-    let mut contract_note = None;
     let contracts_mapped = layout
         .field("p_contract_ptr")
         .and_then(|field| field.offset)
@@ -237,6 +345,9 @@ pub fn run_gate(fm: &FmProcess) -> GateReport {
         for index in indices(count, PLAYER_SAMPLES) {
             let record = entry(fm, data, index, layout.player_struct_size)
                 .and_then(|ptr| player::read_player_at(fm, ptr, index));
+            if contracts_mapped {
+                contract_samples.extend(contract_sample(record.as_ref().ok()));
+            }
             match record {
                 Ok(record) => {
                     player_samples.push(PlayerSample {
@@ -256,27 +367,10 @@ pub fn run_gate(fm: &FmProcess) -> GateReport {
                             }
                         }),
                     });
-                    if contracts_mapped {
-                        match record.field_u64("p_contract_ptr") {
-                            Some(0) => {}
-                            Some(_) => contract_samples.push(contract_valid(&record)),
-                            None => {
-                                contract_samples.push(false);
-                                remember_error(
-                                    &mut contract_note,
-                                    "unreadable contract pointer".into(),
-                                );
-                            }
-                        }
-                    }
                 }
                 Err(error) => {
                     player_samples.push(PlayerSample::default());
-                    remember_error(&mut player_note, error.clone());
-                    if contracts_mapped {
-                        contract_samples.push(false);
-                        remember_error(&mut contract_note, error);
-                    }
+                    remember_error(&mut player_note, error);
                 }
             }
         }
@@ -329,7 +423,7 @@ pub fn run_gate(fm: &FmProcess) -> GateReport {
         let mut passed = 0;
         let mut note = clubs.as_ref().err().cloned();
         if let Ok((data, _, count)) = clubs {
-            for index in 0..count {
+            for index in indices(count, FINANCE_SAMPLES) {
                 sampled += 1;
                 let result = entry(fm, data, index, layout.club_read_size).and_then(|ptr| {
                     let finance = resolve_club_sub_ptr(fm, ptr, "finance")
@@ -341,7 +435,7 @@ pub fn run_gate(fm: &FmProcess) -> GateReport {
                     let vtable = fm.read_u64(range(finance, 8)?)?;
                     let budget = read_club_field_u32(fm, ptr, "c_transfer_budget")
                         .ok_or("unreadable transfer budget")?;
-                    Ok(vtable == expected && u64::from(budget) <= MAX_TRANSFER_BUDGET)
+                    Ok(vtable == expected && finance_budget_valid(budget))
                 });
                 match result {
                     Ok(true) => {
@@ -363,9 +457,7 @@ pub fn run_gate(fm: &FmProcess) -> GateReport {
         }
     };
     let contracts = if contracts_mapped {
-        let mut check = score("contracts", &contract_samples, CONTRACT_PERCENT);
-        check.note = contract_note;
-        check
+        score_contracts(&contract_samples)
     } else {
         not_applicable("contracts", "no player contract pointer for this build")
     };
@@ -536,5 +628,109 @@ mod tests {
         assert!(range(u64::MAX, 8).is_err());
         assert!(range(0x7FFF_FFFF_FFFE, 8).is_err());
         assert!(range(0x20000, 8).is_ok());
+    }
+
+    #[test]
+    fn finance_budget_is_signed() {
+        assert!(finance_budget_valid(0));
+        assert!(finance_budget_valid(1_000_000));
+        assert!(finance_budget_valid(i32::MAX as u32));
+        assert!(!finance_budget_valid((-1i32) as u32));
+        assert!(!finance_budget_valid(i32::MIN as u32));
+    }
+
+    #[test]
+    fn finance_sampling_is_bounded_and_spread() {
+        let sample = indices(200_000, FINANCE_SAMPLES);
+        assert_eq!(sample.len(), 4096);
+        assert_eq!(sample.first(), Some(&0));
+        assert_eq!(sample.last(), Some(&199_999));
+        assert!(sample.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn no_contracts_is_not_applicable() {
+        let check = score_contracts(&[]);
+        assert!(check.ok);
+        assert_eq!(check.sampled, 0);
+        assert_eq!(
+            check.note.as_deref(),
+            Some("not applicable: no sampled player has a contract")
+        );
+        assert!(!score_contracts(&[false]).ok);
+        assert!(score_contracts(&[true]).ok);
+    }
+
+    #[test]
+    fn contracts_sample_only_successful_players_with_nonnull_pointers() {
+        let build = GameBuild::FM26_STEAM;
+        let mut record = player::PlayerRecord {
+            build,
+            addr: 0x20000,
+            index: 0,
+            name: None,
+            raw: vec![0; build.schemas().player_struct_size],
+            person_shift: 0,
+            contract_raw: None,
+            contract_addr: None,
+            club_name: None,
+            club_addr: None,
+            nationality: None,
+            birthplace: None,
+            languages: None,
+            game_date: None,
+            injuries: player::ListState::Unmapped,
+            absences: player::ListState::Unmapped,
+            relations: player::ListState::Unmapped,
+            clauses: player::ListState::Unmapped,
+        };
+        let failed: Result<player::PlayerRecord, String> = Err("unreadable player".into());
+        let mut samples = Vec::new();
+        samples.extend(contract_sample(failed.as_ref().ok()));
+        samples.extend(contract_sample(Some(&record)));
+        assert!(samples.is_empty());
+
+        let crate::fields::FieldLocation::Direct { offset, .. } = build
+            .schemas()
+            .field("p_contract_ptr")
+            .unwrap()
+            .offset
+            .unwrap()
+        else {
+            panic!("expected a direct contract pointer");
+        };
+        let offset = offset as usize;
+        record.raw[offset..offset + 8].copy_from_slice(&0x30000u64.to_le_bytes());
+        samples.extend(contract_sample(Some(&record)));
+        assert_eq!(samples, vec![false]);
+    }
+
+    #[test]
+    fn fallback_requires_two_matching_plausible_reads() {
+        let counts = Some((103_516, 49_197, 33_471));
+        for (second, expected) in [
+            (counts, true),
+            (Some((103_517, 49_197, 33_471)), false),
+            (None, false),
+        ] {
+            let mut reads = [counts, second].into_iter();
+            let mut paused = false;
+            assert_eq!(
+                stable_candidate_counts(
+                    || reads.next().unwrap(),
+                    |duration| {
+                        assert_eq!(duration, Duration::from_millis(200));
+                        paused = true;
+                    }
+                ),
+                expected
+            );
+            assert!(paused);
+            assert!(reads.next().is_none());
+        }
+        assert!(!stable_candidate_counts(
+            || None,
+            |_| panic!("must not wait")
+        ));
     }
 }

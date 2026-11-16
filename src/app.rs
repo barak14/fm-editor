@@ -1,6 +1,6 @@
 //! FmEditorApp — main application state and eframe::App implementation.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -133,7 +133,7 @@ pub struct FmEditorApp {
     /// none chosen yet). Cleared once a game is attached.
     game_choices: Vec<RunningGame>,
     auto_connect: bool,
-    rejected_pid: Option<u32>,
+    rejected_pids: HashSet<u32>,
     last_ping: Instant,
     last_auto_connect: Instant,
 
@@ -223,7 +223,7 @@ impl FmEditorApp {
             window_branch: None,
             game_choices: Vec::new(),
             auto_connect: true,
-            rejected_pid: None,
+            rejected_pids: HashSet::new(),
             last_ping: Instant::now(),
             last_auto_connect: Instant::now() - std::time::Duration::from_secs(10),
             player_search: PlayerSearchState::default(),
@@ -362,7 +362,6 @@ impl FmEditorApp {
             match result {
                 BridgeResult::Connected(pid, build, counts, game_date) => {
                     self.attached_build = Some(build);
-                    self.rejected_pid = None;
                     self.game_date = game_date;
                     self.clear_entity_state("Save ready: previous editing context closed");
                     self.clear_cache();
@@ -390,12 +389,12 @@ impl FmEditorApp {
                     self.reject_layout(pid, message);
                 }
                 BridgeResult::GamesDiscovered(games) => {
-                    if self.rejected_pid.is_none()
+                    if self.rejected_pids.is_empty()
                         || !matches!(self.conn, ConnState::Disconnected | ConnState::ReadOnly(_))
                     {
                         continue;
                     }
-                    let games = auto_connect_candidates(&mut self.rejected_pid, games);
+                    let games = auto_connect_candidates(&mut self.rejected_pids, games);
                     match games.as_slice() {
                         [] => {}
                         [game] => self.bridge.send(BridgeCmd::Attach(Some(game.pid))),
@@ -445,7 +444,7 @@ impl FmEditorApp {
                     self.entity_counts = Some(counts);
                 }
                 BridgeResult::PingFail
-                    if self.rejected_pid.is_some()
+                    if !self.rejected_pids.is_empty()
                         && matches!(self.conn, ConnState::Disconnected) => {}
                 BridgeResult::PingFail => {
                     self.game_date = None;
@@ -538,7 +537,7 @@ impl FmEditorApp {
 
     fn reject_layout(&mut self, pid: u32, message: String) {
         self.conn = ConnState::Disconnected;
-        self.rejected_pid = Some(pid);
+        self.rejected_pids.insert(pid);
         self.game_date = None;
         self.attached_build = None;
         self.game_choices.clear();
@@ -548,7 +547,7 @@ impl FmEditorApp {
     }
 
     fn request_attach(&mut self, pid: Option<u32>) {
-        self.rejected_pid = None;
+        self.rejected_pids.clear();
         self.game_date = None;
         self.bridge.send(BridgeCmd::Attach(pid));
     }
@@ -561,7 +560,7 @@ impl FmEditorApp {
             && self.last_auto_connect.elapsed().as_secs() >= 3
         {
             self.last_auto_connect = Instant::now();
-            if self.rejected_pid.is_some() {
+            if !self.rejected_pids.is_empty() {
                 self.bridge.send(BridgeCmd::DiscoverGames);
             } else {
                 self.game_date = None;
@@ -1250,7 +1249,7 @@ impl eframe::App for FmEditorApp {
                                 egui::Color32::from_rgb(244, 67, 54),
                                 "\u{25CF} Disconnected",
                             );
-                            let label = if self.rejected_pid.is_some() {
+                            let label = if !self.rejected_pids.is_empty() {
                                 "Reconnect"
                             } else {
                                 "Load Game"
@@ -1363,7 +1362,7 @@ impl eframe::App for FmEditorApp {
                 }
                 ui.separator();
                 if let Some((ref msg, t)) = self.status_msg {
-                    if self.rejected_pid.is_some() || t.elapsed().as_secs() < 8 {
+                    if !self.rejected_pids.is_empty() || t.elapsed().as_secs() < 8 {
                         ui.label(msg.as_str());
                     }
                 }
@@ -2109,15 +2108,16 @@ fn patch_player_list_buffers(player: &mut PlayerRecord, addr: u64, bytes: &[u8])
 }
 
 fn auto_connect_candidates(
-    rejected_pid: &mut Option<u32>,
-    games: Vec<RunningGame>,
+    rejected_pids: &mut HashSet<u32>,
+    games: Option<Vec<RunningGame>>,
 ) -> Vec<RunningGame> {
-    if !games.iter().any(|game| Some(game.pid) == *rejected_pid) {
-        *rejected_pid = None;
-    }
+    let Some(games) = games else {
+        return Vec::new();
+    };
+    rejected_pids.retain(|pid| games.iter().any(|game| game.pid == *pid));
     games
         .into_iter()
-        .filter(|game| Some(game.pid) != *rejected_pid)
+        .filter(|game| !rejected_pids.contains(&game.pid))
         .collect()
 }
 
@@ -2137,17 +2137,17 @@ mod tests {
             pid,
             build: GameBuild::FM27_STEAM,
         };
-        assert!(auto_connect_candidates(&mut app.rejected_pid, vec![game(123)]).is_empty());
+        assert!(auto_connect_candidates(&mut app.rejected_pids, Some(vec![game(123)])).is_empty());
         assert_eq!(
-            auto_connect_candidates(&mut app.rejected_pid, vec![game(123), game(456)]),
+            auto_connect_candidates(&mut app.rejected_pids, Some(vec![game(123), game(456)])),
             vec![game(456)]
         );
-        assert_eq!(app.rejected_pid, Some(123));
+        assert_eq!(app.rejected_pids, HashSet::from([123]));
         assert_eq!(
-            auto_connect_candidates(&mut app.rejected_pid, vec![game(456)]),
+            auto_connect_candidates(&mut app.rejected_pids, Some(vec![game(456)])),
             vec![game(456)]
         );
-        assert_eq!(app.rejected_pid, None);
+        assert!(app.rejected_pids.is_empty());
     }
 
     #[test]
@@ -2155,7 +2155,32 @@ mod tests {
         let mut app = FmEditorApp::from_settings(AppSettings::default());
         app.reject_layout(123, "Player decoding failed".into());
         app.request_attach(Some(123));
-        assert_eq!(app.rejected_pid, None);
+        assert!(app.rejected_pids.is_empty());
+    }
+
+    #[test]
+    fn multiple_layout_rejections_survive_discovery_errors_and_are_pruned_on_success() {
+        let mut app = FmEditorApp::from_settings(AppSettings::default());
+        app.reject_layout(123, "players failed".into());
+        app.reject_layout(456, "clubs failed".into());
+        let game = |pid| RunningGame {
+            pid,
+            build: GameBuild::FM27_STEAM,
+        };
+        for _ in 0..3 {
+            assert!(
+                auto_connect_candidates(&mut app.rejected_pids, Some(vec![game(123), game(456)]))
+                    .is_empty()
+            );
+        }
+        assert!(auto_connect_candidates(&mut app.rejected_pids, None).is_empty());
+        assert_eq!(app.rejected_pids, HashSet::from([123, 456]));
+        assert!(auto_connect_candidates(&mut app.rejected_pids, Some(vec![game(456)])).is_empty());
+        assert_eq!(app.rejected_pids, HashSet::from([456]));
+        assert_eq!(
+            auto_connect_candidates(&mut app.rejected_pids, Some(vec![game(123), game(456)])),
+            vec![game(123)]
+        );
     }
 
     #[test]

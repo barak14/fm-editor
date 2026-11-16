@@ -348,10 +348,7 @@ fn read_u64_le(buf: &[u8], off: usize) -> u64 {
 }
 
 fn supports_fm27_steam_membership(build: GameBuild) -> bool {
-    let steam = GameBuild::FM27_STEAM;
-    std::ptr::eq(build.recorded, steam.recorded)
-        && build.addresses() == steam.addresses()
-        && build.storefront() == Storefront::Steam
+    build.same_recorded_build(GameBuild::FM27_STEAM)
 }
 
 fn supports_club_membership(build: GameBuild) -> bool {

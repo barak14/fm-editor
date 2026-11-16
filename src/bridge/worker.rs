@@ -13,9 +13,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 
 use crate::club;
-use crate::game_version::GameBuild;
 use crate::player;
-use crate::process::layout_validate::run_gate;
+use crate::process::layout_validate::{select_waiting_candidate, validate_save};
 use crate::process::{self, DetectionStatus, FmProcess};
 use crate::staff;
 
@@ -98,73 +97,6 @@ fn counts_are_plausible(ac: &ArrayCache) -> bool {
     (1000..=2_000_000).contains(&ac.humans_count)
         && (1000..=2_000_000).contains(&ac.staff_count)
         && (100..=200_000).contains(&ac.clubs_count)
-}
-
-fn plausible_candidate(caches: &[ArrayCache]) -> Option<usize> {
-    caches.iter().position(counts_are_plausible)
-}
-
-fn select_waiting_candidate(fm: &mut FmProcess) -> ArrayCache {
-    let original = fm.build;
-    let candidates = GameBuild::candidates(original.version(), original.storefront());
-    let mut caches: Vec<_> = candidates
-        .iter()
-        .map(|&candidate| {
-            fm.build = GameBuild::detected(candidate, original.storefront());
-            build_cache(fm)
-        })
-        .collect();
-    if let Some(index) = plausible_candidate(&caches) {
-        fm.build = GameBuild::detected(candidates[index], original.storefront());
-        caches.swap_remove(index)
-    } else {
-        fm.build = original;
-        build_cache(fm)
-    }
-}
-
-fn validate_save(fm: &mut FmProcess) -> Result<Option<String>, String> {
-    let report = run_gate(fm);
-    let passed = report.passed();
-    let summary = report.summary();
-    let first_failure = report.first_failure().map(|check| check.name);
-    fm.detection.gate = Some(report);
-    if fm.detection.pinned {
-        return Ok((!passed).then(|| format!("Layout validation warning: {summary}")));
-    }
-    let mut failures = vec![format!("{}: {summary}", fm.build.schema_name())];
-    if !passed {
-        let initial = fm.build;
-        for candidate in GameBuild::candidates(initial.version(), initial.storefront()) {
-            if std::ptr::eq(candidate, initial.recorded) {
-                continue;
-            }
-            fm.build = GameBuild::detected(candidate, initial.storefront());
-            if !counts_are_plausible(&build_cache(fm)) {
-                continue;
-            }
-            let report = run_gate(fm);
-            let passed = report.passed();
-            failures.push(format!("{}: {}", fm.build.schema_name(), report.summary()));
-            fm.detection.gate = Some(report);
-            if passed {
-                fm.detection.chosen = Some(fm.build.schema_name());
-                fm.detection.status = DetectionStatus::Validated;
-                return Ok(None);
-            }
-        }
-        let message = format!(
-            "Layout validation failed ({}): {}",
-            first_failure.unwrap_or("unknown check"),
-            failures.join("\n")
-        );
-        fm.detection.chosen = None;
-        fm.detection.status = DetectionStatus::Failed(message.clone());
-        return Err(message);
-    }
-    fm.detection.chosen = Some(fm.build.schema_name());
-    fm.detection.status = DetectionStatus::Validated;
-    Ok(None)
 }
 
 fn write_context_ready(
@@ -261,14 +193,16 @@ pub(super) fn worker_loop(
 
     while let Ok(cmd) = rx.recv() {
         match cmd {
-            BridgeCmd::DiscoverGames => {
-                let _ = tx.send(BridgeResult::GamesDiscovered(
-                    process::running_games().unwrap_or_default(),
-                ));
-            }
+            BridgeCmd::DiscoverGames => match process::running_games() {
+                Ok(games) => {
+                    let _ = tx.send(BridgeResult::GamesDiscovered(Some(games)));
+                }
+                Err(error) => {
+                    let _ = tx.send(BridgeResult::GamesDiscovered(None));
+                    let _ = tx.send(BridgeResult::Error(error));
+                }
+            },
             BridgeCmd::Attach(pid) => {
-                policy_epoch = next_policy_epoch();
-                gate_passed = false;
                 let attached = match pid {
                     Some(pid) => FmProcess::attach_pid(pid),
                     None => match process::running_games() {
@@ -285,6 +219,8 @@ pub(super) fn worker_loop(
                 };
                 match attached {
                     Ok(process) => {
+                        policy_epoch = next_policy_epoch();
+                        gate_passed = false;
                         let pid = process.pid;
                         let build = process.build;
                         let game_date = process.game_date();
@@ -475,11 +411,10 @@ pub(super) fn worker_loop(
                     } else {
                         let pid = f.pid;
                         let previous_build = f.build;
-                        let current = if cache.is_none() && !f.detection.pinned {
-                            select_waiting_candidate(f)
-                        } else {
-                            build_cache(f)
-                        };
+                        if cache.is_none() && !f.detection.pinned {
+                            select_waiting_candidate(f);
+                        }
+                        let current = build_cache(f);
                         if f.build != previous_build {
                             last_counts = None;
                         }
@@ -663,24 +598,6 @@ mod tests {
     const SAVE_A: [u64; 3] = [0x2_56F3_0040, 0x2_56F3_01B0, 0x2_56F3_0320];
     const SAVE_B: [u64; 3] = [0x2_57CB_0930, 0x2_57CB_07C0, 0x2_57CB_0650];
     const COUNTS: (usize, usize, usize) = (103_516, 49_197, 33_471);
-
-    #[test]
-    fn candidate_selection_uses_first_plausible_cache() {
-        assert_eq!(plausible_candidate(&[]), None);
-        assert_eq!(plausible_candidate(&[arrays((0, 0, 0), &[])]), None);
-        assert_eq!(
-            plausible_candidate(&[
-                arrays(COUNTS, &[]),
-                arrays(COUNTS, &SAVE_B),
-                arrays(COUNTS, &SAVE_A),
-            ]),
-            Some(1)
-        );
-        assert_eq!(
-            plausible_candidate(&[arrays(COUNTS, &SAVE_A), arrays(COUNTS, &SAVE_B)]),
-            Some(0)
-        );
-    }
 
     #[test]
     fn writes_require_a_gate_pass_for_the_current_unpinned_save() {

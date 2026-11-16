@@ -43,6 +43,10 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
     }) {
         *guard = None;
         *state.mini_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *state
+            .save_identity
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = None;
     }
     let current = guard.as_ref().map(|fm| fm.pid);
     let target = match (requested, current) {
@@ -63,11 +67,19 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
             Ok(fm) => {
                 // Entries in the mini cache belong to the previous process.
                 *state.mini_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                *state
+                    .save_identity
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = None;
                 *guard = Some(fm);
             }
             Err(e) => {
                 *guard = None;
                 *state.mini_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                *state
+                    .save_identity
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner()) = None;
                 return Ok(serde_json::to_string_pretty(&json!({
                     "attached":      false,
                     "error":         e,
@@ -78,7 +90,8 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
         }
     }
 
-    let fm = guard.as_ref().ok_or("not attached")?;
+    let fm = guard.as_mut().ok_or("not attached")?;
+    refresh_save_gate(fm, state);
     let players = player::humans_array(fm).map(|(_, _, c)| c).unwrap_or(0);
     let staff = staff::staff_array(fm).map(|(_, _, c)| c).unwrap_or(0);
     let clubs = club::clubs_array(fm).map(|(_, _, c)| c).unwrap_or(0);
@@ -102,6 +115,85 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
         "clubs":         clubs
     }))
     .unwrap())
+}
+
+pub(in crate::debug) fn require_validated_save(state: &DebugState) -> Result<(), String> {
+    let mut guard = state.fm.lock().unwrap_or_else(|e| e.into_inner());
+    let fm = guard
+        .as_mut()
+        .ok_or("Not attached. Call attach_status first.")?;
+    refresh_save_gate(fm, state);
+    gate_access(&fm.detection)
+}
+
+fn gate_access(report: &DetectionReport) -> Result<(), String> {
+    if report.pinned || matches!(report.status, DetectionStatus::Validated) {
+        return Ok(());
+    }
+    match &report.status {
+        DetectionStatus::Failed(message) => Err(message.clone()),
+        _ => Err("Layout validation pending (save_identity check): no readable loaded save. Call attach_status after loading a save.".into()),
+    }
+}
+
+fn save_identity(fm: &FmProcess) -> Option<Vec<u64>> {
+    let (data, _, count) = club::clubs_array(fm).ok()?;
+    let size = count.min(8).checked_mul(8)?;
+    if size == 0 || !player::is_valid_ptr(data) {
+        return None;
+    }
+    let end = data.checked_add(u64::try_from(size).ok()?)?;
+    if !player::is_valid_ptr(end) {
+        return None;
+    }
+    let bytes = fm.read_bytes(data, size).ok()?;
+    if bytes.len() != size {
+        return None;
+    }
+    let identity: Vec<_> = bytes
+        .chunks_exact(8)
+        .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("8-byte chunk")))
+        .collect();
+    identity
+        .iter()
+        .all(|&ptr| player::is_valid_ptr(ptr))
+        .then_some(identity)
+}
+
+fn refresh_save_gate(fm: &mut FmProcess, state: &DebugState) {
+    use crate::process::layout_validate::{select_waiting_candidate, validate_save};
+
+    if fm.detection.pinned {
+        return;
+    }
+    let mut checked = state
+        .save_identity
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut identity = save_identity(fm);
+    if identity.is_none() || *checked != identity {
+        identity = if select_waiting_candidate(fm) {
+            save_identity(fm)
+        } else {
+            None
+        };
+    }
+    if identity.is_some() && *checked == identity {
+        return;
+    }
+    *state.mini_cache.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *checked = None;
+    if identity.is_none() {
+        fm.detection.status = DetectionStatus::AwaitingSave;
+        fm.detection.chosen = None;
+        fm.detection.gate = None;
+        return;
+    }
+    let initial = fm.build;
+    if validate_save(fm).is_err() {
+        fm.build = initial;
+    }
+    *checked = save_identity(fm);
 }
 
 fn detection_json(report: &DetectionReport) -> Value {
@@ -177,5 +269,31 @@ mod tests {
         assert_eq!(value["gate"]["passed"], false);
         assert_eq!(value["gate"]["checks"][0]["name"], "players");
         assert_eq!(value["gate"]["checks"][0]["note"], "unreadable");
+        assert_eq!(gate_access(&report).unwrap_err(), "players failed");
+    }
+
+    #[test]
+    fn entity_access_requires_a_passed_gate_unless_pinned() {
+        let mut report = DetectionReport {
+            release: GameVersion::Fm27,
+            storefront: Storefront::Epic,
+            module_hash: None,
+            pinned: false,
+            candidates: vec![],
+            chosen: None,
+            status: DetectionStatus::AwaitingSave,
+            gate: None,
+        };
+        assert!(
+            gate_access(&report)
+                .unwrap_err()
+                .contains("save_identity check")
+        );
+        report.status = DetectionStatus::Validated;
+        assert!(gate_access(&report).is_ok());
+        report.status = DetectionStatus::Failed("contracts failed".into());
+        assert_eq!(gate_access(&report).unwrap_err(), "contracts failed");
+        report.pinned = true;
+        assert!(gate_access(&report).is_ok());
     }
 }

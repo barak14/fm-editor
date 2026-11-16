@@ -84,10 +84,7 @@ pub struct GameBuild {
 
 impl PartialEq for GameBuild {
     fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self.recorded, other.recorded)
-            && self.addresses == other.addresses
-            && self.recognition == other.recognition
-            && self.storefront == other.storefront
+        self.same_recorded_build(*other) && self.recognition == other.recognition
     }
 }
 
@@ -104,6 +101,12 @@ impl std::fmt::Debug for GameBuild {
 }
 
 impl GameBuild {
+    pub fn same_recorded_build(self, other: Self) -> bool {
+        std::ptr::eq(self.recorded, other.recorded)
+            && self.addresses == other.addresses
+            && self.storefront == other.storefront
+    }
+
     pub const FM24_STEAM: Self = Self {
         recorded: &fm24::FM24_STEAM,
         addresses: fm24::FM24_STEAM.addresses,
@@ -351,6 +354,24 @@ mod tests {
         assert_ne!(original, altered);
         assert!(std::ptr::eq(original.recorded, altered.recorded));
         assert_eq!(original, original);
+    }
+
+    #[test]
+    fn recorded_build_identity_ignores_only_recognition() {
+        let recorded = GameBuild::FM27_STEAM;
+        let detected = GameBuild::detected(recorded.recorded, recorded.storefront());
+        assert_ne!(recorded, detected);
+        assert!(detected.same_recorded_build(recorded));
+        assert!(recorded.same_recorded_build(detected));
+        for other in GameBuild::ALL {
+            assert_eq!(detected.same_recorded_build(other), other == recorded);
+        }
+        let mut altered = detected;
+        altered.addresses = GameBuild::FM27_GAMEPASS.addresses();
+        assert!(!altered.same_recorded_build(recorded));
+        altered = detected;
+        altered.storefront = Storefront::GamePass;
+        assert!(!altered.same_recorded_build(recorded));
     }
 
     #[test]
