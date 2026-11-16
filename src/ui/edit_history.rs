@@ -489,7 +489,7 @@ mod tests {
             session_id: 2,
             entity: EntityRef {
                 kind: EntityKind::Player,
-                build: GameBuild::Fm27Steam,
+                build: GameBuild::FM27_STEAM,
                 address: 0x123456,
                 index: 5,
                 uid: Some(123),
@@ -595,7 +595,7 @@ mod tests {
             let mut other = report.entity.clone();
             match changed {
                 0 => other.kind = EntityKind::Staff,
-                1 => other.build = GameBuild::Fm24Steam,
+                1 => other.build = GameBuild::FM24_STEAM,
                 2 => other.address += 8,
                 _ => other.uid = Some(124),
             }

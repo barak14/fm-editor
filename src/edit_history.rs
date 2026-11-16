@@ -544,7 +544,7 @@ mod tests {
     fn entity() -> EntityRef {
         EntityRef {
             kind: EntityKind::Club,
-            build: GameBuild::Fm27Steam,
+            build: GameBuild::FM27_STEAM,
             address: 0x20000,
             index: 3,
             uid: Some(42),
@@ -864,7 +864,7 @@ mod uncertainty_retention_tests {
             session_id: 1,
             entity: EntityRef {
                 kind: EntityKind::Club,
-                build: GameBuild::Fm27Steam,
+                build: GameBuild::FM27_STEAM,
                 address: 0x20000,
                 index: 0,
                 uid: None,

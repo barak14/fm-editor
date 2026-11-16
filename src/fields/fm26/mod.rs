@@ -2,7 +2,7 @@
 //! `FIELDS` const slice; this module re-exports them under the
 //! `PLAYER_FIELDS` / `STAFF_FIELDS` / `CLUB_FIELDS` names used by the
 //! version-agnostic code in `fields/mod.rs`, and exposes the `FM26`
-//! const that collects all of them into a `VersionedSchemas`.
+//! const that collects all of them into a `ReleaseLayout`.
 //!
 //! FM24 gets its own parallel module at `fields::fm24`.
 
@@ -19,7 +19,34 @@ pub(crate) use stadium::FIELDS as STADIUM_FIELDS;
 pub(crate) use staff::FIELDS as STAFF_FIELDS;
 pub(crate) use staff::STAFF_SUB_RECORDS;
 
-use crate::fields::VersionedSchemas;
+use crate::fields::{ModuleAddresses, RecordedBuild, ReleaseLayout};
+use crate::game_version::{GameVersion, Storefront};
+
+pub static FM26: ReleaseLayout = ReleaseLayout {
+    player_fields: PLAYER_FIELDS,
+    staff_fields: STAFF_FIELDS,
+    club_fields: CLUB_FIELDS,
+    stadium_fields: STADIUM_FIELDS,
+
+    player_sub_records: PLAYER_SUB_RECORDS,
+    staff_sub_records: STAFF_SUB_RECORDS,
+    club_sub_records: CLUB_SUB_RECORDS,
+    stadium_sub_records: &[],
+    player_lists: None,
+    morale_labels: &[],
+    person_profile: None,
+
+    player_struct_size: 992, // 0x3E0 — covers block-2 name sub-records at 0x3D0/0x3D8
+    staff_struct_size: 576,
+    club_read_size: 0x2000,
+    stadium_entity_stride: 0xC0, // 192 bytes, flat inline array (was 0x170 before the 2026-10 patch)
+
+    human_manager_shift: staff::HUMAN_MANAGER_SHIFT,
+    manager_shifted_fields: staff::MANAGER_SHIFTED_FIELDS,
+    player_person_offset: 0,
+    player_coach_shift: 0,
+    age_reference_year: 2026,
+};
 
 /// FM26 schema — every layout fact the editor needs to read fm.exe.
 ///
@@ -46,37 +73,25 @@ use crate::fields::VersionedSchemas;
 /// (0x4DE7A08, 0x4DF9EB8/0x4DF9EC0) do NOT point to the human manager.
 /// The actual human manager is the LAST entry of the ptr_staff array —
 /// see `bridge::entity_load::load_human_manager`.
-pub static FM26: VersionedSchemas = VersionedSchemas {
-    player_fields: PLAYER_FIELDS,
-    staff_fields: STAFF_FIELDS,
-    club_fields: CLUB_FIELDS,
-    stadium_fields: STADIUM_FIELDS,
-
-    player_sub_records: PLAYER_SUB_RECORDS,
-    staff_sub_records: STAFF_SUB_RECORDS,
-    club_sub_records: CLUB_SUB_RECORDS,
-    stadium_sub_records: &[],
-    player_lists: None,
-    morale_labels: &[],
-    person_profile: None,
-
-    player_struct_size: 992, // 0x3E0 — covers block-2 name sub-records at 0x3D0/0x3D8
-    staff_struct_size: 576,
-    club_read_size: 0x2000,
-    stadium_entity_stride: 0xC0, // 192 bytes, flat inline array (was 0x170 before the 2026-10 patch)
-
-    human_manager_shift: staff::HUMAN_MANAGER_SHIFT,
-    manager_shifted_fields: staff::MANAGER_SHIFTED_FIELDS,
-
-    // Shifted +0x4F7F0 by the 2026-10 FM26 patch (was 0x4DF9E88 etc.).
-    rva_humans_data: 0x4E49678,
-    rva_humans_end: 0x4E49680,
-    rva_staff_data: 0x4E496C0,
-    rva_staff_end: 0x4E496C8,
-    rva_clubs_data: 0x4E49830,
-    rva_clubs_end: 0x4E49838,
-    rva_stadium_base: 0x4E495F8,
-    rva_current_date: 0,
+pub static FM26_STEAM: RecordedBuild = RecordedBuild {
+    version: GameVersion::Fm26,
+    storefront: Storefront::Steam,
+    layout: &FM26,
+    schema_name: "FM26_STEAM",
+    addresses: ModuleAddresses {
+        // Shifted +0x4F7F0 by the 2026-10 FM26 patch (was 0x4DF9E88 etc.).
+        rva_humans_data: 0x4E49678,
+        rva_humans_end: 0x4E49680,
+        rva_staff_data: 0x4E496C0,
+        rva_staff_end: 0x4E496C8,
+        rva_clubs_data: 0x4E49830,
+        rva_clubs_end: 0x4E49838,
+        rva_stadium_base: 0x4E495F8,
+        rva_current_date: 0,
+        full_finance_vtable_rva: 0,
+        player_coach_vtable_rva: 0,
+        human_manager_vtable_rva: 0,
+    },
 
     // FMRTE's reference counts for FM26 (used by scan_arrays.rs to
     // validate RVA candidates).
@@ -88,11 +103,5 @@ pub static FM26: VersionedSchemas = VersionedSchemas {
     // FNV-1a hash of the first 64 KB of game_plugin.dll for the FM26 build
     // this schema was verified against (2026-10 patch). Attach fails with a
     // version-mismatch error when the running DLL hashes differently.
-    known_dll_hash: 0x3039_4AFE_C086_E3DC,
-    full_finance_vtable_rva: 0,
-    player_coach_vtable_rva: 0,
-    player_person_offset: 0,
-    player_coach_shift: 0,
-    human_manager_vtable_rva: 0,
-    age_reference_year: 2026,
+    fingerprint: 0x3039_4AFE_C086_E3DC,
 };

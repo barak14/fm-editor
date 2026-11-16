@@ -16,7 +16,7 @@ pub enum PlayerTab {
 }
 
 pub fn show(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     today: Option<crate::game_date::GameDate>,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
@@ -96,7 +96,7 @@ pub fn show(
 // ---------------------------------------------------------------------------
 
 fn show_overview(
-    schemas: &'static fields::VersionedSchemas,
+    schemas: &'static fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -231,7 +231,7 @@ fn show_overview(
 }
 
 fn show_personal_details(
-    schemas: &'static fields::VersionedSchemas,
+    schemas: &'static fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -377,7 +377,7 @@ fn show_personal_details(
 }
 
 fn show_reputation(
-    schemas: &'static fields::VersionedSchemas,
+    schemas: &'static fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -437,7 +437,7 @@ fn potential_attribute_raw(player: &PlayerRecord) -> Vec<u8> {
 // ---------------------------------------------------------------------------
 
 fn show_positions_traits(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -509,7 +509,7 @@ fn show_positions_traits(
 }
 
 fn show_traits(
-    schemas: &'static fields::VersionedSchemas,
+    schemas: &'static fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -522,7 +522,7 @@ fn show_traits(
 /// Position familiarities on a responsive pitch, attacking towards the top.
 #[cfg(test)]
 fn show_positions_formation(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -533,7 +533,7 @@ fn show_positions_formation(
 }
 
 fn show_positions_formation_with_height(
-    schemas: &'static fields::VersionedSchemas,
+    schemas: &'static fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -590,7 +590,7 @@ fn show_positions_formation_with_height(
 }
 
 fn pos_cell(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     key: Option<&str>,
     player: &mut PlayerRecord,
@@ -625,7 +625,7 @@ fn pos_cell(
 
 /// Render traits as checkbox groups arranged in 4 columns to mirror the FM26 UI.
 fn show_traits_checkboxes(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -754,7 +754,7 @@ fn render_trait_column(ui: &mut egui::Ui, groups: &[(&str, &[u8])], mask: &mut u
 // ---------------------------------------------------------------------------
 
 fn show_contract(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     edits: &mut Vec<FieldEdit>,
@@ -862,7 +862,7 @@ fn show_unverified_contract_type(ui: &mut egui::Ui) {
 
 /// Medical/list data is loaded by the bridge, never inferred from a cached search row.
 fn show_player_status(
-    schemas: &'static fields::VersionedSchemas,
+    schemas: &'static fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &mut PlayerRecord,
     addr: u64,
@@ -1067,7 +1067,7 @@ fn lift_ban_edit(absence: &Absence, date: Option<GameDate>) -> Option<FieldEdit>
 }
 
 fn show_nationality_ties(
-    schemas: &'static fields::VersionedSchemas,
+    schemas: &'static fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &PlayerRecord,
 ) {
@@ -1136,7 +1136,7 @@ fn show_nationality_ties(
     }
 }
 
-fn contract_offset(schemas: &'static fields::VersionedSchemas, key: &str) -> Option<usize> {
+fn contract_offset(schemas: &'static fields::ReleaseLayout, key: &str) -> Option<usize> {
     match schemas.field(key)?.offset? {
         fields::FieldLocation::SubRecord {
             container: "contract",
@@ -1148,7 +1148,7 @@ fn contract_offset(schemas: &'static fields::VersionedSchemas, key: &str) -> Opt
 }
 
 fn transfer_listing_edit(
-    schemas: &'static fields::VersionedSchemas,
+    schemas: &'static fields::ReleaseLayout,
     raw: &[u8],
     base: u64,
     listed: bool,
@@ -1188,7 +1188,7 @@ fn transfer_listing_edit(
 }
 
 fn show_listing(
-    schemas: &'static fields::VersionedSchemas,
+    schemas: &'static fields::ReleaseLayout,
     ui: &mut egui::Ui,
     raw: &mut [u8],
     base: u64,
@@ -1254,7 +1254,7 @@ fn show_listing(
 }
 
 fn show_clauses(
-    schemas: &'static fields::VersionedSchemas,
+    schemas: &'static fields::ReleaseLayout,
     ui: &mut egui::Ui,
     player: &PlayerRecord,
     edits: &mut Vec<FieldEdit>,
@@ -1384,7 +1384,7 @@ fn squad_status_name(code: u8) -> Option<&'static str> {
 
 /// Read a DateDayYear field from `raw` by schema key and format as "DD Mon YYYY".
 fn fmt_date_field(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     raw: &[u8],
     key: &str,
 ) -> Option<String> {
@@ -1439,7 +1439,7 @@ mod tests {
     fn default_and_expanded_columns_keep_long_personal_values_clear_of_attributes() {
         for width in [916.0, 966.0, 1220.0] {
             let ctx = egui::Context::default();
-            let mut player = growing_player(crate::game_version::GameBuild::Fm27Steam);
+            let mut player = growing_player(crate::game_version::GameBuild::FM27_STEAM);
             let schemas = player.build.schemas();
             let ethnicity = schemas.field("p_ethnicity").unwrap().offset.unwrap();
             player.raw[ethnicity.offset() as usize] = ethnicity.encode_u8(2);
@@ -1470,7 +1470,7 @@ mod tests {
     }
 
     fn show_overview_attributes(
-        schemas: &'static fields::VersionedSchemas,
+        schemas: &'static fields::ReleaseLayout,
         ui: &mut egui::Ui,
         player: &mut PlayerRecord,
         addr: u64,
@@ -1584,7 +1584,7 @@ mod tests {
 
     #[test]
     fn transfer_listing_bytes_preserve_flags_padding_and_raw_game_date() {
-        let schemas = crate::game_version::GameBuild::Fm27Steam.schemas();
+        let schemas = crate::game_version::GameBuild::FM27_STEAM.schemas();
         let now = GameDate::from_raw(0x07EA1AC2).unwrap();
         let date = schemas.offset_of("p_list_date").unwrap();
         let flags = schemas.offset_of("p_list_flags").unwrap();
@@ -1629,7 +1629,7 @@ mod tests {
     #[test]
     fn fm24_renders_list_sections_and_fm26_renders_no_new_player_sections() {
         use crate::game_version::GameBuild;
-        for build in [GameBuild::Fm24Steam, GameBuild::Fm26Steam] {
+        for build in [GameBuild::FM24_STEAM, GameBuild::FM26_STEAM] {
             let ctx = egui::Context::default();
             let mut player = fixture_player(build);
             let mut edits = vec![];
@@ -1646,7 +1646,7 @@ mod tests {
             for s in output.shapes {
                 collect_text(&s.shape, &mut text);
             }
-            if build == GameBuild::Fm24Steam {
+            if build == GameBuild::FM24_STEAM {
                 // FM24 has mapped lists: the status, medical and clause
                 // sections render, still without writes from rendering.
                 for present in ["Morale", "Transfer Value", "Injuries", "Unavailability"] {
@@ -1686,8 +1686,8 @@ mod tests {
             (output, edits)
         }
         for build in [
-            crate::game_version::GameBuild::Fm24Steam,
-            crate::game_version::GameBuild::Fm27Steam,
+            crate::game_version::GameBuild::FM24_STEAM,
+            crate::game_version::GameBuild::FM27_STEAM,
         ] {
             let ctx = egui::Context::default();
             crate::ui::navigation::set_editing_enabled(&ctx, true);
@@ -1766,7 +1766,7 @@ mod tests {
     #[test]
     fn morale_is_numeric_schema_encoded_and_invalid_values_never_render_clamp() {
         use crate::game_version::GameBuild;
-        for build in [GameBuild::Fm24Steam, GameBuild::Fm27Steam] {
+        for build in [GameBuild::FM24_STEAM, GameBuild::FM27_STEAM] {
             let location = build.schemas().field("p_morale").unwrap().offset.unwrap();
             for value in [0, 1, 10, 20, 255] {
                 let ctx = egui::Context::default();
@@ -1802,7 +1802,7 @@ mod tests {
     fn status_is_in_personal_column_immediately_after_identity() {
         for width in [966.0, 1220.0, 280.0] {
             let ctx = egui::Context::default();
-            let mut player = growing_player(crate::game_version::GameBuild::Fm27Steam);
+            let mut player = growing_player(crate::game_version::GameBuild::FM27_STEAM);
             let output = profile_frame(
                 &ctx,
                 &mut player,
@@ -1828,7 +1828,7 @@ mod tests {
                 for state in [0, 1, 2] {
                     let ctx = egui::Context::default();
                     crate::ui::navigation::set_editing_enabled(&ctx, enabled);
-                    let mut player = fixture_player(GameBuild::Fm27Steam);
+                    let mut player = fixture_player(GameBuild::FM27_STEAM);
                     player.raw[player.build.schemas().offset_of("p_morale").unwrap()] = 15;
                     player.injuries = match state {
                         0 => ListState::Unmapped,
@@ -1912,7 +1912,7 @@ mod tests {
             }
         }
 
-        let build = crate::game_version::GameBuild::Fm26Steam;
+        let build = crate::game_version::GameBuild::FM26_STEAM;
         let schemas = build.schemas();
         for invalid_right_cell in [false, true] {
             for width in [1200.0, 280.0] {
@@ -2072,7 +2072,7 @@ mod tests {
     #[test]
     fn potential_preview_leaves_ordinary_overview_fields_unchanged() {
         let ctx = egui::Context::default();
-        let mut player = growing_player(crate::game_version::GameBuild::Fm27Steam);
+        let mut player = growing_player(crate::game_version::GameBuild::FM27_STEAM);
         let before = player.raw.clone();
         let mut ordinary = Vec::new();
         for preview in [false, true] {
@@ -2125,7 +2125,7 @@ mod tests {
     fn narrow_overview_scroll_reaches_every_mapped_attribute_and_personal_section() {
         for width in [280.0, 400.0] {
             let ctx = egui::Context::default();
-            let mut player = growing_player(crate::game_version::GameBuild::Fm27Steam);
+            let mut player = growing_player(crate::game_version::GameBuild::FM27_STEAM);
             let mut tab = PlayerTab::Overview;
             let size = egui::vec2(width, 700.0);
             let mut visible = std::collections::HashSet::new();
@@ -2198,7 +2198,7 @@ mod tests {
     }
 
     fn populated_positions(invalid: bool) -> PlayerRecord {
-        let mut player = fixture_player(crate::game_version::GameBuild::Fm26Steam);
+        let mut player = fixture_player(crate::game_version::GameBuild::FM26_STEAM);
         for (index, field) in player
             .build
             .schemas()
@@ -2362,9 +2362,9 @@ mod tests {
     fn potential_copy_uses_build_encoding_and_preserves_invalid_and_no_growth() {
         use crate::game_version::GameBuild;
         for build in [
-            GameBuild::Fm24Steam,
-            GameBuild::Fm26Steam,
-            GameBuild::Fm27Steam,
+            GameBuild::FM24_STEAM,
+            GameBuild::FM26_STEAM,
+            GameBuild::FM27_STEAM,
         ] {
             let mut player = growing_player(build);
             let original = player.raw.clone();
@@ -2395,7 +2395,7 @@ mod tests {
     #[test]
     fn potential_state_is_bound_to_build_address_and_uid() {
         use crate::game_version::GameBuild;
-        let mut player = growing_player(GameBuild::Fm26Steam);
+        let mut player = growing_player(GameBuild::FM26_STEAM);
         let id = potential_attributes_id(&player, player.addr);
         assert_ne!(id, potential_attributes_id(&player, player.addr + 8));
         player.addr += 8;
@@ -2404,7 +2404,7 @@ mod tests {
         let off = player.build.schemas().offset_of("p_uid").unwrap();
         player.raw[off..off + 4].copy_from_slice(&123u32.to_le_bytes());
         assert_ne!(id, potential_attributes_id(&player, player.addr));
-        player.build = GameBuild::Fm27Steam;
+        player.build = GameBuild::FM27_STEAM;
         assert_ne!(id, potential_attributes_id(&player, player.addr));
     }
 
@@ -2414,7 +2414,7 @@ mod tests {
             for enabled in [false, true] {
                 let ctx = egui::Context::default();
                 crate::ui::navigation::set_editing_enabled(&ctx, enabled);
-                let mut player = growing_player(crate::game_version::GameBuild::Fm26Steam);
+                let mut player = growing_player(crate::game_version::GameBuild::FM26_STEAM);
                 let original = player.raw.clone();
                 let projected = ratings::extrapolate_player(&player);
                 let (key, old, new) = projected
@@ -2491,7 +2491,7 @@ mod tests {
     fn overview_toggle_is_reachable_in_full_profile_but_absent_from_positions() {
         for size in [egui::vec2(1200.0, 800.0), egui::vec2(280.0, 700.0)] {
             let ctx = egui::Context::default();
-            let mut player = growing_player(crate::game_version::GameBuild::Fm26Steam);
+            let mut player = growing_player(crate::game_version::GameBuild::FM26_STEAM);
             let mut tab = PlayerTab::Overview;
             let mut reachable = false;
             for _ in 0..25 {
@@ -2574,7 +2574,7 @@ mod tests {
         for width in [1200.0, 280.0] {
             let ctx = egui::Context::default();
             crate::ui::navigation::set_editing_enabled(&ctx, true);
-            let mut player = growing_player(crate::game_version::GameBuild::Fm26Steam);
+            let mut player = growing_player(crate::game_version::GameBuild::FM26_STEAM);
             let id = potential_attributes_id(&player, player.addr);
             let output = frame(&ctx, &mut player, width, vec![]);
             let toggle = painted_text(&output)
@@ -2645,7 +2645,7 @@ mod tests {
     #[test]
     fn sidebar_sized_overview_keeps_long_ethnicity_in_a_single_stack() {
         let ctx = egui::Context::default();
-        let mut player = growing_player(crate::game_version::GameBuild::Fm27Steam);
+        let mut player = growing_player(crate::game_version::GameBuild::FM27_STEAM);
         let ethnicity = player
             .build
             .schemas()
@@ -2961,8 +2961,8 @@ mod tests {
     #[test]
     fn fm27_contract_render_has_no_unsupported_apply_or_edits() {
         for build in [
-            crate::game_version::GameBuild::Fm27Steam,
-            crate::game_version::GameBuild::Fm27GamePass,
+            crate::game_version::GameBuild::FM27_STEAM,
+            crate::game_version::GameBuild::FM27_GAMEPASS,
         ] {
             for width in [1200.0, 280.0] {
                 for length in [None, Some(0), Some(7), Some(196)] {

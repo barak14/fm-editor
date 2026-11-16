@@ -71,7 +71,7 @@ impl NamePicker {
 /// caller maps edits to physical addresses (player-coach and human-manager
 /// shifts) exactly as for every other field.
 pub fn names_section(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     picker: &mut NamePicker,
     slots: &[(&'static str, &'static str); 3],
@@ -207,7 +207,7 @@ mod history_metadata_tests {
 
     #[test]
     fn clearing_a_common_name_records_human_values_and_preserves_shared_text() {
-        let field = crate::game_version::GameBuild::Fm27Steam
+        let field = crate::game_version::GameBuild::FM27_STEAM
             .schemas()
             .field("p_name_common_sub")
             .unwrap();

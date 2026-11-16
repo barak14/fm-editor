@@ -7,7 +7,7 @@
 //! at filtered subsets. Re-run whenever a game patch or a different build
 //! (e.g. Game Pass) shifts the arrays — auto-detects the game via
 //! `FmProcess::attach()` (pass `--pid <n>` when several fm.exe are running)
-//! and pulls reference counts from that process's `VersionedSchemas`.
+//! and pulls reference counts from that process's `RecordedBuild`.
 //!
 //! The scan covers every writable, non-executable section of the module,
 //! read from the PE section table in the process's memory, so it finds the
@@ -107,7 +107,6 @@ fn main() {
         fm.build.display_name(), fm.pid, fm.module_path, fm.gp_base
     );
 
-    let schema = fm.schemas();
     let gp_size = fm.gp_end - fm.gp_base;
 
     let all_sections = match sections(&fm) {
@@ -139,10 +138,10 @@ fn main() {
     println!(
         "Schema {} RVAs: humans 0x{:X}, staff 0x{:X}, clubs 0x{:X}, stadium root 0x{:X}",
         fm.build.schema_name(),
-        schema.rva_humans_data,
-        schema.rva_staff_data,
-        schema.rva_clubs_data,
-        schema.rva_stadium_base,
+        fm.addresses().rva_humans_data,
+        fm.addresses().rva_staff_data,
+        fm.addresses().rva_clubs_data,
+        fm.addresses().rva_stadium_base,
     );
 
     // `--date DAY/YEAR` (repeatable): list static DateDayYear words for that
@@ -164,10 +163,10 @@ fn main() {
     let total: u64 = ranges.iter().map(|(s, e)| e.saturating_sub(*s)).sum();
     println!("\nScanning {} MB for pointer pairs...", total / (1024 * 1024));
 
-    let fmrte_clubs = schema.fmrte_clubs;
-    let fmrte_players = schema.fmrte_players;
-    let fmrte_staff = schema.fmrte_staff;
-    let fmrte_humans = schema.fmrte_humans;
+    let fmrte_clubs = fm.build.recorded.fmrte_clubs;
+    let fmrte_players = fm.build.recorded.fmrte_players;
+    let fmrte_staff = fm.build.recorded.fmrte_staff;
+    let fmrte_humans = fm.build.recorded.fmrte_humans;
     println!(
         "FMRTE reference counts for this version: clubs={fmrte_clubs} players={fmrte_players} staff={fmrte_staff} humans={fmrte_humans}"
     );

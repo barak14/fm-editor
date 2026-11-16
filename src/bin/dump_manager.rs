@@ -7,8 +7,8 @@
 //!
 //! Auto-detects which game is running via `FmProcess::attach()`; pass
 //! `--pid <n>` when several fm.exe are running. RVAs and struct sizes come
-//! from that process's `VersionedSchemas` so the dump still works when a
-//! future version bump shifts them.
+//! from that process's module addresses and release layout so the dump still
+//! works when a future version bump shifts them.
 
 use fm_editor::process::FmProcess;
 
@@ -164,8 +164,8 @@ fn main() {
     let schema = fm.schemas();
 
     // Canonical discovery: last entry of ptr_staff.
-    let staff_data = fm.read_u64(fm.gp_base + schema.rva_staff_data).unwrap();
-    let staff_end = fm.read_u64(fm.gp_base + schema.rva_staff_end).unwrap();
+    let staff_data = fm.read_u64(fm.gp_base + fm.addresses().rva_staff_data).unwrap();
+    let staff_end = fm.read_u64(fm.gp_base + fm.addresses().rva_staff_end).unwrap();
     let count = (staff_end - staff_data) / 8;
     println!(
         "\nptr_staff: data=0x{staff_data:X} end=0x{staff_end:X} count={count}"

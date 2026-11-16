@@ -285,11 +285,11 @@ pub(super) fn load_entity_cache(
     // ------------------------------------------------------------------
     // Resolve membership only through the attached build's existing schema.
     // Game Pass inherits Steam layouts but has not been verified.
-    if fm.build != crate::game_version::GameBuild::Fm27GamePass {
+    if fm.build != crate::game_version::GameBuild::FM27_GAMEPASS {
         let clubs_by_addr: HashMap<u64, u32> = clubs.iter().map(|c| (c.addr, c.uid)).collect();
         for player in &mut players {
             let phys = |off| crate::player::player_phys_offset(schemas, off, player.person_shift);
-            if fm.build == crate::game_version::GameBuild::Fm27Steam {
+            if fm.build == crate::game_version::GameBuild::FM27_STEAM {
                 player.owning_club_id = crate::fields::resolve_sub_ptr_mapped(
                     fm,
                     player.addr,
@@ -347,7 +347,7 @@ fn read_u64_le(buf: &[u8], off: usize) -> u64 {
 }
 
 fn load_my_clubs(fm: &FmProcess, clubs: &[CachedClub]) -> Option<crate::cache::MyClubs> {
-    if fm.build != crate::game_version::GameBuild::Fm27Steam {
+    if fm.build != crate::game_version::GameBuild::FM27_STEAM {
         return None;
     }
     let manager = super::entity_load::load_human_manager(fm).ok()?;

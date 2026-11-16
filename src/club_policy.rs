@@ -2,7 +2,7 @@
 //! The opaque guard must accompany Apply AND Undo through WriteTracker.
 
 use crate::fields::fm27::policy::{PolicyLayout, WINDOWS_STEAM};
-use crate::fields::{SubRecordParent, VersionedSchemas};
+use crate::fields::{ModuleAddresses, ReleaseLayout, SubRecordParent};
 use crate::game_version::GameBuild;
 use crate::process::FmProcess;
 
@@ -108,7 +108,7 @@ fn pointer(bytes: &[u8], offset: usize) -> Result<u64, String> {
     Ok(p)
 }
 
-fn field(s: &'static VersionedSchemas, key: &str) -> Result<usize, String> {
+fn field(s: &'static ReleaseLayout, key: &str) -> Result<usize, String> {
     match s.field(key).and_then(|f| f.offset) {
         Some(crate::fields::FieldLocation::Direct { offset, .. }) => {
             usize::try_from(offset).map_err(|_| "Schema offset overflow".into())
@@ -205,7 +205,7 @@ fn supported(fm: &FmProcess) -> Result<&'static PolicyLayout, String> {
 }
 
 fn layout_for(build: GameBuild, hash: u64, windows: bool) -> Result<&'static PolicyLayout, String> {
-    if !windows || build != GameBuild::Fm27Steam || hash != WINDOWS_STEAM.hash {
+    if !windows || build != GameBuild::FM27_STEAM || hash != WINDOWS_STEAM.hash {
         return Err("Policy trial unsupported for this platform/build/fingerprint".into());
     }
     Ok(&WINDOWS_STEAM)
@@ -220,6 +220,7 @@ pub(crate) fn prepare(
     prepare_with(
         &|a, n| fm.read_bytes(a, n),
         fm.schemas(),
+        fm.addresses(),
         layout,
         fm.gp_base,
         fm.pid,
@@ -230,7 +231,8 @@ pub(crate) fn prepare(
 
 fn prepare_with(
     read_fn: &Reader<'_>,
-    s: &'static VersionedSchemas,
+    s: &'static ReleaseLayout,
+    addresses: ModuleAddresses,
     layout: &PolicyLayout,
     module: u64,
     pid: u32,
@@ -242,8 +244,8 @@ fn prepare_with(
         read_fn,
         &mut evidence,
         module,
-        s.rva_clubs_data,
-        s.rva_clubs_end,
+        addresses.rva_clubs_data,
+        addresses.rva_clubs_end,
     )?;
     if identity.uid == 0 || identity.index >= count {
         return Err("Stale club index/UID".into());
@@ -300,13 +302,13 @@ fn prepare_with(
     }
     address(info, layout.policy_offset, 1)?;
     // Preserve the full packed date, including flags. A later day invalidates this trial and Undo.
-    if s.rva_current_date == 0 {
+    if addresses.rva_current_date == 0 {
         return Err("Unmapped current game date".into());
     }
     let date_bytes = take_named(
         read_fn,
         &mut evidence,
-        address(module, s.rva_current_date as usize, 4)?,
+        address(module, addresses.rva_current_date as usize, 4)?,
         4,
         "game date",
     )?;
@@ -315,8 +317,8 @@ fn prepare_with(
         read_fn,
         &mut evidence,
         module,
-        s.rva_staff_data,
-        s.rva_staff_end,
+        addresses.rva_staff_data,
+        addresses.rva_staff_end,
     )?;
     let shift = s.human_manager_shift;
     let staff_uid = field(s, "s_id")?
@@ -354,7 +356,7 @@ fn prepare_with(
         };
         if u64::from_le_bytes(part(&header, 0)?)
             != module
-                .checked_add(s.human_manager_vtable_rva)
+                .checked_add(addresses.human_manager_vtable_rva)
                 .ok_or("Vtable overflow")?
         {
             continue;
@@ -367,7 +369,7 @@ fn prepare_with(
             let mr = read(read_fn, manager, 0, (cp_offset + 8).max(staff_uid + 4))?;
             if u64::from_le_bytes(part(&mr, 0)?)
                 != module
-                    .checked_add(s.human_manager_vtable_rva)
+                    .checked_add(addresses.human_manager_vtable_rva)
                     .ok_or("Vtable overflow")?
             {
                 return Err("Manager class changed during preview".into());
@@ -591,13 +593,25 @@ mod tests {
             writes: Cell::new(0),
             unreadable: Cell::new(false),
         };
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         let l = &WINDOWS_STEAM;
-        m.put(MODULE + s.rva_clubs_data, &CLUBS.to_le_bytes());
-        m.put(MODULE + s.rva_clubs_end, &(CLUBS + 8).to_le_bytes());
+        m.put(
+            MODULE + GameBuild::FM27_STEAM.addresses().rva_clubs_data,
+            &CLUBS.to_le_bytes(),
+        );
+        m.put(
+            MODULE + GameBuild::FM27_STEAM.addresses().rva_clubs_end,
+            &(CLUBS + 8).to_le_bytes(),
+        );
         m.put(CLUBS, &CLUB.to_le_bytes());
-        m.put(MODULE + s.rva_staff_data, &STAFF.to_le_bytes());
-        m.put(MODULE + s.rva_staff_end, &(STAFF + 8).to_le_bytes());
+        m.put(
+            MODULE + GameBuild::FM27_STEAM.addresses().rva_staff_data,
+            &STAFF.to_le_bytes(),
+        );
+        m.put(
+            MODULE + GameBuild::FM27_STEAM.addresses().rva_staff_end,
+            &(STAFF + 8).to_le_bytes(),
+        );
         m.put(STAFF, &MANAGER.to_le_bytes());
         let info_sub = sub(s.club_sub_records, "info").unwrap();
         m.put(CLUB, &vec![0; info_sub.ptr_offset as usize + 8]);
@@ -609,7 +623,10 @@ mod tests {
         m.put(CLUB + info_sub.ptr_offset, &INFO.to_le_bytes());
         m.put(INFO, &vec![0xA5; info_sub.size]);
         m.put(INFO + l.policy_offset as u64, &vec![4; l.policy_len]);
-        m.put(MODULE + s.rva_current_date, &[0xC2, 0x1A, 0xEA, 0x07]);
+        m.put(
+            MODULE + GameBuild::FM27_STEAM.addresses().rva_current_date,
+            &[0xC2, 0x1A, 0xEA, 0x07],
+        );
         let cp = sub(s.staff_sub_records, "contract").unwrap();
         let ts = sub(s.staff_sub_records, "team").unwrap();
         let cs = sub(s.staff_sub_records, "club").unwrap();
@@ -617,7 +634,7 @@ mod tests {
         m.put(MANAGER, &vec![0; cpo as usize + 8]);
         m.put(
             MANAGER,
-            &(MODULE + s.human_manager_vtable_rva).to_le_bytes(),
+            &(MODULE + GameBuild::FM27_STEAM.addresses().human_manager_vtable_rva).to_le_bytes(),
         );
         let uid = field(s, "s_id").unwrap() + s.human_manager_shift;
         m.put(MANAGER + uid as u64, &29u32.to_le_bytes());
@@ -635,6 +652,7 @@ mod tests {
         let p = prepare_with(
             &|a, n| m.read(a, n),
             s,
+            GameBuild::FM27_STEAM.addresses(),
             l,
             MODULE,
             7,
@@ -684,7 +702,7 @@ mod tests {
 
     #[test]
     fn eligibility_follows_selected_club_identity_without_a_witness_uid_rule() {
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         for uid in [1, 42, u32::MAX] {
             let (m, p) = fixture();
             m.put(CLUB + field(s, "c_uid").unwrap() as u64, &uid.to_le_bytes());
@@ -692,6 +710,7 @@ mod tests {
             let proposal = prepare_with(
                 &|a, n| m.read(a, n),
                 s,
+                GameBuild::FM27_STEAM.addresses(),
                 &WINDOWS_STEAM,
                 MODULE,
                 7,
@@ -708,7 +727,7 @@ mod tests {
     #[test]
     fn multiple_managers_resolve_the_selected_club_and_bind_only_its_owner() {
         let (m, p) = fixture();
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         let contract = sub(s.staff_sub_records, "contract").unwrap();
         let team = sub(s.staff_sub_records, "team").unwrap();
         let club = sub(s.staff_sub_records, "club").unwrap();
@@ -727,7 +746,10 @@ mod tests {
             &(manager2 + person).to_le_bytes(),
         );
         m.put(STAFF + 8, &manager2.to_le_bytes());
-        m.put(MODULE + s.rva_staff_end, &(STAFF + 16).to_le_bytes());
+        m.put(
+            MODULE + GameBuild::FM27_STEAM.addresses().rva_staff_end,
+            &(STAFF + 16).to_le_bytes(),
+        );
         // The first human manages another club; the second owns this club.
         m.put(another_team, &vec![0; club.ptr_offset as usize + 8]);
         m.put(
@@ -738,6 +760,7 @@ mod tests {
         let proposal = prepare_with(
             &|a, n| m.read(a, n),
             s,
+            GameBuild::FM27_STEAM.addresses(),
             &WINDOWS_STEAM,
             MODULE,
             7,
@@ -798,7 +821,8 @@ mod tests {
             m.put(INFO + WINDOWS_STEAM.policy_offset as u64 + 3, &[code]);
             let result = prepare_with(
                 &|a, n| m.read(a, n),
-                GameBuild::Fm27Steam.schemas(),
+                GameBuild::FM27_STEAM.schemas(),
+                GameBuild::FM27_STEAM.addresses(),
                 &WINDOWS_STEAM,
                 MODULE,
                 7,
@@ -812,13 +836,17 @@ mod tests {
 
     #[test]
     fn invalid_game_dates_cannot_authorize_a_preview() {
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         for invalid in [[0, 0, 0, 0], [0, 0, 0xEA, 0x07], [0x6E, 0x01, 0xEA, 0x07]] {
             let (m, p) = fixture();
-            m.put(MODULE + s.rva_current_date, &invalid);
+            m.put(
+                MODULE + GameBuild::FM27_STEAM.addresses().rva_current_date,
+                &invalid,
+            );
             let error = prepare_with(
                 &|a, n| m.read(a, n),
                 s,
+                GameBuild::FM27_STEAM.addresses(),
                 &WINDOWS_STEAM,
                 MODULE,
                 7,
@@ -833,7 +861,7 @@ mod tests {
 
     #[test]
     fn manager_slot_or_class_changing_during_preparation_cannot_become_a_guard() {
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         for change_slot in [true, false] {
             let (m, p) = fixture();
             let slot_reads = Cell::new(0);
@@ -849,22 +877,34 @@ mod tests {
                 }
                 m.read(a, n)
             };
-            assert!(prepare_with(&reader, s, &WINDOWS_STEAM, MODULE, 7, 11, p.identity).is_err());
+            assert!(
+                prepare_with(
+                    &reader,
+                    s,
+                    GameBuild::FM27_STEAM.addresses(),
+                    &WINDOWS_STEAM,
+                    MODULE,
+                    7,
+                    11,
+                    p.identity
+                )
+                .is_err()
+            );
             assert_eq!(m.writes.get(), 0);
         }
     }
 
     #[test]
     fn stale_owner_identity_pointer_date_policy_and_reload_are_rejected_before_any_write() {
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         for at in [
             CLUBS,
             CLUB + field(s, "c_uid").unwrap() as u64,
             CLUB + sub(s.club_sub_records, "info").unwrap().ptr_offset,
             CONTRACT + WINDOWS_STEAM.contract_owner_offset as u64,
             TEAM + sub(s.staff_sub_records, "club").unwrap().ptr_offset,
-            MODULE + s.rva_current_date,
-            MODULE + s.rva_clubs_data,
+            MODULE + GameBuild::FM27_STEAM.addresses().rva_current_date,
+            MODULE + GameBuild::FM27_STEAM.addresses().rva_clubs_data,
             INFO + WINDOWS_STEAM.policy_offset as u64 + 1,
             MANAGER,
             MANAGER + (field(s, "s_id").unwrap() + s.human_manager_shift) as u64,
@@ -892,7 +932,7 @@ mod tests {
 
     #[test]
     fn missing_truncated_foreign_classes_and_unmanaged_records_do_not_produce_a_preview() {
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         for at in [INFO, CLUB, MANAGER, CONTRACT] {
             let (m, p) = fixture();
             m.bytes.borrow_mut().remove(&at);
@@ -900,6 +940,7 @@ mod tests {
                 prepare_with(
                     &|a, n| m.read(a, n),
                     s,
+                    GameBuild::FM27_STEAM.addresses(),
                     &WINDOWS_STEAM,
                     MODULE,
                     7,
@@ -915,6 +956,7 @@ mod tests {
             prepare_with(
                 &|a, n| m.read(a, n),
                 s,
+                GameBuild::FM27_STEAM.addresses(),
                 &WINDOWS_STEAM,
                 MODULE,
                 7,
@@ -932,6 +974,7 @@ mod tests {
             prepare_with(
                 &|a, n| m.read(a, n),
                 s,
+                GameBuild::FM27_STEAM.addresses(),
                 &WINDOWS_STEAM,
                 MODULE,
                 7,
@@ -948,6 +991,7 @@ mod tests {
                     b
                 }),
                 s,
+                GameBuild::FM27_STEAM.addresses(),
                 &WINDOWS_STEAM,
                 MODULE,
                 7,
@@ -989,10 +1033,10 @@ mod tests {
 
     #[test]
     fn policy_layout_never_inherits_another_storefront_platform_or_fingerprint() {
-        assert!(layout_for(GameBuild::Fm27Steam, WINDOWS_STEAM.hash, true).is_ok());
-        assert!(layout_for(GameBuild::Fm27Steam, 0, true).is_err());
-        assert!(layout_for(GameBuild::Fm27Steam, WINDOWS_STEAM.hash, false).is_err());
-        assert!(layout_for(GameBuild::Fm27GamePass, WINDOWS_STEAM.hash, true).is_err());
+        assert!(layout_for(GameBuild::FM27_STEAM, WINDOWS_STEAM.hash, true).is_ok());
+        assert!(layout_for(GameBuild::FM27_STEAM, 0, true).is_err());
+        assert!(layout_for(GameBuild::FM27_STEAM, WINDOWS_STEAM.hash, false).is_err());
+        assert!(layout_for(GameBuild::FM27_GAMEPASS, WINDOWS_STEAM.hash, true).is_err());
     }
 
     #[test]

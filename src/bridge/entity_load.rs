@@ -222,7 +222,7 @@ fn read_sub_bytes(
 fn resolve_club_sub_ptr(fm: &FmProcess, club_ptr: u64, id: SubRecordId) -> Option<u64> {
     let schema = fm.schemas();
     let ptr = resolve_sub_ptr(fm, club_ptr, id, schema.club_sub_records)?;
-    let rva = schema.full_finance_vtable_rva;
+    let rva = fm.addresses().full_finance_vtable_rva;
     if id == "finance" && rva != 0 && !fm.read_u64(ptr).is_ok_and(|vt| vt == fm.gp_base + rva) {
         return None;
     }
@@ -287,7 +287,7 @@ pub fn find_human_manager(fm: &FmProcess) -> Result<u64, String> {
     let gp_end = fm.gp_end;
 
     let schema = fm.schemas();
-    let (data, end, count) = fm.read_ptr_array(schema.rva_staff_data, schema.rva_staff_end)?;
+    let (data, end, count) = fm.read_ptr_array(fm.addresses().rva_staff_data, fm.addresses().rva_staff_end)?;
     if count == 0 {
         return Err("empty staff array".into());
     }
@@ -348,12 +348,11 @@ pub fn find_human_manager(fm: &FmProcess) -> Result<u64, String> {
         // FM27 has a verified human-manager class on Steam and Game Pass.
         // Generic staff can otherwise pass the shifted-name heuristic by
         // reading bytes in neighbouring objects.
-        if matches!(
-            fm.build,
-            crate::game_version::GameBuild::Fm27Steam | crate::game_version::GameBuild::Fm27GamePass
-        ) && schema.human_manager_vtable_rva != 0
+        if (fm.build == crate::game_version::GameBuild::FM27_STEAM
+            || fm.build == crate::game_version::GameBuild::FM27_GAMEPASS)
+            && fm.addresses().human_manager_vtable_rva != 0
         {
-            if gp_base.checked_add(schema.human_manager_vtable_rva) != Some(vtable) {
+            if gp_base.checked_add(fm.addresses().human_manager_vtable_rva) != Some(vtable) {
                 return false;
             }
             let Ok((identity, identity_shift)) = staff::read_staff_raw(fm, ptr) else { return false; };

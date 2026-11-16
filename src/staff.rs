@@ -134,8 +134,7 @@ pub fn read_staff_name(fm: &FmProcess, raw: &[u8]) -> Option<String> {
 
 /// Read the staff pointer array bounds.
 pub fn staff_array(fm: &FmProcess) -> Result<(u64, u64, usize), String> {
-    let schema = fm.schemas();
-    fm.read_ptr_array(schema.rva_staff_data, schema.rva_staff_end)
+    fm.read_ptr_array(fm.addresses().rva_staff_data, fm.addresses().rva_staff_end)
 }
 
 /// Read a staff struct at a known address.
@@ -148,7 +147,7 @@ pub fn read_staff_at(fm: &FmProcess, addr: u64, index: usize) -> Result<StaffRec
 /// `human_manager_shift` for an object of the human-manager class, else 0.
 pub fn identity_shift(fm: &FmProcess, addr: u64) -> usize {
     let schema = fm.schemas();
-    let rva = schema.human_manager_vtable_rva;
+    let rva = fm.addresses().human_manager_vtable_rva;
     if rva != 0 && fm.read_u64(addr).is_ok_and(|vt| vt == fm.gp_base + rva) {
         schema.human_manager_shift
     } else {
@@ -271,15 +270,15 @@ mod tests {
 
     #[test]
     fn records_decode_with_their_own_build() {
-        let versions = [GameBuild::Fm24Steam, GameBuild::Fm27Steam];
+        let versions = [GameBuild::FM24_STEAM, GameBuild::FM27_STEAM];
         let mut raw = vec![0; versions.iter().map(|v| v.schemas().staff_struct_size).max().unwrap()];
         let ca_offsets = versions.map(|v| v.schemas().offset_of("s_ca").unwrap());
         assert_ne!(ca_offsets[0], ca_offsets[1]);
         for (offset, value) in ca_offsets.into_iter().zip([123, 187]) {
             raw[offset] = value;
         }
-        let fm24 = StaffRecord { build: GameBuild::Fm24Steam, addr: 0, index: 0, raw, identity_shift: 0 };
-        let fm27 = StaffRecord { build: GameBuild::Fm27Steam, ..fm24.clone() };
+        let fm24 = StaffRecord { build: GameBuild::FM24_STEAM, addr: 0, index: 0, raw, identity_shift: 0 };
+        let fm27 = StaffRecord { build: GameBuild::FM27_STEAM, ..fm24.clone() };
         assert_eq!(fm24.ca(), 123);
         assert_eq!(fm27.ca(), 187);
         assert_eq!(fm24.ca(), 123);

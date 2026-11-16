@@ -22,7 +22,7 @@ sections into anonymous memory (file alignment 0x200 < page size), so
 backend takes the module size from the PE header's `SizeOfImage` (0x19E69000)
 instead of the file-backed span.
 
-Version gate: `known_dll_hash` is 0 (not calibrated); attach reports the hash.
+Version gate: `FM27_STEAM.fingerprint` is 0 (not calibrated); attach reports the hash.
 
 ### Windows contract inspection and policy trial, 2026-10-31
 
@@ -30,7 +30,7 @@ Windows Steam **27.0.0+2486695**, Steam build ID **26227640**. Module size is
 433,986,560 bytes; SHA-256 is
 `bc940e472418fc5c214208d7cf30fecf600f689b6f9d71c11ba19a2df0fe057f`.
 The existing editor header fingerprint is **0x74A331ED3E28B06C**. Its historical
-multiplier differs from standard FNV-1a and was not changed. `known_dll_hash`
+multiplier differs from standard FNV-1a and was not changed. `FM27_STEAM.fingerprint`
 remains zero: this narrow evidence does not calibrate or verify the whole schema.
 
 **Current contracts:** existing player +0x330 -> contract; contract +0x08 ->
@@ -707,8 +707,8 @@ player and every player-coach now has a name.
 ## Game Pass build
 
 The PC Game Pass (Xbox app) release of FM27 is a separate binary built on the
-Microsoft GDK instead of Steamworks. It has its own schema,
-`FM27_GAMEPASS` in `src/fields/fm27/mod.rs`, selected when the install is
+Microsoft GDK instead of Steamworks. It is a separate recorded build,
+`FM27_GAMEPASS` (a `RecordedBuild` using the `FM27` layout) in `src/fields/fm27/mod.rs`, selected when the install is
 recognised as Game Pass: a `MicrosoftGame.config` next to `fm.exe`, or a path
 under `XboxGames` or `WindowsApps`. Recognised `Epic Games` installs are rejected
 because no Epic schema exists; other locations retain the historical Steam default.
@@ -807,7 +807,7 @@ Compare against a Steam build at the same patch where possible.
    (Spurs) and human-manager classes. On Steam, FM creates a staff entry for
    the Steam profile; note what Game Pass creates instead.
 5. **Write.** Edit one witness field, confirm it in game, then undo.
-6. **Record.** Put the hash and every changed value in `FM27_GAMEPASS`, and
+6. **Record.** Put the fingerprint and every changed value in `FM27_GAMEPASS`, and
    the evidence in this section, in one commit.
 
 ## Unverified / known broken

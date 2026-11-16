@@ -1,27 +1,6 @@
-//! Game version, storefront and build selector + runtime dispatch.
-//!
-//! Every schema lookup routes through a `&'static VersionedSchemas` that
-//! belongs to the game being read: `FmProcess::schemas()` on the worker side,
-//! the attached game's build on the UI side. There is no process-global
-//! "active version", so several games open at once cannot cross schemas.
-//!
-//! A schema is selected per [`GameBuild`] — a release ([`GameVersion`]) as
-//! shipped by one storefront ([`Storefront`]). The Game Pass build of a
-//! release is a different binary from the Steam one (Microsoft GDK instead
-//! of Steamworks), so its module hash and module-relative RVAs can differ
-//! even when the struct layouts match.
-//!
-//! Detection is automatic: FM24, FM26 and FM27 all run as `fm.exe`.
-//! `process::running_games()` reads the game module's PE product metadata,
-//! falling back to the install directory if no FM identity is available.
-//! Storefront hints are separate; identifying a release does not verify its
-//! offsets. Attachment retains the per-schema module fingerprint gate.
-//!
-//! Adding a build (e.g. FM26 on Game Pass) is a new `GameBuild` variant,
-//! its arms in the `GameBuild` matches, and its schema static under
-//! `crate::fields::`.
+//! Release layouts and recorded executable identities, selected per attachment.
 
-use crate::fields::{VersionedSchemas, fm24, fm26, fm27};
+use crate::fields::{ModuleAddresses, RecordedBuild, ReleaseLayout, fm24, fm26, fm27};
 
 /// Which Football Manager release a process is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,30 +65,77 @@ impl Storefront {
     }
 }
 
-/// A release as shipped by one storefront — the unit a schema is selected
-/// for. Only builds with a schema exist as variants, so a `GameBuild` always
-/// has one.
+/// How the attached executable was recognised.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GameBuild {
-    Fm24Steam,
-    /// The Steam layout and addresses with the Epic binary's fingerprint
-    /// (contributed evidence in docs/fm24/memory-layout.md).
-    Fm24Epic,
-    Fm26Steam,
-    Fm27Steam,
-    /// The Steam struct layouts with the Game Pass binary's own RVAs and
-    /// fingerprint (see docs/fm27).
-    Fm27GamePass,
+pub enum Recognition {
+    Recorded,
+}
+
+/// An attached build's recorded identity and resolved module addresses.
+#[derive(Clone, Copy)]
+pub struct GameBuild {
+    pub recorded: &'static RecordedBuild,
+    pub addresses: ModuleAddresses,
+    pub recognition: Recognition,
+}
+
+impl PartialEq for GameBuild {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.recorded, other.recorded)
+            && self.addresses == other.addresses
+            && self.recognition == other.recognition
+    }
+}
+
+impl Eq for GameBuild {}
+
+impl std::fmt::Debug for GameBuild {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GameBuild")
+            .field("display_name", &self.display_name())
+            .field("recognition", &self.recognition)
+            .field("addresses", &self.addresses)
+            .finish()
+    }
 }
 
 impl GameBuild {
-    /// Every build with a schema.
-    pub const ALL: [GameBuild; 5] = [
-        GameBuild::Fm24Steam,
-        GameBuild::Fm24Epic,
-        GameBuild::Fm26Steam,
-        GameBuild::Fm27Steam,
-        GameBuild::Fm27GamePass,
+    pub const FM24_STEAM: Self = Self {
+        recorded: &fm24::FM24_STEAM,
+        addresses: fm24::FM24_STEAM.addresses,
+        recognition: Recognition::Recorded,
+    };
+
+    pub const FM24_EPIC: Self = Self {
+        recorded: &fm24::FM24_EPIC,
+        addresses: fm24::FM24_EPIC.addresses,
+        recognition: Recognition::Recorded,
+    };
+
+    pub const FM26_STEAM: Self = Self {
+        recorded: &fm26::FM26_STEAM,
+        addresses: fm26::FM26_STEAM.addresses,
+        recognition: Recognition::Recorded,
+    };
+
+    pub const FM27_STEAM: Self = Self {
+        recorded: &fm27::FM27_STEAM,
+        addresses: fm27::FM27_STEAM.addresses,
+        recognition: Recognition::Recorded,
+    };
+
+    pub const FM27_GAMEPASS: Self = Self {
+        recorded: &fm27::FM27_GAMEPASS,
+        addresses: fm27::FM27_GAMEPASS.addresses,
+        recognition: Recognition::Recorded,
+    };
+
+    pub const ALL: [Self; 5] = [
+        Self::FM24_STEAM,
+        Self::FM24_EPIC,
+        Self::FM26_STEAM,
+        Self::FM27_STEAM,
+        Self::FM27_GAMEPASS,
     ];
 
     /// The build for this release and storefront, or an error when no
@@ -133,65 +159,47 @@ impl GameBuild {
     /// whose path gave the wrong storefront still gets its own schema; an
     /// unknown fingerprint is left to the attachment's fingerprint gate.
     pub fn with_fingerprint(self, hash: u64) -> Self {
-        if self.schemas().known_dll_hash == hash {
+        if self.fingerprint() == hash {
             return self;
         }
         Self::ALL
             .into_iter()
             .find(|b| {
-                let known = b.schemas().known_dll_hash;
+                let known = b.fingerprint();
                 b.version() == self.version() && known != 0 && known == hash
             })
             .unwrap_or(self)
     }
 
     pub fn version(self) -> GameVersion {
-        match self {
-            GameBuild::Fm24Steam | GameBuild::Fm24Epic => GameVersion::Fm24,
-            GameBuild::Fm26Steam => GameVersion::Fm26,
-            GameBuild::Fm27Steam | GameBuild::Fm27GamePass => GameVersion::Fm27,
-        }
+        self.recorded.version
     }
 
     pub fn storefront(self) -> Storefront {
-        match self {
-            GameBuild::Fm24Steam | GameBuild::Fm26Steam | GameBuild::Fm27Steam => Storefront::Steam,
-            GameBuild::Fm24Epic => Storefront::Epic,
-            GameBuild::Fm27GamePass => Storefront::GamePass,
-        }
+        self.recorded.storefront
     }
 
-    /// The per-build schema bundle (field lists, RVAs, sizes).
-    pub fn schemas(self) -> &'static VersionedSchemas {
-        match self {
-            GameBuild::Fm24Steam => &fm24::FM24,
-            GameBuild::Fm24Epic => &fm24::FM24_EPIC,
-            GameBuild::Fm26Steam => &fm26::FM26,
-            GameBuild::Fm27Steam => &fm27::FM27,
-            GameBuild::Fm27GamePass => &fm27::FM27_GAMEPASS,
-        }
+    pub fn schemas(self) -> &'static ReleaseLayout {
+        self.recorded.layout
     }
 
-    /// Name of the schema static in `src/fields/<version>/mod.rs`, for
-    /// messages that tell the developer what to edit.
+    pub fn addresses(self) -> ModuleAddresses {
+        self.addresses
+    }
+
+    pub fn fingerprint(self) -> u64 {
+        self.recorded.fingerprint
+    }
+
     pub fn schema_name(self) -> &'static str {
-        match self {
-            GameBuild::Fm24Steam => "FM24",
-            GameBuild::Fm24Epic => "FM24_EPIC",
-            GameBuild::Fm26Steam => "FM26",
-            GameBuild::Fm27Steam => "FM27",
-            GameBuild::Fm27GamePass => "FM27_GAMEPASS",
-        }
+        self.recorded.schema_name
     }
 
-    /// Human-readable name for status text and pickers. The Steam build is
-    /// the default and keeps the bare version name ("FM27"); other
-    /// storefronts are named ("FM27 Game Pass").
     pub fn display_name(self) -> &'static str {
-        match self {
-            GameBuild::Fm24Epic => "FM24 Epic",
-            GameBuild::Fm27GamePass => "FM27 Game Pass",
-            other => other.version().display_name(),
+        match (self.version(), self.storefront()) {
+            (GameVersion::Fm24, Storefront::Epic) => "FM24 Epic",
+            (GameVersion::Fm27, Storefront::GamePass) => "FM27 Game Pass",
+            (version, _) => version.display_name(),
         }
     }
 }
@@ -223,54 +231,75 @@ mod tests {
         }
         assert_eq!(
             GameBuild::resolve(GameVersion::Fm24, Storefront::Epic),
-            Ok(GameBuild::Fm24Epic)
+            Ok(GameBuild::FM24_EPIC)
         );
     }
 
     #[test]
     fn fingerprint_selects_the_recorded_build_of_the_same_release() {
-        let epic = GameBuild::Fm24Epic.schemas().known_dll_hash;
-        let steam = GameBuild::Fm24Steam.schemas().known_dll_hash;
+        let epic = GameBuild::FM24_EPIC.fingerprint();
+        let steam = GameBuild::FM24_STEAM.fingerprint();
         assert_eq!(
-            GameBuild::Fm24Steam.with_fingerprint(epic),
-            GameBuild::Fm24Epic
+            GameBuild::FM24_STEAM.with_fingerprint(epic),
+            GameBuild::FM24_EPIC
         );
         assert_eq!(
-            GameBuild::Fm24Epic.with_fingerprint(steam),
-            GameBuild::Fm24Steam
+            GameBuild::FM24_EPIC.with_fingerprint(steam),
+            GameBuild::FM24_STEAM
         );
         assert_eq!(
-            GameBuild::Fm24Epic.with_fingerprint(epic),
-            GameBuild::Fm24Epic
+            GameBuild::FM24_EPIC.with_fingerprint(epic),
+            GameBuild::FM24_EPIC
         );
         // An unknown fingerprint keeps the path's build for the gate to refuse.
         assert_eq!(
-            GameBuild::Fm24Steam.with_fingerprint(0x1234),
-            GameBuild::Fm24Steam
+            GameBuild::FM24_STEAM.with_fingerprint(0x1234),
+            GameBuild::FM24_STEAM
         );
         // Another release's fingerprint never switches releases.
         assert_eq!(
-            GameBuild::Fm26Steam.with_fingerprint(epic),
-            GameBuild::Fm26Steam
+            GameBuild::FM26_STEAM.with_fingerprint(epic),
+            GameBuild::FM26_STEAM
         );
-        let gamepass = GameBuild::Fm27GamePass.schemas().known_dll_hash;
+        let gamepass = GameBuild::FM27_GAMEPASS.fingerprint();
         assert_eq!(
-            GameBuild::Fm27Steam.with_fingerprint(gamepass),
-            GameBuild::Fm27GamePass
+            GameBuild::FM27_STEAM.with_fingerprint(gamepass),
+            GameBuild::FM27_GAMEPASS
         );
         // FM27 Steam's fingerprint is uncalibrated (0): it is never matched.
         assert_eq!(
-            GameBuild::Fm27GamePass.with_fingerprint(0),
-            GameBuild::Fm27GamePass
+            GameBuild::FM27_GAMEPASS.with_fingerprint(0),
+            GameBuild::FM27_GAMEPASS
         );
     }
 
     #[test]
-    fn every_build_has_its_own_schema() {
+    fn storefronts_share_release_layouts_but_not_recorded_metadata() {
         for (i, a) in GameBuild::ALL.iter().enumerate() {
             for b in &GameBuild::ALL[i + 1..] {
-                assert!(!std::ptr::eq(a.schemas(), b.schemas()), "{a:?} / {b:?}");
+                assert_eq!(
+                    std::ptr::eq(a.schemas(), b.schemas()),
+                    a.version() == b.version(),
+                    "{a:?} / {b:?}",
+                );
+                assert!(!std::ptr::eq(a.recorded, b.recorded));
+                assert_ne!(
+                    (a.addresses(), a.fingerprint()),
+                    (b.addresses(), b.fingerprint()),
+                    "{a:?} / {b:?}",
+                );
+                assert_ne!(a, b);
             }
         }
+    }
+
+    #[test]
+    fn altered_addresses_change_build_identity() {
+        let original = GameBuild::FM27_STEAM;
+        let mut altered = original;
+        altered.addresses = GameBuild::FM27_GAMEPASS.addresses();
+        assert_ne!(original, altered);
+        assert!(std::ptr::eq(original.recorded, altered.recorded));
+        assert_eq!(original, original);
     }
 }

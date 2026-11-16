@@ -1,6 +1,6 @@
 //! Read-only lineup selection over one attached save's normalized cache.
 use crate::cache::{CachedPlayer, EntityCache};
-use crate::fields::{Encoding, FieldLocation, VersionedSchemas};
+use crate::fields::{Encoding, FieldLocation, ReleaseLayout};
 use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug)]
@@ -132,7 +132,7 @@ pub fn in_scope(player: &CachedPlayer, cache: &EntityCache, club: Option<u32>) -
 
 /// Cached raw bytes are already normalized for player-coaches by the loader.
 pub fn attribute(
-    schemas: &'static VersionedSchemas,
+    schemas: &'static ReleaseLayout,
     player: &CachedPlayer,
     key: &str,
 ) -> Option<u8> {
@@ -149,7 +149,7 @@ pub fn attribute(
 }
 
 pub fn ability(
-    schemas: &'static VersionedSchemas,
+    schemas: &'static ReleaseLayout,
     player: &CachedPlayer,
     key: &str,
 ) -> Option<u16> {
@@ -157,7 +157,7 @@ pub fn ability(
     (1..=200).contains(&value).then_some(value as u16)
 }
 
-pub fn headroom(schemas: &'static VersionedSchemas, player: &CachedPlayer) -> Option<u16> {
+pub fn headroom(schemas: &'static ReleaseLayout, player: &CachedPlayer) -> Option<u16> {
     Some(ability(schemas, player, "p_pa")?.saturating_sub(ability(schemas, player, "p_ca")?))
 }
 
@@ -179,7 +179,7 @@ pub struct Lineup {
 }
 
 pub fn calculate(
-    schemas: &'static VersionedSchemas,
+    schemas: &'static ReleaseLayout,
     cache: &EntityCache,
     club: Option<u32>,
     formation: usize,
@@ -355,7 +355,7 @@ mod tests {
     use crate::game_version::GameBuild;
 
     fn player(
-        schemas: &'static VersionedSchemas,
+        schemas: &'static ReleaseLayout,
         id: u32,
         value: u8,
         ca: u16,
@@ -475,7 +475,7 @@ mod tests {
 
     #[test]
     fn scope_uses_current_identity_and_excludes_away_loans_and_unknown_clubs() {
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         let mut p = player(s, 1, 20, 100, 180);
         let cache = cache(vec![]);
         assert!(in_scope(&p, &cache, None));
@@ -490,7 +490,7 @@ mod tests {
 
     #[test]
     fn modes_rank_current_strength_and_remaining_capacity_differently() {
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         let cache = cache(vec![player(s, 1, 20, 180, 190), player(s, 2, 16, 80, 170)]);
         let current = calculate(s, &cache, None, 0, false, 15);
         let growth = calculate(s, &cache, None, 0, true, 15);
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn all_formations_use_eleven_unique_players_and_keep_ranked_cover() {
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         let cache = cache((1..=16).map(|i| player(s, i, 20, 100, 180)).collect());
         for formation in 0..FORMATIONS.len() {
             for growth in [false, true] {
@@ -517,7 +517,7 @@ mod tests {
 
     #[test]
     fn missing_invalid_and_duplicate_records_never_create_phantom_players() {
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         let p = player(s, 1, 20, 100, 180);
         let duplicate = player(s, 1, 20, 100, 180);
         let mut incomplete = player(s, 2, 20, 100, 180);
@@ -537,9 +537,9 @@ mod tests {
     #[test]
     fn schema_specific_decoding_and_headroom_boundaries() {
         for build in [
-            GameBuild::Fm24Steam,
-            GameBuild::Fm26Steam,
-            GameBuild::Fm27Steam,
+            GameBuild::FM24_STEAM,
+            GameBuild::FM26_STEAM,
+            GameBuild::FM27_STEAM,
         ] {
             let s = build.schemas();
             let p = player(s, 1, 16, 150, 140);

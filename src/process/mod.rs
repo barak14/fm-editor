@@ -22,7 +22,7 @@ mod linux;
 #[cfg(target_os = "linux")]
 use self::linux as backend;
 
-use crate::fields::VersionedSchemas;
+use crate::fields::{ModuleAddresses, ReleaseLayout};
 use crate::game_date::GameDate;
 use crate::game_version::{GameBuild, GameVersion, Storefront};
 
@@ -241,7 +241,7 @@ pub struct FmProcess {
     /// On-disk path of that module, as the OS reports it.
     pub module_path: String,
     pub build: GameBuild,
-    /// Set when `known_dll_hash` is 0 in the schema (not yet calibrated).
+    /// Set when `fingerprint` is 0 in the recorded build (not yet calibrated).
     /// The worker forwards this to the UI as a status notice so the developer
     /// knows the current hash to paste into `fields/<version>/mod.rs`.
     pub dll_hash_notice: Option<String>,
@@ -286,12 +286,12 @@ impl FmProcess {
             Ok(hash) => path_build.with_fingerprint(*hash),
             Err(_) => path_build,
         };
-        let known = build.schemas().known_dll_hash;
+        let known = build.fingerprint();
         let dll_hash_notice = match (known, module_hash) {
             // Schema not yet calibrated — allow attach but surface the hash.
             (0, Ok(hash)) => Some(format!(
                 "{} {module} hash not calibrated (current: 0x{hash:016X}). \
-                 Set known_dll_hash: 0x{hash:016X} in {} in src/fields/{}/mod.rs \
+                 Set fingerprint: 0x{hash:016X} in {} in src/fields/{}/mod.rs \
                  to enable the version gate.",
                 build.display_name(),
                 build.schema_name(),
@@ -329,13 +329,13 @@ impl FmProcess {
         })
     }
 
-    /// The build-specific schema bundle for this process.
-    ///
-    /// Every reader that holds an `FmProcess` pulls field data, RVAs and
-    /// struct sizes through here, so two games open at once never share a
-    /// schema.
-    pub fn schemas(&self) -> &'static VersionedSchemas {
+    /// The release's record layout for this process.
+    pub fn schemas(&self) -> &'static ReleaseLayout {
         self.build.schemas()
+    }
+
+    pub fn addresses(&self) -> ModuleAddresses {
+        self.build.addresses
     }
 
     /// Observed on-disk module header fingerprint, using the attachment gate's
@@ -347,7 +347,7 @@ impl FmProcess {
     /// Read the current in-game date through this attachment's verified schema.
     /// Unmapped builds, invalid pointers/dates, and failed reads return None.
     pub fn game_date(&self) -> Option<GameDate> {
-        let rva = self.schemas().rva_current_date;
+        let rva = self.addresses().rva_current_date;
         if rva == 0 {
             return None;
         }
@@ -525,12 +525,12 @@ mod tests {
     fn running_game_label_names_build_and_pid() {
         let game = RunningGame {
             pid: 4242,
-            build: GameBuild::Fm27Steam,
+            build: GameBuild::FM27_STEAM,
         };
         assert_eq!(game.to_string(), "FM27 (PID 4242)");
         let game = RunningGame {
             pid: 4242,
-            build: GameBuild::Fm27GamePass,
+            build: GameBuild::FM27_GAMEPASS,
         };
         assert_eq!(game.to_string(), "FM27 Game Pass (PID 4242)");
     }
@@ -621,7 +621,7 @@ mod tests {
             detect_build_from_modules(1, module_info(path), Err("not mapped".into()), |_| {
                 Ok(metadata("Football Manager 2024", "24.4.2+2081827"))
             });
-        assert_eq!(result, Ok(GameBuild::Fm24Epic));
+        assert_eq!(result, Ok(GameBuild::FM24_EPIC));
         assert!(report.contains("FM24 Epic schema FM24_EPIC"), "{report}");
     }
 
@@ -633,7 +633,7 @@ mod tests {
             Err("not mapped".into()),
             |_| Err("permission denied reading resource".into()),
         );
-        assert_eq!(result, Ok(GameBuild::Fm24Steam));
+        assert_eq!(result, Ok(GameBuild::FM24_STEAM));
         assert!(
             report.contains("permission denied reading resource"),
             "{report}"
@@ -662,7 +662,7 @@ mod tests {
                 }
             },
         );
-        assert_eq!(result, Ok(GameBuild::Fm27Steam));
+        assert_eq!(result, Ok(GameBuild::FM27_STEAM));
         assert!(
             report.contains("Unity") && report.contains("6000.3.18f1"),
             "{report}"
@@ -819,7 +819,7 @@ mod tests {
         assert_eq!(storefront_of(epic, false), Storefront::Epic);
         assert_eq!(
             GameBuild::resolve(GameVersion::Fm24, storefront_of(epic, false)),
-            Ok(GameBuild::Fm24Epic)
+            Ok(GameBuild::FM24_EPIC)
         );
         // A moved Game Pass install is still recognised by its GDK manifest.
         assert_eq!(

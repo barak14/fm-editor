@@ -15,7 +15,7 @@ not useful; everything below came from live memory.
 Under Proton FM24's `/proc/<pid>/comm` is `Main Thread`, not `fm.exe`; the
 Linux backend also matches the basename of argv[0] (`S:\…\fm.exe`).
 
-Version gate: `known_dll_hash` = hash of the first 64 KB of `fm.exe`.
+Version gate: `RecordedBuild::fingerprint` (`FM24_STEAM`) = hash of the first 64 KB of `fm.exe`.
 
 Release identification now reads the PE version resource before consulting the
 install directory. Read-only file inspection on 2026-11-09 of the installed Steam
@@ -23,7 +23,7 @@ install directory. Read-only file inspection on 2026-11-09 of the installed Stea
 and `ProductVersion = 24.4.2+2081827`. These identify the release/build, not
 field-layout compatibility; the existing module fingerprint gate is unchanged.
 No mappings or writes were tested by this metadata inspection. The Epic build
-has its own schema (`FM24_EPIC`); see [Epic build](#epic-build).
+is the recorded build `FM24_EPIC`; see [Epic build](#epic-build).
 
 ## Entity arrays (RVA relative to fm.exe)
 
@@ -321,7 +321,7 @@ r=0.89, DL/WBL r=0.82, attribute bytes ≤ 100, max(left, right foot) = 20 for a
 
 ## Epic build
 
-`FM24_EPIC` is the Steam schema (layout, entity arrays, date) with the Epic
+`FM24_EPIC` is a `RecordedBuild` sharing the `FM24` layout, entity arrays and date with `FM24_STEAM`, with the Epic
 `fm.exe` fingerprint `0x8FA113DB9DCD8883` (Steam: `0xFB39952A20287907`). An
 install under `Epic Games` selects it; an install elsewhere selects it by that
 fingerprint. A different Epic fingerprint is rejected.

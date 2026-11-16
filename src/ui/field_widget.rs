@@ -284,7 +284,7 @@ fn attr_cell_compact_inner(
 /// correct widget per encoding type. Fields with `offset: None` are silently
 /// skipped — they appear automatically when the offset is added to the schema.
 pub fn category_column(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     heading: &str,
     entity: Entity,
@@ -311,7 +311,7 @@ pub fn category_column(
 /// omitted — use this in the tabbed Overview panel to show only assigned roles.
 /// Pass `false` in the manager panel to always show the full list.
 pub fn roles_column(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     heading: &str,
     roles: &[u8; 15],

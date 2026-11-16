@@ -1,7 +1,8 @@
 //! Club lineup and position depth. This page never emits writes.
 use crate::best_xi::{self, Candidate, FORMATIONS, Lineup};
 use crate::cache::EntityCache;
-use crate::fields::VersionedSchemas;
+use crate::fields::ReleaseLayout;
+use crate::game_version::GameBuild;
 use eframe::egui;
 use std::sync::Arc;
 
@@ -41,16 +42,17 @@ impl BestXiState {
 pub fn show(
     ui: &mut egui::Ui,
     state: &mut BestXiState,
-    schemas: &'static VersionedSchemas,
+    build: GameBuild,
     cache: Option<&Arc<EntityCache>>,
 ) -> Option<usize> {
+    let schemas = build.schemas();
     ui.heading("Best XI");
     let Some(cache) = cache else {
         state.clear();
         ui.label("Load a save to build a lineup.");
         return None;
     };
-    if !super::player_search::club_filter_supported(schemas) {
+    if !super::player_search::club_filter_supported(build, schemas) {
         state.clear();
         ui.label(
             "Best XI is unavailable: current club membership is not supported for this build.",
@@ -230,7 +232,7 @@ fn display_name(p: &crate::cache::CachedPlayer) -> String {
 
 fn player(
     ui: &mut egui::Ui,
-    schemas: &'static VersionedSchemas,
+    schemas: &'static ReleaseLayout,
     cache: &EntityCache,
     c: &Candidate,
     growth: bool,
@@ -354,7 +356,7 @@ mod tests {
     #[test]
     fn replacing_or_removing_cache_discards_the_previous_solution() {
         let ctx = egui::Context::default();
-        let s = crate::game_version::GameBuild::Fm27Steam.schemas();
+        let build = GameBuild::FM27_STEAM;
         let empty = || {
             Arc::new(EntityCache {
                 my_clubs: Some(crate::cache::MyClubs {
@@ -373,7 +375,7 @@ mod tests {
         for cache in [Some(&first), Some(&second), None] {
             let _ = ctx.run(Default::default(), |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    show(ui, &mut state, s, cache);
+                    show(ui, &mut state, build, cache);
                 });
             });
             assert_eq!(state.source.is_some(), cache.is_some());
@@ -407,7 +409,7 @@ mod tests {
                 show(
                     ui,
                     &mut state,
-                    crate::game_version::GameBuild::Fm27GamePass.schemas(),
+                    GameBuild::FM27_GAMEPASS,
                     Some(&cache),
                 );
             });
@@ -518,7 +520,7 @@ mod tests {
 
     #[test]
     fn selected_shirt_and_name_navigate_with_fit_and_growth_scores() {
-        let schemas = crate::game_version::GameBuild::Fm27Steam.schemas();
+        let schemas = crate::game_version::GameBuild::FM27_STEAM.schemas();
         let mut raw = vec![0; schemas.player_struct_size];
         for field in schemas.player_fields {
             if let Some(crate::fields::FieldLocation::Direct { offset, encoding }) = field.offset {
@@ -666,7 +668,7 @@ mod tests {
                             show(
                                 ui,
                                 &mut state,
-                                crate::game_version::GameBuild::Fm27Steam.schemas(),
+                                GameBuild::FM27_STEAM,
                                 Some(&cache)
                             )
                             .is_none()

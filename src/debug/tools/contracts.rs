@@ -4,14 +4,14 @@ use serde_json::{Value, json};
 
 use crate::debug::DebugState;
 use crate::fields::fm27::contract::{ContractInspection, STEAM_INSPECTION};
-use crate::fields::{Encoding, FieldLocation, SubRecordParent, VersionedSchemas};
+use crate::fields::{Encoding, FieldLocation, ModuleAddresses, ReleaseLayout, SubRecordParent};
 use crate::game_version::GameBuild;
 use crate::player::is_valid_ptr;
 
 type ReadMemory<'a> = dyn Fn(u64, usize) -> Result<Vec<u8>, String> + 'a;
 
 fn inspection(build: GameBuild, hash: u64) -> Result<&'static ContractInspection, String> {
-    if build != GameBuild::Fm27Steam || hash != STEAM_INSPECTION.module_header_hash {
+    if build != GameBuild::FM27_STEAM || hash != STEAM_INSPECTION.module_header_hash {
         return Err(
             "Contract inspection unsupported for this build/fingerprint; no conversion is enabled"
                 .into(),
@@ -61,7 +61,7 @@ fn pointer(bytes: &[u8], offset: usize) -> Result<u64, String> {
 }
 
 fn direct_offset(
-    s: &'static VersionedSchemas,
+    s: &'static ReleaseLayout,
     key: &str,
     encoding: Encoding,
 ) -> Result<usize, String> {
@@ -75,7 +75,7 @@ fn direct_offset(
 }
 
 fn contract_bytes<'a>(
-    s: &'static VersionedSchemas,
+    s: &'static ReleaseLayout,
     raw: &'a [u8],
     key: &str,
     width: usize,
@@ -104,7 +104,8 @@ struct Snapshot {
 /// reusable write/Undo authorization token. No mini-cache addresses are trusted.
 fn capture(
     read: &ReadMemory<'_>,
-    s: &'static VersionedSchemas,
+    s: &'static ReleaseLayout,
+    addresses: ModuleAddresses,
     layout: &ContractInspection,
     module: u64,
     index: usize,
@@ -113,12 +114,12 @@ fn capture(
 ) -> Result<Snapshot, String> {
     let data_at = range(
         module,
-        usize::try_from(s.rva_humans_data).map_err(|_| "RVA overflow")?,
+        usize::try_from(addresses.rva_humans_data).map_err(|_| "RVA overflow")?,
         8,
     )?;
     let end_at = range(
         module,
-        usize::try_from(s.rva_humans_end).map_err(|_| "RVA overflow")?,
+        usize::try_from(addresses.rva_humans_end).map_err(|_| "RVA overflow")?,
         8,
     )?;
     let data = read_exact(read, data_at, 0, 8)?;
@@ -197,11 +198,7 @@ fn name_at(read: &ReadMemory<'_>, object: u64, offset: usize) -> Result<String, 
     String::from_utf8(read_exact(read, ptr, 4, length)?).map_err(|e| e.to_string())
 }
 
-fn club_info(
-    read: &ReadMemory<'_>,
-    s: &'static VersionedSchemas,
-    team: u64,
-) -> Result<Value, String> {
+fn club_info(read: &ReadMemory<'_>, s: &'static ReleaseLayout, team: u64) -> Result<Value, String> {
     let club = s
         .player_sub_records
         .iter()
@@ -237,7 +234,16 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
     }
     let s = fm.schemas();
     let read = |a, n| fm.read_bytes(a, n);
-    let snapshot = capture(&read, s, layout, fm.gp_base, index, address, uid)?;
+    let snapshot = capture(
+        &read,
+        s,
+        fm.addresses(),
+        layout,
+        fm.gp_base,
+        index,
+        address,
+        uid,
+    )?;
     let raw = &snapshot.contract_raw;
     let contract_type = inspected_type(layout, raw);
     let hex = |bytes: &[u8]| super::Encoding::raw_hex(bytes, bytes.len());
@@ -264,13 +270,23 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
     let owning_club = contract_team.map(|t| club_info(&read, s, t));
     // Names are supplemental pointer reads; reject if the bound record changed
     // while resolving them. This report still cannot be used as a write token.
-    if capture(&read, s, layout, fm.gp_base, index, address, uid)? != snapshot {
+    if capture(
+        &read,
+        s,
+        fm.addresses(),
+        layout,
+        fm.gp_base,
+        index,
+        address,
+        uid,
+    )? != snapshot
+    {
         return Err("Record changed while resolving names; rediscover and retry".into());
     }
     let result = json!({
         "pid":pid, "build":fm.build.display_name(), "storefront":fm.build.storefront().display_name(),
         "module_path":fm.module_path, "module_header_hash":format!("0x{hash:016X}"),
-        "schema_fingerprint_calibrated":s.known_dll_hash != 0, "compatibility_notice":fm.dll_hash_notice,
+        "schema_fingerprint_calibrated":fm.build.fingerprint() != 0, "compatibility_notice":fm.dll_hash_notice,
         "game_date":fm.game_date().map(|d| json!({"day":d.day,"year":d.year})),
         "index":index, "uid":uid, "name":name, "current_club":current_club, "owning_club":owning_club,
         "player_address":format!("0x{address:X}"), "player_raw_hex":hex(&snapshot.player_raw),
@@ -308,7 +324,7 @@ mod tests {
     const UID: u32 = 2000144100;
 
     fn memory() -> BTreeMap<u64, Vec<u8>> {
-        let s = GameBuild::Fm27Steam.schemas();
+        let s = GameBuild::FM27_STEAM.schemas();
         let mut raw = vec![0xA5; s.player_struct_size];
         let uid = direct_offset(s, "p_uid", Encoding::RawU32).unwrap();
         raw[uid..uid + 4].copy_from_slice(&UID.to_le_bytes());
@@ -328,9 +344,12 @@ mod tests {
         contract[owner..owner + 8]
             .copy_from_slice(&(PLAYER + s.player_person_offset as u64).to_le_bytes());
         BTreeMap::from([
-            (MODULE + s.rva_humans_data, ARRAY.to_le_bytes().to_vec()),
             (
-                MODULE + s.rva_humans_end,
+                MODULE + GameBuild::FM27_STEAM.addresses().rva_humans_data,
+                ARRAY.to_le_bytes().to_vec(),
+            ),
+            (
+                MODULE + GameBuild::FM27_STEAM.addresses().rva_humans_end,
                 (ARRAY + 8).to_le_bytes().to_vec(),
             ),
             (ARRAY, PLAYER.to_le_bytes().to_vec()),
@@ -355,7 +374,8 @@ mod tests {
     ) -> Result<Snapshot, String> {
         capture(
             read,
-            GameBuild::Fm27Steam.schemas(),
+            GameBuild::FM27_STEAM.schemas(),
+            GameBuild::FM27_STEAM.addresses(),
             &STEAM_INSPECTION,
             MODULE,
             index,
@@ -369,13 +389,13 @@ mod tests {
         for build in GameBuild::ALL {
             assert_eq!(
                 inspection(build, STEAM_INSPECTION.module_header_hash).is_ok(),
-                build == GameBuild::Fm27Steam
+                build == GameBuild::FM27_STEAM
             );
             assert!(inspection(build, 0).is_err());
             assert!(inspection(build, STEAM_INSPECTION.module_header_hash ^ 1).is_err());
         }
         assert!(
-            GameBuild::Fm27Steam
+            GameBuild::FM27_STEAM
                 .schemas()
                 .field("p_contract_type")
                 .unwrap()

@@ -14,7 +14,7 @@ pub enum StaffTab {
 }
 
 pub fn show(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     today: Option<crate::game_date::GameDate>,
     ui: &mut egui::Ui,
     staff: &mut StaffView,
@@ -64,7 +64,7 @@ fn redirect_shifted_edits(staff: &StaffView, edits: &mut [FieldEdit]) {
 }
 
 fn header(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     today: Option<crate::game_date::GameDate>,
     ui: &mut egui::Ui,
     staff: &StaffView,
@@ -83,7 +83,7 @@ fn header(
 }
 
 fn identity(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     staff: &mut StaffView,
     edits: &mut Vec<FieldEdit>,
@@ -117,7 +117,7 @@ fn identity(
 /// Read-only person-profile rows: languages, coaching licence and preferred
 /// formations, when the attached build maps them.
 fn profile_labels(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     staff: &StaffView,
 ) {
@@ -156,7 +156,7 @@ fn profile_labels(
 }
 
 fn categories(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     staff: &mut StaffView,
     groups: &[(&str, Category)],
@@ -178,7 +178,7 @@ fn categories(
 }
 
 fn roles(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     staff: &StaffView,
     skip_zeros: bool,
@@ -192,7 +192,7 @@ fn roles(
 }
 
 fn show_overview(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     staff: &mut StaffView,
     edits: &mut Vec<FieldEdit>,
@@ -257,7 +257,7 @@ fn show_overview(
 /// standard staff offsets. Redirect edits for those fields to their live,
 /// shifted addresses after collecting the widgets' edits.
 pub fn show_manager(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     today: Option<crate::game_date::GameDate>,
     ui: &mut egui::Ui,
     staff: &mut StaffView,
@@ -321,7 +321,7 @@ pub fn show_manager(
 }
 
 fn show_contract(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     staff: &mut StaffView,
     edits: &mut Vec<FieldEdit>,
@@ -334,7 +334,7 @@ fn show_contract(
 /// contract sub-record. Edits address the contract itself, so the human
 /// manager's shifted-identity redirect in `show_manager` leaves them alone.
 fn contract_rows(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     staff: &mut StaffView,
     edits: &mut Vec<FieldEdit>,
@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn manager_identity_is_in_bounded_body_columns_without_render_edits() {
-        for build in [GameBuild::Fm24Steam, GameBuild::Fm27Steam] {
+        for build in [GameBuild::FM24_STEAM, GameBuild::FM27_STEAM] {
             for width in [2400.0, 1400.0, 700.0, 420.0, 320.0] {
                 let mut staff = manager(build);
                 let before = staff.record.raw.clone();

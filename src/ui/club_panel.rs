@@ -17,7 +17,7 @@ pub enum ClubTab {
 }
 
 pub(crate) fn show(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     club: &mut ClubView,
     tab: &mut ClubTab,
@@ -95,7 +95,7 @@ pub(crate) fn show(
 }
 
 fn show_overview(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     club: &mut ClubView,
     edits: &mut Vec<FieldEdit>,
@@ -162,7 +162,7 @@ fn show_overview(
 }
 
 fn show_facilities(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     club: &mut ClubView,
     edits: &mut Vec<FieldEdit>,
@@ -238,7 +238,7 @@ fn show_facilities(
 }
 
 fn show_finance(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     club: &mut ClubView,
     edits: &mut Vec<FieldEdit>,
@@ -310,7 +310,7 @@ fn show_finance(
 }
 
 fn show_stadium(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     ui: &mut egui::Ui,
     club: &ClubView,
 ) {
@@ -368,7 +368,7 @@ fn show_stadium(
 
 /// Container and byte offset of a sub-record field, from its schema key.
 fn sub_location(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     key: &str,
 ) -> Option<(fields::SubRecordId, usize)> {
     match schemas.field(key)?.offset? {
@@ -383,7 +383,7 @@ fn sub_location(
 /// facility rating that FM keeps in sync), or `None` when the schema has no
 /// such mirror or its value already matches.
 fn mirror_u8_edit(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     club: &mut ClubView,
     key: &str,
     label: &str,

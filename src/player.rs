@@ -743,15 +743,14 @@ pub fn read_player_name(fm: &FmProcess, raw: &[u8]) -> Option<String> {
 
 /// Read the player/humans pointer array bounds.
 pub fn humans_array(fm: &FmProcess) -> Result<(u64, u64, usize), String> {
-    let schema = fm.schemas();
-    fm.read_ptr_array(schema.rva_humans_data, schema.rva_humans_end)
+    fm.read_ptr_array(fm.addresses().rva_humans_data, fm.addresses().rva_humans_end)
 }
 
 /// Bytes the person block of the player at `addr` is moved by: the schema's
 /// `player_coach_shift` for a player-coach object, 0 otherwise.
 pub fn person_shift(fm: &FmProcess, addr: u64) -> usize {
     let schema = fm.schemas();
-    let rva = schema.player_coach_vtable_rva;
+    let rva = fm.addresses().player_coach_vtable_rva;
     let vtable =
         checked_read(&|a, n| fm.read_bytes(a, n).ok(), addr, 8).and_then(|bytes| le_u64(&bytes, 0));
     if rva != 0
@@ -769,7 +768,7 @@ pub fn person_shift(fm: &FmProcess, addr: u64) -> usize {
 /// Physical offset of schema offset `off` in a player object whose person
 /// block is moved by `shift` (see `person_shift`).
 pub fn player_phys_offset(
-    schemas: &'static fields::VersionedSchemas,
+    schemas: &'static fields::ReleaseLayout,
     off: u64,
     shift: usize,
 ) -> u64 {
@@ -831,8 +830,8 @@ pub fn read_player_at(fm: &FmProcess, addr: u64, index: usize) -> Result<PlayerR
         let person = player_phys_offset(fm.schemas(), fm.schemas().player_person_offset as u64, person_shift);
         crate::person::read_languages(fm, addr.checked_add(person)?)
     });
-    let game_date = (fm.schemas().rva_current_date != 0)
-        .then(|| fm.gp_base.checked_add(fm.schemas().rva_current_date))
+    let game_date = (fm.addresses().rva_current_date != 0)
+        .then(|| fm.gp_base.checked_add(fm.addresses().rva_current_date))
         .flatten()
         .and_then(|ptr| checked_read(&|a, n| fm.read_bytes(a, n).ok(), ptr, 4))
         .and_then(|bytes| GameDate::from_raw(le_u32(&bytes, 0)?));
@@ -884,7 +883,7 @@ mod tests {
     use super::*;
     use crate::game_version::GameBuild;
     fn layout() -> &'static fields::PlayerListLayout {
-        GameBuild::Fm27Steam.schemas().player_lists.unwrap()
+        GameBuild::FM27_STEAM.schemas().player_lists.unwrap()
     }
 
     fn date(year: u16, doy: u16) -> GameDate {
@@ -1272,7 +1271,7 @@ mod tests {
             medical_list_state(false, Some(vec![1u8])),
             ListState::Items(v) if v == [1]
         ));
-        let fm24 = GameBuild::Fm24Steam.schemas().player_lists.unwrap();
+        let fm24 = GameBuild::FM24_STEAM.schemas().player_lists.unwrap();
         assert!(fm24.medical_null_is_empty);
         assert!(!layout().medical_null_is_empty);
     }
@@ -1319,12 +1318,12 @@ mod tests {
             list_state(read_injuries(&bad_item, Some(0x20000), l)),
             ListState::Unreadable
         ));
-        assert!(GameBuild::Fm26Steam.schemas().player_lists.is_none());
+        assert!(GameBuild::FM26_STEAM.schemas().player_lists.is_none());
     }
 
     #[test]
     fn records_decode_with_their_own_build() {
-        let versions = [GameBuild::Fm24Steam, GameBuild::Fm27Steam];
+        let versions = [GameBuild::FM24_STEAM, GameBuild::FM27_STEAM];
         let mut raw = vec![
             0;
             versions
@@ -1344,7 +1343,7 @@ mod tests {
             raw[offset..offset + 2].copy_from_slice(&year.to_le_bytes());
         }
         let fm24 = PlayerRecord {
-            build: GameBuild::Fm24Steam,
+            build: GameBuild::FM24_STEAM,
             addr: 0,
             index: 0,
             name: None,
@@ -1364,7 +1363,7 @@ mod tests {
             clauses: ListState::Unmapped,
         };
         let fm27 = PlayerRecord {
-            build: GameBuild::Fm27Steam,
+            build: GameBuild::FM27_STEAM,
             ..fm24.clone()
         };
 

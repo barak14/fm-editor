@@ -134,7 +134,7 @@ fn numeric_filters(state: &StaffSearchState) -> Result<NumericFilters, String> {
 }
 
 fn staff_age(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     today: Option<crate::game_date::GameDate>,
     staff: &CachedStaff,
 ) -> Option<u16> {
@@ -159,7 +159,7 @@ fn compare_ages(a: Option<u16>, b: Option<u16>, direction: SortDir) -> std::cmp:
 
 /// Filter the full staff slice down to matching entries.
 pub fn filter<'a>(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     today: Option<crate::game_date::GameDate>,
     cache: &'a [CachedStaff],
     state: &StaffSearchState,
@@ -293,7 +293,7 @@ pub fn filter_row(ui: &mut egui::Ui, state: &mut StaffSearchState) {
 /// Render the results grid. Returns the original (pre-sort) index of a clicked
 /// row, if any.
 pub fn results_grid(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     today: Option<crate::game_date::GameDate>,
     ui: &mut egui::Ui,
     state: &mut StaffSearchState,
@@ -596,7 +596,7 @@ mod tests {
             pa: 150,
             dob_year: age
                 .map(|age| {
-                    crate::game_version::GameBuild::Fm26Steam
+                    crate::game_version::GameBuild::FM26_STEAM
                         .schemas()
                         .age_reference_year
                         - age
@@ -623,7 +623,7 @@ mod tests {
         };
         assert_eq!(
             filter(
-                crate::game_version::GameBuild::Fm26Steam.schemas(),
+                crate::game_version::GameBuild::FM26_STEAM.schemas(),
                 None,
                 &cache,
                 &state
@@ -636,7 +636,7 @@ mod tests {
         state.query = "12".into();
         assert_eq!(
             filter(
-                crate::game_version::GameBuild::Fm26Steam.schemas(),
+                crate::game_version::GameBuild::FM26_STEAM.schemas(),
                 None,
                 &cache,
                 &state
@@ -649,7 +649,7 @@ mod tests {
         state.query = "missing".into();
         assert!(
             filter(
-                crate::game_version::GameBuild::Fm26Steam.schemas(),
+                crate::game_version::GameBuild::FM26_STEAM.schemas(),
                 None,
                 &cache,
                 &state
@@ -668,7 +668,7 @@ mod tests {
         };
         assert_eq!(
             filter(
-                crate::game_version::GameBuild::Fm26Steam.schemas(),
+                crate::game_version::GameBuild::FM26_STEAM.schemas(),
                 None,
                 &cache,
                 &state
@@ -680,7 +680,7 @@ mod tests {
         state.age_max = "40".into();
         assert_eq!(
             filter(
-                crate::game_version::GameBuild::Fm26Steam.schemas(),
+                crate::game_version::GameBuild::FM26_STEAM.schemas(),
                 None,
                 &cache,
                 &state
@@ -693,7 +693,7 @@ mod tests {
         state.ca_min = "101".into();
         assert!(
             filter(
-                crate::game_version::GameBuild::Fm26Steam.schemas(),
+                crate::game_version::GameBuild::FM26_STEAM.schemas(),
                 None,
                 &cache,
                 &state
@@ -713,7 +713,7 @@ mod tests {
             assert!(numeric_filters(&state).is_err());
             assert!(
                 filter(
-                    crate::game_version::GameBuild::Fm26Steam.schemas(),
+                    crate::game_version::GameBuild::FM26_STEAM.schemas(),
                     None,
                     &cache,
                     &state
@@ -743,7 +743,7 @@ mod tests {
             assert!(numeric_filters(&state).is_err());
             assert!(
                 filter(
-                    crate::game_version::GameBuild::Fm26Steam.schemas(),
+                    crate::game_version::GameBuild::FM26_STEAM.schemas(),
                     None,
                     &cache,
                     &state
@@ -811,7 +811,7 @@ mod game_date_tests {
     use crate::game_version::GameBuild;
 
     fn row(uid: u32, day: u16) -> CachedStaff {
-        let schemas = GameBuild::Fm27Steam.schemas();
+        let schemas = GameBuild::FM27_STEAM.schemas();
         let offset = schemas.offset_of("s_dob").unwrap();
         let mut raw = vec![0; schemas.staff_struct_size];
         raw[offset..offset + 2].copy_from_slice(&(day | 0x8000).to_le_bytes());
@@ -835,7 +835,7 @@ mod game_date_tests {
 
     #[test]
     fn birthday_changes_column_filter_and_sort_age() {
-        let schemas = GameBuild::Fm27Steam.schemas();
+        let schemas = GameBuild::FM27_STEAM.schemas();
         let rows = [row(1, 85), row(2, 86), row(3, 0)];
         let today = Some(GameDate {
             day: 85,

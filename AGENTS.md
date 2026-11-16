@@ -20,7 +20,7 @@ Detected builds are marked as unvalidated in the status bar.
 ## Safety invariants
 
 - **Schema-only offsets.** Resolve memory offsets through the attached process or
-  record's schema (`fm.schemas()` / `build.schemas()`). No hardcoded layout offsets
+  record's schema (`fm.schemas()` / `build.schemas()`, a `ReleaseLayout`). No hardcoded layout offsets
   in readers, writers or UI. Keep different attachments/builds independent.
 - **Evidence before recording a mapping.** Confirm new or changed recorded mappings
   against at least two entities with independently known in-game values. Evidence
@@ -53,7 +53,7 @@ Detected builds are marked as unvalidated in the status bar.
 
 ## Code map
 
-- `src/fields/`, `src/game_version.rs`: per-build layouts and dispatch.
+- `src/fields/`, `src/game_version.rs`: per-release `ReleaseLayout` record layouts, per-build `RecordedBuild` addresses and fingerprints, and dispatch.
 - `src/process/`: platform memory backends; `src/bridge/`: worker/UI messages.
 - `src/player.rs`, `src/staff.rs`, `src/club.rs`: schema-based record reads.
 - `src/app.rs`, `src/ui/`: egui application, search pages and detail panels.

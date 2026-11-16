@@ -1030,8 +1030,9 @@ impl eframe::App for FmEditorApp {
         // Only filter the active page — running all three every frame on a
         // large save (50k+ players) causes visible lag and hangs.
         let player_filtered: Vec<&CachedPlayer> = if self.active_page == Page::PlayerSearch {
-            if let (Some(c), Some(schemas)) = (&cache_arc, schemas) {
+            if let (Some(c), Some(build), Some(schemas)) = (&cache_arc, self.attached_build, schemas) {
                 pages::player_search::filter_with_clubs(
+                    build,
                     schemas,
                     self.game_date,
                     &c.players,
@@ -1355,14 +1356,14 @@ impl eframe::App for FmEditorApp {
                 });
             }
             ui.separator();
-            let Some(schemas) = schemas else {
+            let (Some(build), Some(schemas)) = (self.attached_build, schemas) else {
                 ui.label("Waiting for fm.exe\u{2026}");
                 return;
             };
             match self.active_page {
                 Page::BestXi => {
                     clicked_xi_player = pages::best_xi::show(
-                        ui, &mut self.best_xi, schemas, cache_arc.as_ref(),
+                        ui, &mut self.best_xi, build, cache_arc.as_ref(),
                     );
                 }
                 // ---- Search pages: filter row always visible, results area swaps ----
@@ -1371,7 +1372,7 @@ impl eframe::App for FmEditorApp {
                     match self.active_page {
                         Page::PlayerSearch => {
                             if pages::player_search::filter_row(
-                                ui, &mut self.player_search, Some(schemas),
+                                ui, &mut self.player_search, Some(build), Some(schemas),
                                 cache_arc.as_ref().and_then(|c| c.my_clubs.as_ref()),
                             )
                                 && !self.advanced_open
@@ -2042,7 +2043,7 @@ mod tests {
         use crate::player::{Absence, Clause, GameDate, Injury, ListState};
         let date = GameDate::from_raw((2026u32 << 16) | 194).unwrap();
         let mut record = PlayerRecord {
-            build: GameBuild::Fm27Steam,
+            build: GameBuild::FM27_STEAM,
             addr: 0x20000,
             index: 0,
             name: None,
@@ -2384,7 +2385,7 @@ mod edit_history_integration_tests {
         app.auto_connect = false;
         app.active_page = Page::ClubSearch;
         app.conn = ConnState::Ready(123);
-        app.attached_build = Some(GameBuild::Fm27Steam);
+        app.attached_build = Some(GameBuild::FM27_STEAM);
         let club = ClubView {
             addr: 0x20000,
             index: 7,
@@ -2415,7 +2416,7 @@ mod edit_history_integration_tests {
     fn club_identity() -> EntityRef {
         EntityRef {
             kind: EntityKind::Club,
-            build: GameBuild::Fm27Steam,
+            build: GameBuild::FM27_STEAM,
             address: 0x20000,
             index: 7,
             uid: Some(42),
@@ -2633,7 +2634,7 @@ mod edit_history_integration_tests {
         let mut history = ChangeHistory::new();
         let entity = EntityRef {
             kind: EntityKind::Club,
-            build: GameBuild::Fm27Steam,
+            build: GameBuild::FM27_STEAM,
             address: 0x20000,
             index: 0,
             uid: Some(42),
@@ -2707,7 +2708,7 @@ mod edit_history_integration_tests {
         });
         let target = EntityRef {
             kind: EntityKind::Club,
-            build: GameBuild::Fm27Steam,
+            build: GameBuild::FM27_STEAM,
             address: 0x20000,
             index: 7,
             uid: Some(42),
@@ -2734,7 +2735,7 @@ mod edit_history_integration_tests {
             ..target.clone()
         };
         assert!(history_navigation_target(&cache, Some(target.build), &wrong).is_none());
-        assert!(history_navigation_target(&cache, Some(GameBuild::Fm26Steam), &target).is_none());
+        assert!(history_navigation_target(&cache, Some(GameBuild::FM26_STEAM), &target).is_none());
         for (uid, index, kind) in [
             (Some(43), 7, EntityKind::Club),
             (None, 7, EntityKind::Club),

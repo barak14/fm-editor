@@ -291,7 +291,7 @@ pub(crate) const fn sub_fm_string(container: SubRecordId, offset: u64) -> Option
     })
 }
 
-fn key_map(s: &'static VersionedSchemas) -> HashMap<&'static str, &'static Field> {
+fn key_map(s: &'static ReleaseLayout) -> HashMap<&'static str, &'static Field> {
     s.player_fields
         .iter()
         .chain(s.staff_fields)
@@ -305,12 +305,8 @@ static FM26_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
     LazyLock::new(|| key_map(&fm26::FM26));
 static FM24_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
     LazyLock::new(|| key_map(&fm24::FM24));
-static FM24_EPIC_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
-    LazyLock::new(|| key_map(&fm24::FM24_EPIC));
 static FM27_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
     LazyLock::new(|| key_map(&fm27::FM27));
-static FM27_GAMEPASS_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
-    LazyLock::new(|| key_map(&fm27::FM27_GAMEPASS));
 
 fn decode_u8_enc(byte: u8, encoding: Encoding) -> u8 {
     match encoding {
@@ -505,7 +501,7 @@ pub fn read_field_f32<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Opti
 }
 
 // =========================================================================
-// VersionedSchemas — one static per supported game version
+// ReleaseLayout — one static per supported game version
 // =========================================================================
 
 /// Build-specific offsets and labels for player medical, relations and clause lists.
@@ -616,21 +612,18 @@ fn label_or_code(table: &[(u8, &'static str)], code: u8, prefix: &str) -> String
         .find(|&&(known, _)| known == code)
         .map(|&(_, label)| label.to_owned())
         .unwrap_or_else(|| {
-            if prefix.ends_with('#') { format!("{prefix}{code}") } else { format!("{prefix} {code}") }
+            if prefix.ends_with('#') {
+                format!("{prefix}{code}")
+            } else {
+                format!("{prefix} {code}")
+            }
         })
 }
 
-/// Complete field / layout / RVA schema for one game build.
+/// Record layouts shared by every build of one supported release.
 ///
-/// There is exactly one `static` of this type per supported build
-/// (`fm24::FM24`, `fm24::FM24_EPIC`, `fm26::FM26`, `fm27::FM27`,
-/// `fm27::FM27_GAMEPASS`; see
-/// `GameBuild::schemas`); `VersionedSchemas::field` relies on that address
-/// identity. `FmProcess::schemas()` returns the
-/// schema that matches the attached process. There is no global "active"
-/// schema: every lookup goes through the schema of the process (or the
-/// attached game the UI is showing) it reads.
-pub struct VersionedSchemas {
+/// The three release statics are [`fm24::FM24`], [`fm26::FM26`] and [`fm27::FM27`].
+pub struct ReleaseLayout {
     // Field lists per entity.
     pub player_fields: &'static [Field],
     pub staff_fields: &'static [Field],
@@ -664,31 +657,62 @@ pub struct VersionedSchemas {
     pub human_manager_shift: usize,
     pub manager_shifted_fields: &'static [(usize, usize)],
 
-    // RVAs from game_plugin.dll base.
+    /// Start of the person block in a player record.
+    pub player_person_offset: usize,
+    /// Extra staff data preceding the person block in a player-coach record.
+    pub player_coach_shift: usize,
+
+    /// Year ages are computed against (game start season). FM26 keeps the
+    /// editor's historical 2026; FM24 saves start in July 2023.
+    pub age_reference_year: u16,
+}
+
+/// Module-relative addresses for one executable build.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ModuleAddresses {
     pub rva_humans_data: u64,
     pub rva_humans_end: u64,
     pub rva_staff_data: u64,
     pub rva_staff_end: u64,
     pub rva_clubs_data: u64,
     pub rva_clubs_end: u64,
-
     /// Stadium array — accessed via a 5-hop pointer chain, NOT a simple data/end pair:
     ///   GP+rva_stadium_base → container → container+0x80 → type_desc → vec_hdr → data_ptr
     ///   entity[i] = data_ptr + i * stadium_entity_stride
     /// This RVA points to the container object (first hop), not directly to the array.
     pub rva_stadium_base: u64,
-
     /// Packed DateDayYear at this module-relative RVA; 0 means unknown.
     pub rva_current_date: u64,
+    /// RVA (module-relative) of the vtable of the club finance class whose
+    /// layout the club `finance` sub-record fields describe. 0 = no check.
+    /// FM27 has a full finance class (budgets, facility copies) for its ~900
+    /// detailed clubs and a smaller class for the rest, where those offsets
+    /// fall outside the object; the loader drops the finance sub-record for
+    /// any club whose finance object has a different vtable.
+    pub full_finance_vtable_rva: u64,
+    /// Player-coach layout. A player-coach object is a player object followed
+    /// by `player_coach_shift` bytes of staff data and then the person block,
+    /// so every player field at or past `player_person_offset` (names, UID,
+    /// DOB, nation, caps, contract pointer, ...) lives `player_coach_shift`
+    /// bytes later than in a plain player. Identified by the object's vtable
+    /// at `player_coach_vtable_rva` (module-relative); 0 = no player-coach
+    /// handling.
+    pub player_coach_vtable_rva: u64,
+    /// RVA (module-relative) of the vtable of the human-manager staff class.
+    /// Staff objects of this class keep their identity fields at
+    /// `offset + human_manager_shift` (see `manager_shifted_fields`), so every
+    /// staff reader patches them back. 0 = only the manager found by
+    /// `find_human_manager` is treated as shifted.
+    pub human_manager_vtable_rva: u64,
+}
 
-    // FMRTE reference counts — used by `src/bin/scan_arrays.rs` to
-    // validate candidate RVA pairs. Per-version because FMRTE's own
-    // numbers shift between game versions.
-    pub fmrte_players: u64,
-    pub fmrte_staff: u64,
-    pub fmrte_clubs: u64,
-    pub fmrte_humans: u64,
-
+/// Recorded executable metadata and its release's record layouts.
+#[derive(Clone, Copy)]
+pub struct RecordedBuild {
+    pub version: crate::game_version::GameVersion,
+    pub storefront: crate::game_version::Storefront,
+    pub layout: &'static ReleaseLayout,
+    pub addresses: ModuleAddresses,
     /// FNV-1a hash of the first 64 KB of `game_plugin.dll` for the patch
     /// this schema was validated against.
     ///
@@ -698,41 +722,19 @@ pub struct VersionedSchemas {
     ///
     /// To calibrate: launch the editor once with the target FM build, read
     /// the hash from the status bar notice, paste it here, commit.
-    pub known_dll_hash: u64,
-
-    /// RVA (module-relative) of the vtable of the club finance class whose
-    /// layout the club `finance` sub-record fields describe. 0 = no check.
-    /// FM27 has a full finance class (budgets, facility copies) for its ~900
-    /// detailed clubs and a smaller class for the rest, where those offsets
-    /// fall outside the object; the loader drops the finance sub-record for
-    /// any club whose finance object has a different vtable.
-    pub full_finance_vtable_rva: u64,
-
-    /// Player-coach layout. A player-coach object is a player object followed
-    /// by `player_coach_shift` bytes of staff data and then the person block,
-    /// so every player field at or past `player_person_offset` (names, UID,
-    /// DOB, nation, caps, contract pointer, ...) lives `player_coach_shift`
-    /// bytes later than in a plain player. Identified by the object's vtable
-    /// at `player_coach_vtable_rva` (module-relative); 0 = no player-coach
-    /// handling.
-    pub player_coach_vtable_rva: u64,
-    pub player_person_offset: usize,
-    pub player_coach_shift: usize,
-
-    /// RVA (module-relative) of the vtable of the human-manager staff class.
-    /// Staff objects of this class keep their identity fields at
-    /// `offset + human_manager_shift` (see `manager_shifted_fields`), so every
-    /// staff reader patches them back. 0 = only the manager found by
-    /// `find_human_manager` is treated as shifted.
-    pub human_manager_vtable_rva: u64,
-
-    /// Year ages are computed against (game start season). FM26 keeps the
-    /// editor's historical 2026; FM24 saves start in July 2023.
-    pub age_reference_year: u16,
+    pub fingerprint: u64,
+    // FMRTE reference counts — used by `src/bin/scan_arrays.rs` to
+    // validate candidate RVA pairs. Per-version because FMRTE's own
+    // numbers shift between game versions.
+    pub fmrte_players: u64,
+    pub fmrte_staff: u64,
+    pub fmrte_clubs: u64,
+    pub fmrte_humans: u64,
+    pub schema_name: &'static str,
 }
 
-impl VersionedSchemas {
-    /// Build-specific morale label, falling back for unwitnessed levels.
+impl ReleaseLayout {
+    /// Release-specific morale label, falling back for unwitnessed levels.
     pub fn morale_label(&self, level: u8) -> String {
         self.morale_labels
             .iter()
@@ -741,22 +743,18 @@ impl VersionedSchemas {
             .unwrap_or_else(|| format!("Level {level}"))
     }
 
-    /// Look up a single field by key across all entities of this build.
+    /// Look up a single field by key across all entities of this release.
     ///
-    /// The per-build schemas are backed by a lazily-built `HashMap` so
+    /// The release layouts are backed by a lazily-built `HashMap` so
     /// repeated lookups (e.g. inside hot loops) are O(1); any other
-    /// `VersionedSchemas` value falls back to a linear scan.
+    /// `ReleaseLayout` value falls back to a linear scan.
     pub fn field(&'static self, key: &str) -> Option<&'static Field> {
         let map = if std::ptr::eq(self, &fm26::FM26) {
             &*FM26_KEYS
         } else if std::ptr::eq(self, &fm24::FM24) {
             &*FM24_KEYS
-        } else if std::ptr::eq(self, &fm24::FM24_EPIC) {
-            &*FM24_EPIC_KEYS
         } else if std::ptr::eq(self, &fm27::FM27) {
             &*FM27_KEYS
-        } else if std::ptr::eq(self, &fm27::FM27_GAMEPASS) {
-            &*FM27_GAMEPASS_KEYS
         } else {
             return self
                 .player_fields
@@ -811,13 +809,32 @@ mod schema_lookup_tests {
     use super::*;
 
     #[test]
+    fn non_static_release_layout_uses_field_lookup_fallback() {
+        let layout = Box::leak(Box::new(ReleaseLayout { ..fm24::FM24 }));
+        assert!(std::ptr::eq(
+            layout.field("p_name").unwrap(),
+            fm24::FM24.field("p_name").unwrap(),
+        ));
+        assert!(layout.field("unknown_field").is_none());
+    }
+
+    #[test]
     fn current_date_rva_is_specific_to_the_verified_build() {
-        assert_eq!(GameBuild::Fm27Steam.schemas().rva_current_date, 0x56AD378);
-        assert_eq!(GameBuild::Fm24Steam.schemas().rva_current_date, 0x631D5BC);
-        assert_eq!(GameBuild::Fm24Epic.schemas().rva_current_date, 0x631D5BC);
-        assert_eq!(GameBuild::Fm27GamePass.schemas().rva_current_date, 0x53597C8);
-        for build in [GameBuild::Fm26Steam] {
-            assert_eq!(build.schemas().rva_current_date, 0, "{build:?}");
+        assert_eq!(
+            GameBuild::FM27_STEAM.addresses().rva_current_date,
+            0x56AD378
+        );
+        assert_eq!(
+            GameBuild::FM24_STEAM.addresses().rva_current_date,
+            0x631D5BC
+        );
+        assert_eq!(GameBuild::FM24_EPIC.addresses().rva_current_date, 0x631D5BC);
+        assert_eq!(
+            GameBuild::FM27_GAMEPASS.addresses().rva_current_date,
+            0x53597C8
+        );
+        for build in [GameBuild::FM26_STEAM] {
+            assert_eq!(build.addresses().rva_current_date, 0, "{build:?}");
         }
     }
 
@@ -837,15 +854,17 @@ mod schema_lookup_tests {
                 Some(scanned.offset.unwrap().offset() as usize)
             );
         }
-        assert!(GameBuild::Fm26Steam
-            .schemas()
-            .field("no_such_key")
-            .is_none());
+        assert!(
+            GameBuild::FM26_STEAM
+                .schemas()
+                .field("no_such_key")
+                .is_none()
+        );
     }
 
     #[test]
     fn fm26_squad_fields_resolve_to_contract_bytes() {
-        let schemas = GameBuild::Fm26Steam.schemas();
+        let schemas = GameBuild::FM26_STEAM.schemas();
         for (key, offset) in [("p_squad_status", 0x54), ("p_squad_number", 0x5D)] {
             assert!(matches!(
                 schemas.field(key).unwrap().offset,
@@ -867,7 +886,7 @@ mod schema_lookup_tests {
 
     #[test]
     fn fm24_resolves_staff_club_through_employment_without_contract_editor() {
-        let schemas = GameBuild::Fm24Steam.schemas();
+        let schemas = GameBuild::FM24_STEAM.schemas();
         let find = |id: &str| schemas.staff_sub_records.iter().find(|s| s.id == id);
         let employment = find("employment").unwrap();
         assert!(matches!(employment.parent, SubRecordParent::Direct));
@@ -894,7 +913,7 @@ mod schema_lookup_tests {
 
     #[test]
     fn fm26_resolves_player_and_staff_clubs_through_teams() {
-        let schemas = GameBuild::Fm26Steam.schemas();
+        let schemas = GameBuild::FM26_STEAM.schemas();
         let find = |subs: &'static [SubRecord], id: &str| subs.iter().find(|s| s.id == id).unwrap();
         let team = find(schemas.player_sub_records, "team");
         assert!(matches!(team.parent, SubRecordParent::Direct));
@@ -932,7 +951,7 @@ mod schema_lookup_tests {
     fn int_fields_read_at_their_encoding_width() {
         // FM24 stores international caps as a u8 followed by U21 caps; FM27
         // widens caps to u16. Reading by encoding must not run into the next byte.
-        let fm24 = GameBuild::Fm24Steam.schemas();
+        let fm24 = GameBuild::FM24_STEAM.schemas();
         let off = fm24.offset_of("p_intl_caps").unwrap();
         let mut raw = vec![0u8; off + 4];
         raw[off] = 84;
@@ -942,7 +961,7 @@ mod schema_lookup_tests {
             Some(84)
         );
 
-        let fm27 = GameBuild::Fm27Steam.schemas();
+        let fm27 = GameBuild::FM27_STEAM.schemas();
         let off = fm27.offset_of("p_intl_caps").unwrap();
         let mut raw = vec![0u8; off + 2];
         raw[off..off + 2].copy_from_slice(&300u16.to_le_bytes());
@@ -969,6 +988,7 @@ mod schema_lookup_tests {
 #[cfg(test)]
 mod player_schema_tests {
     use super::*;
+    use crate::game_version::GameBuild;
 
     #[test]
     fn morale_labels_only_name_witnessed_levels() {
@@ -1048,7 +1068,10 @@ mod player_schema_tests {
     fn fm27_player_list_layout_and_listing_fields_are_build_data() {
         let schemas = &fm27::FM27;
         let layout = schemas.player_lists.unwrap();
-        assert_eq!(schemas.rva_current_date, 0x56AD378);
+        assert_eq!(
+            GameBuild::FM27_STEAM.addresses().rva_current_date,
+            0x56AD378
+        );
         assert_eq!((layout.medical_ptr, layout.relations_ptr), (0xF8, 0x300));
         assert_eq!(
             (
@@ -1131,21 +1154,53 @@ mod player_schema_tests {
                 _ => panic!("{key} must live in the contract"),
             }
         }
-        let gamepass = &fm27::FM27_GAMEPASS;
+        let gamepass = fm27::FM27_GAMEPASS.layout;
         assert!(std::ptr::eq(layout, gamepass.player_lists.unwrap()));
         assert_eq!(schemas.morale_labels, gamepass.morale_labels);
         // Module-relative addresses are per binary: none come from Steam.
-        let steam = &fm27::FM27;
+        let (gamepass, steam) = (&fm27::FM27_GAMEPASS, &fm27::FM27_STEAM);
         for (name, gp, st) in [
-            ("date", gamepass.rva_current_date, steam.rva_current_date),
-            ("players", gamepass.rva_humans_data, steam.rva_humans_data),
-            ("staff", gamepass.rva_staff_data, steam.rva_staff_data),
-            ("clubs", gamepass.rva_clubs_data, steam.rva_clubs_data),
-            ("stadium", gamepass.rva_stadium_base, steam.rva_stadium_base),
-            ("finance", gamepass.full_finance_vtable_rva, steam.full_finance_vtable_rva),
-            ("player-coach", gamepass.player_coach_vtable_rva, steam.player_coach_vtable_rva),
-            ("manager", gamepass.human_manager_vtable_rva, steam.human_manager_vtable_rva),
-            ("hash", gamepass.known_dll_hash, steam.known_dll_hash),
+            (
+                "date",
+                gamepass.addresses.rva_current_date,
+                steam.addresses.rva_current_date,
+            ),
+            (
+                "players",
+                gamepass.addresses.rva_humans_data,
+                steam.addresses.rva_humans_data,
+            ),
+            (
+                "staff",
+                gamepass.addresses.rva_staff_data,
+                steam.addresses.rva_staff_data,
+            ),
+            (
+                "clubs",
+                gamepass.addresses.rva_clubs_data,
+                steam.addresses.rva_clubs_data,
+            ),
+            (
+                "stadium",
+                gamepass.addresses.rva_stadium_base,
+                steam.addresses.rva_stadium_base,
+            ),
+            (
+                "finance",
+                gamepass.addresses.full_finance_vtable_rva,
+                steam.addresses.full_finance_vtable_rva,
+            ),
+            (
+                "player-coach",
+                gamepass.addresses.player_coach_vtable_rva,
+                steam.addresses.player_coach_vtable_rva,
+            ),
+            (
+                "manager",
+                gamepass.addresses.human_manager_vtable_rva,
+                steam.addresses.human_manager_vtable_rva,
+            ),
+            ("hash", gamepass.fingerprint, steam.fingerprint),
         ] {
             assert_ne!(gp, st, "Game Pass {name} inherits the Steam value");
         }
@@ -1153,32 +1208,79 @@ mod player_schema_tests {
 
     #[test]
     fn fm24_epic_is_the_steam_schema_with_its_own_fingerprint() {
-        let (steam, epic) = (&fm24::FM24, &fm24::FM24_EPIC);
-        assert!(std::ptr::eq(steam.player_fields, epic.player_fields));
-        assert!(std::ptr::eq(steam.staff_fields, epic.staff_fields));
-        assert!(std::ptr::eq(steam.club_fields, epic.club_fields));
-        assert!(std::ptr::eq(steam.club_sub_records, epic.club_sub_records));
-        assert_eq!(steam.player_struct_size, epic.player_struct_size);
-        assert_eq!(steam.staff_struct_size, epic.staff_struct_size);
+        let (steam, epic) = (&fm24::FM24_STEAM, &fm24::FM24_EPIC);
+        assert!(std::ptr::eq(steam.layout, epic.layout));
+        assert!(std::ptr::eq(
+            steam.layout.player_fields,
+            epic.layout.player_fields
+        ));
+        assert!(std::ptr::eq(
+            steam.layout.staff_fields,
+            epic.layout.staff_fields
+        ));
+        assert!(std::ptr::eq(
+            steam.layout.club_fields,
+            epic.layout.club_fields
+        ));
+        assert!(std::ptr::eq(
+            steam.layout.club_sub_records,
+            epic.layout.club_sub_records
+        ));
+        assert_eq!(
+            steam.layout.player_struct_size,
+            epic.layout.player_struct_size
+        );
+        assert_eq!(
+            steam.layout.staff_struct_size,
+            epic.layout.staff_struct_size
+        );
         for (name, s, e) in [
-            ("players", steam.rva_humans_data, epic.rva_humans_data),
-            ("players end", steam.rva_humans_end, epic.rva_humans_end),
-            ("staff", steam.rva_staff_data, epic.rva_staff_data),
-            ("staff end", steam.rva_staff_end, epic.rva_staff_end),
-            ("clubs", steam.rva_clubs_data, epic.rva_clubs_data),
-            ("clubs end", steam.rva_clubs_end, epic.rva_clubs_end),
-            ("date", steam.rva_current_date, epic.rva_current_date),
+            (
+                "players",
+                steam.addresses.rva_humans_data,
+                epic.addresses.rva_humans_data,
+            ),
+            (
+                "players end",
+                steam.addresses.rva_humans_end,
+                epic.addresses.rva_humans_end,
+            ),
+            (
+                "staff",
+                steam.addresses.rva_staff_data,
+                epic.addresses.rva_staff_data,
+            ),
+            (
+                "staff end",
+                steam.addresses.rva_staff_end,
+                epic.addresses.rva_staff_end,
+            ),
+            (
+                "clubs",
+                steam.addresses.rva_clubs_data,
+                epic.addresses.rva_clubs_data,
+            ),
+            (
+                "clubs end",
+                steam.addresses.rva_clubs_end,
+                epic.addresses.rva_clubs_end,
+            ),
+            (
+                "date",
+                steam.addresses.rva_current_date,
+                epic.addresses.rva_current_date,
+            ),
         ] {
             assert_eq!(s, e, "Epic {name}");
         }
-        assert_eq!(epic.known_dll_hash, 0x8FA1_13DB_9DCD_8883);
-        assert_ne!(steam.known_dll_hash, epic.known_dll_hash);
+        assert_eq!(epic.fingerprint, 0x8FA1_13DB_9DCD_8883);
+        assert_ne!(steam.fingerprint, epic.fingerprint);
     }
 
     #[test]
     fn fm24_and_fm26_leave_new_player_paths_unmapped() {
         assert!(fm26::FM26.player_lists.is_none());
-        assert_eq!(fm26::FM26.rva_current_date, 0);
+        assert_eq!(fm26::FM26_STEAM.addresses.rva_current_date, 0);
         // FM24's lists differ from FM27 only where FM24's own screens showed it.
         let fm24 = fm24::FM24
             .player_lists

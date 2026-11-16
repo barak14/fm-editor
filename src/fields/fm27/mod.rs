@@ -19,13 +19,10 @@ pub(crate) use stadium::FIELDS as STADIUM_FIELDS;
 pub(crate) use staff::FIELDS as STAFF_FIELDS;
 pub(crate) use staff::STAFF_SUB_RECORDS;
 
-use crate::fields::VersionedSchemas;
+use crate::fields::{ModuleAddresses, RecordedBuild, ReleaseLayout};
+use crate::game_version::{GameVersion, Storefront};
 
-/// FM27 Steam build. FM27 is a Unity build like FM26: game logic lives in
-/// `game_plugin.dll`, and the entity RVAs below are relative to its base.
-/// Values not listed as verified in docs/fm27/memory-layout.md are inherited
-/// from FM26.
-const STEAM: VersionedSchemas = VersionedSchemas {
+pub static FM27: ReleaseLayout = ReleaseLayout {
     player_fields: PLAYER_FIELDS,
     staff_fields: STAFF_FIELDS,
     club_fields: CLUB_FIELDS,
@@ -46,24 +43,52 @@ const STEAM: VersionedSchemas = VersionedSchemas {
 
     human_manager_shift: staff::HUMAN_MANAGER_SHIFT,
     manager_shifted_fields: staff::MANAGER_SHIFTED_FIELDS,
+    player_person_offset: 0x288,
+    player_coach_shift: 0xF8,
+    age_reference_year: 2027,
+};
 
-    // FM27 keeps FM26's array cluster layout, shifted +0x8BA158 as a block.
-    // Found by sampling elements of every heap vector in .sdata and decoding
-    // names at FM26's offsets: players (p_name 0x2C8), staff (s_name 0x140),
-    // clubs (c_full_name 0xC0 / c_name 0xC8) all decode. Stadium RVA is the
-    // same shift applied, not yet checked.
-    rva_humans_data: 0x57037D0,
-    rva_humans_end: 0x57037D8,
-    rva_staff_data: 0x5703818,
-    rva_staff_end: 0x5703820,
-    rva_clubs_data: 0x5703988,
-    rva_clubs_end: 0x5703990,
-    rva_stadium_base: 0x5703750,
-    // Current game date (DateDayYear, flags above bit 8). Witnesses: raw
-    // 0x07EA1AC2 (day 194) on Mon 13 Jul 2026; 195/2026 after one day of
-    // holiday, Tue 14 Jul 2026 (2026-10-31). A pointer path reads the same
-    // date: +0x56F1A18 -> game object (vtable +0x4C8C858) + 0x7F4.
-    rva_current_date: 0x56AD378,
+/// FM27 Steam build. FM27 is a Unity build like FM26: game logic lives in
+/// `game_plugin.dll`, and the entity RVAs below are relative to its base.
+/// Values not listed as verified in docs/fm27/memory-layout.md are inherited
+/// from FM26.
+pub static FM27_STEAM: RecordedBuild = RecordedBuild {
+    version: GameVersion::Fm27,
+    storefront: Storefront::Steam,
+    layout: &FM27,
+    schema_name: "FM27_STEAM",
+    addresses: ModuleAddresses {
+        // FM27 keeps FM26's array cluster layout, shifted +0x8BA158 as a block.
+        // Found by sampling elements of every heap vector in .sdata and decoding
+        // names at FM26's offsets: players (p_name 0x2C8), staff (s_name 0x140),
+        // clubs (c_full_name 0xC0 / c_name 0xC8) all decode. Stadium RVA is the
+        // same shift applied, not yet checked.
+        rva_humans_data: 0x57037D0,
+        rva_humans_end: 0x57037D8,
+        rva_staff_data: 0x5703818,
+        rva_staff_end: 0x5703820,
+        rva_clubs_data: 0x5703988,
+        rva_clubs_end: 0x5703990,
+        rva_stadium_base: 0x5703750,
+        // Current game date (DateDayYear, flags above bit 8). Witnesses: raw
+        // 0x07EA1AC2 (day 194) on Mon 13 Jul 2026; 195/2026 after one day of
+        // holiday, Tue 14 Jul 2026 (2026-10-31). A pointer path reads the same
+        // date: +0x56F1A18 -> game object (vtable +0x4C8C858) + 0x7F4.
+        rva_current_date: 0x56AD378,
+        // Full club finance class: Spurs, Arsenal, Man City, Liverpool and 881
+        // other clubs. 32,682 clubs use a smaller class (vtable +0x4CF07F8) where
+        // the budget offsets read packed dates and floats.
+        full_finance_vtable_rva: 0x4CF0CC8,
+        // Player-coaches (391 in this save): vtable +0x4F75A08, person block at
+        // +0x288+0xF8. Witnesses: James Milner (born 4 Jan 1986, Leeds, England,
+        // 61 caps), David Nugent, Keisuke Honda (FC Jurong), Remko Pasveer (Twente).
+        player_coach_vtable_rva: 0x4F75A08,
+        // Human-manager staff class: the user's manager (last staff entry) and the
+        // entry FM creates for the player's Steam profile (named "(<account
+        // name>)", staff id 2002106548, no club, CA/PA 100/200). Both showed as
+        // nameless ID-0 rows in the staff list.
+        human_manager_vtable_rva: 0x4CC086C,
+    },
 
     // No FMRTE reference counts exist for FM27 yet. These are the counts
     // observed in a fresh FM27 save (day 1 of the first season); they
@@ -74,55 +99,40 @@ const STEAM: VersionedSchemas = VersionedSchemas {
     fmrte_humans: 1,
 
     // Not calibrated: attach reports the running game_plugin.dll hash.
-    known_dll_hash: 0,
-    // Full club finance class: Spurs, Arsenal, Man City, Liverpool and 881
-    // other clubs. 32,682 clubs use a smaller class (vtable +0x4CF07F8) where
-    // the budget offsets read packed dates and floats.
-    full_finance_vtable_rva: 0x4CF0CC8,
-    // Player-coaches (391 in this save): vtable +0x4F75A08, person block at
-    // +0x288+0xF8. Witnesses: James Milner (born 4 Jan 1986, Leeds, England,
-    // 61 caps), David Nugent, Keisuke Honda (FC Jurong), Remko Pasveer (Twente).
-    player_coach_vtable_rva: 0x4F75A08,
-    player_person_offset: 0x288,
-    player_coach_shift: 0xF8,
-    // Human-manager staff class: the user's manager (last staff entry) and the
-    // entry FM creates for the player's Steam profile (named "(<account
-    // name>)", staff id 2002106548, no club, CA/PA 100/200). Both showed as
-    // nameless ID-0 rows in the staff list.
-    human_manager_vtable_rva: 0x4CC086C,
-    age_reference_year: 2027,
+    fingerprint: 0,
 };
-
-/// FM27 schema, Steam build (Windows and Proton).
-pub static FM27: VersionedSchemas = STEAM;
 
 /// FM27 schema, PC Game Pass build (Microsoft GDK, Xbox app install).
 ///
 /// The Steam struct layouts with this binary's own module hash and
 /// module-relative RVAs (entity arrays, current date, class vtables).
 /// Evidence and remaining gaps in docs/fm27/memory-layout.md ("Game Pass build").
-pub static FM27_GAMEPASS: VersionedSchemas = VersionedSchemas {
+pub static FM27_GAMEPASS: RecordedBuild = RecordedBuild {
+    storefront: Storefront::GamePass,
+    schema_name: "FM27_GAMEPASS",
     // game_plugin.dll of Store package 0.9.2435.0 (2026-11-12).
-    known_dll_hash: 0xAAD1_D2D3_AD51_8F23,
-    // Current game date, same encoding as Steam: raw 0x07EA1AC2 (day 194,
-    // Mon 13 Jul 2026) on a new save. Only date-shaped static with that value.
-    rva_current_date: 0x53597C8,
-    // Same array cluster as Steam, shifted -0x34B9F0 as a block. Found by
-    // decoding names at the Steam struct offsets in every heap vector.
-    rva_humans_data: 0x53B7DE0,
-    rva_humans_end: 0x53B7DE8,
-    rva_staff_data: 0x53B7E28,
-    rva_staff_end: 0x53B7E30,
-    rva_clubs_data: 0x53B7F98,
-    rva_clubs_end: 0x53B7FA0,
-    // Same shift applied; not yet checked.
-    rva_stadium_base: 0x53B7D60,
-    // Class RVAs, matched to the Steam classes by a vtable census of each
-    // array: 158 full-finance clubs (Arsenal, Aston Villa; small class
-    // +0x4A2F518, 0x4D0 below it as on Steam), 77 player-coaches (staff-side
-    // class +0x4C5FE6C), and the last two staff entries for the human manager.
-    full_finance_vtable_rva: 0x4A2F9E8,
-    player_coach_vtable_rva: 0x4C5FE88,
-    human_manager_vtable_rva: 0x4A072BC,
-    ..STEAM
+    fingerprint: 0xAAD1_D2D3_AD51_8F23,
+    addresses: ModuleAddresses {
+        // Current game date, same encoding as Steam: raw 0x07EA1AC2 (day 194,
+        // Mon 13 Jul 2026) on a new save. Only date-shaped static with that value.
+        rva_current_date: 0x53597C8,
+        // Same array cluster as Steam, shifted -0x34B9F0 as a block. Found by
+        // decoding names at the Steam struct offsets in every heap vector.
+        rva_humans_data: 0x53B7DE0,
+        rva_humans_end: 0x53B7DE8,
+        rva_staff_data: 0x53B7E28,
+        rva_staff_end: 0x53B7E30,
+        rva_clubs_data: 0x53B7F98,
+        rva_clubs_end: 0x53B7FA0,
+        // Same shift applied; not yet checked.
+        rva_stadium_base: 0x53B7D60,
+        // Class RVAs, matched to the Steam classes by a vtable census of each
+        // array: 158 full-finance clubs (Arsenal, Aston Villa; small class
+        // +0x4A2F518, 0x4D0 below it as on Steam), 77 player-coaches (staff-side
+        // class +0x4C5FE6C), and the last two staff entries for the human manager.
+        full_finance_vtable_rva: 0x4A2F9E8,
+        player_coach_vtable_rva: 0x4C5FE88,
+        human_manager_vtable_rva: 0x4A072BC,
+    },
+    ..FM27_STEAM
 };

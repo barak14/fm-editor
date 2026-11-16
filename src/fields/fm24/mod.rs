@@ -1,6 +1,6 @@
 //! FM24 per-version field tables. Mirrors `fields::fm26`: each sub-module
 //! owns one entity type's `FIELDS` const slice and this module collects them
-//! into the `FM24` `VersionedSchemas`.
+//! into the `FM24` `ReleaseLayout`.
 //!
 //! FM24 has no `game_plugin.dll` — the game logic and every entity-array RVA
 //! live in `fm.exe` itself (image base 0x140000000), so `gp_base` is the
@@ -19,24 +19,10 @@ pub(crate) use stadium::FIELDS as STADIUM_FIELDS;
 pub(crate) use staff::FIELDS as STAFF_FIELDS;
 pub(crate) use staff::STAFF_SUB_RECORDS;
 
-use crate::fields::VersionedSchemas;
+use crate::fields::{ModuleAddresses, RecordedBuild, ReleaseLayout};
+use crate::game_version::{GameVersion, Storefront};
 
-/// FM24 schema — mapped 2026-10-22 against a fresh save (3 Jul 2023).
-///
-/// RVAs are relative to the fm.exe base. Each `(data, end)` pair is a
-/// std::vector of object pointers in fm.exe's writable data:
-///
-/// - players `0x642EDD0` — 83,426 entries, 99.8% carry the player vtable
-///   (fm.exe+0x5A4E958); contains Harry Kane. The neighbouring 116,856-entry
-///   pair at 0x642EDB8 points 0x28 into a different object type.
-/// - staff `0x642EDE8` — 33,835 entries (staff vtable fm.exe+0x5A4C2E8),
-///   human manager last. The 24,775-entry pair at 0x642EDF0 is a subset.
-/// - clubs `0x642EF58` — 36,725 entries (club vtable fm.exe+0x5A51F38); the
-///   36,498-entry pair at 0x642EF88 is a strict subset.
-///
-/// The stadium array root is not located; stadiums are reached per club via
-/// the `home_stadium` sub-record, so `rva_stadium_base` stays 0.
-pub static FM24: VersionedSchemas = VersionedSchemas {
+pub static FM24: ReleaseLayout = ReleaseLayout {
     player_fields: PLAYER_FIELDS,
     staff_fields: STAFF_FIELDS,
     club_fields: CLUB_FIELDS,
@@ -57,21 +43,50 @@ pub static FM24: VersionedSchemas = VersionedSchemas {
 
     human_manager_shift: staff::HUMAN_MANAGER_SHIFT,
     manager_shifted_fields: staff::MANAGER_SHIFTED_FIELDS,
+    player_person_offset: 0,
+    player_coach_shift: 0,
+    age_reference_year: 2023,
+};
 
-    rva_humans_data: 0x642EDD0,
-    rva_humans_end: 0x642EDD8,
-    rva_staff_data: 0x642EDE8,
-    rva_staff_end: 0x642EDF0,
-    rva_clubs_data: 0x642EF58,
-    rva_clubs_end: 0x642EF60,
-    rva_stadium_base: 0,
-    // Current game date, static DateDayYear (day of year with flag bits above
-    // bit 8, then the year). Found with `scan_arrays --date`: of two statics
-    // reading Mon 3 Jul 2023 (raw 0x07E71AB8 at 09:00), only this one moved
-    // with FM's clock, reading 185/2023 on Tue 4 Jul and 186/2023 on Wed
-    // 5 Jul after one-day holidays (2026-11-09). fm.exe+0x642F458 kept 3 Jul
-    // (the game start date).
-    rva_current_date: 0x631D5BC,
+/// FM24 schema — mapped 2026-10-22 against a fresh save (3 Jul 2023).
+///
+/// RVAs are relative to the fm.exe base. Each `(data, end)` pair is a
+/// std::vector of object pointers in fm.exe's writable data:
+///
+/// - players `0x642EDD0` — 83,426 entries, 99.8% carry the player vtable
+///   (fm.exe+0x5A4E958); contains Harry Kane. The neighbouring 116,856-entry
+///   pair at 0x642EDB8 points 0x28 into a different object type.
+/// - staff `0x642EDE8` — 33,835 entries (staff vtable fm.exe+0x5A4C2E8),
+///   human manager last. The 24,775-entry pair at 0x642EDF0 is a subset.
+/// - clubs `0x642EF58` — 36,725 entries (club vtable fm.exe+0x5A51F38); the
+///   36,498-entry pair at 0x642EF88 is a strict subset.
+///
+/// The stadium array root is not located; stadiums are reached per club via
+/// the `home_stadium` sub-record, so `rva_stadium_base` stays 0.
+pub static FM24_STEAM: RecordedBuild = RecordedBuild {
+    version: GameVersion::Fm24,
+    storefront: Storefront::Steam,
+    layout: &FM24,
+    schema_name: "FM24_STEAM",
+    addresses: ModuleAddresses {
+        rva_humans_data: 0x642EDD0,
+        rva_humans_end: 0x642EDD8,
+        rva_staff_data: 0x642EDE8,
+        rva_staff_end: 0x642EDF0,
+        rva_clubs_data: 0x642EF58,
+        rva_clubs_end: 0x642EF60,
+        rva_stadium_base: 0,
+        // Current game date, static DateDayYear (day of year with flag bits above
+        // bit 8, then the year). Found with `scan_arrays --date`: of two statics
+        // reading Mon 3 Jul 2023 (raw 0x07E71AB8 at 09:00), only this one moved
+        // with FM's clock, reading 185/2023 on Tue 4 Jul and 186/2023 on Wed
+        // 5 Jul after one-day holidays (2026-11-09). fm.exe+0x642F458 kept 3 Jul
+        // (the game start date).
+        rva_current_date: 0x631D5BC,
+        full_finance_vtable_rva: 0,
+        player_coach_vtable_rva: 0,
+        human_manager_vtable_rva: 0,
+    },
 
     // Counts observed in the mapping save (used by scan_arrays.rs labels).
     fmrte_players: 83426,
@@ -81,13 +96,7 @@ pub static FM24: VersionedSchemas = VersionedSchemas {
 
     // FNV-1a-style hash (see `process::hash_dll_header`) of the first 64 KB
     // of fm.exe for the FM24 build this schema was verified against.
-    known_dll_hash: 0xFB39_952A_2028_7907,
-    full_finance_vtable_rva: 0,
-    player_coach_vtable_rva: 0,
-    player_person_offset: 0,
-    player_coach_shift: 0,
-    human_manager_vtable_rva: 0,
-    age_reference_year: 2023,
+    fingerprint: 0xFB39_952A_2028_7907,
 };
 
 /// FM24 schema, Epic Games Store build (Windows, 24.4.2+2081827).
@@ -96,7 +105,9 @@ pub static FM24: VersionedSchemas = VersionedSchemas {
 /// Contributed evidence (array roots, player attributes, club transfer
 /// budget, write and restore) and the fields that are only inherited from
 /// Steam are in docs/fm24/memory-layout.md ("Epic build").
-pub static FM24_EPIC: VersionedSchemas = VersionedSchemas {
-    known_dll_hash: 0x8FA1_13DB_9DCD_8883,
-    ..FM24
+pub static FM24_EPIC: RecordedBuild = RecordedBuild {
+    storefront: Storefront::Epic,
+    schema_name: "FM24_EPIC",
+    fingerprint: 0x8FA1_13DB_9DCD_8883,
+    ..FM24_STEAM
 };

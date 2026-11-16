@@ -4,8 +4,7 @@ use crate::process::FmProcess;
 
 /// Read the club pointer array bounds.
 pub fn clubs_array(fm: &FmProcess) -> Result<(u64, u64, usize), String> {
-    let schema = fm.schemas();
-    fm.read_ptr_array(schema.rva_clubs_data, schema.rva_clubs_end)
+    fm.read_ptr_array(fm.addresses().rva_clubs_data, fm.addresses().rva_clubs_end)
 }
 
 /// Find a club by UID and return its address + raw bytes.

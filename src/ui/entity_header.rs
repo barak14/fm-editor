@@ -34,7 +34,7 @@ pub fn show(
 
 /// Age on the attached game's date, or the schema reference year if unavailable.
 pub fn age(
-    schemas: &'static crate::fields::VersionedSchemas,
+    schemas: &'static crate::fields::ReleaseLayout,
     today: Option<crate::game_date::GameDate>,
     raw: &[u8],
     key: &str,

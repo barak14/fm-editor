@@ -8,7 +8,7 @@ If you want to look up "where is the Crossing attribute stored?" — read `src/f
 
 ## Entity arrays
 
-Confirmed RVAs are in `src/fields/fm26/mod.rs` (`FM26`). This is the discovery context for those.
+Confirmed RVAs are in `src/fields/fm26/mod.rs` (`FM26_STEAM` addresses and fingerprint; `FM26` record layout). This is the discovery context for those.
 
 **2026-10 patch.** Every RVA moved by a constant **+0x4F7F0** (e.g. players 0x4DF9E88 → 0x4E49678). The player pair was re-found by `Tools/scan-arrays.sh` (exact 542102 match); staff, clubs and the stadium container were found by applying the same delta and confirmed against witnesses (Harry Kane, Josep Guardiola, FC Bayern, Tottenham). Field offsets inside player, staff and club structs did not move. If a future patch breaks attach with "bad pointer array", rerun `scan-arrays.sh`, find the players pair, and try the same constant-delta trick for the rest.
 

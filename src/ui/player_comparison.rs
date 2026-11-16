@@ -261,7 +261,7 @@ impl PlayerComparison {
                         "Values do not auto-refresh. Reload a profile and select it again to update. No game memory is written. — means missing, invalid or unmapped data. Identity colors distinguish players, not better values. Age uses the captured game date, or the build's reference year."
                     );
                 });
-                if self.slots.iter().flatten().any(|s| s.identity.build == GameBuild::Fm27GamePass) {
+                if self.slots.iter().flatten().any(|s| s.identity.build == GameBuild::FM27_GAMEPASS) {
                     ui.label(egui::RichText::new("Game Pass layout unverified").color(ui.visuals().warn_fg_color));
                 }
                 ui.separator();
@@ -598,7 +598,7 @@ mod tests {
 
     #[test]
     fn legacy_wage_width_is_not_mistaken_for_a_monetary_mapping() {
-        let mut p = fixture(GameBuild::Fm26Steam, 42);
+        let mut p = fixture(GameBuild::FM26_STEAM, 42);
         set(&mut p, "p_weekly_wage", &[0x39, 0x30, 0xAB, 0xCD]);
         set(&mut p, "p_contract_wage", &222086u32.to_le_bytes());
         assert_eq!(contract_wage(&p), Some(222086));
@@ -637,9 +637,9 @@ mod tests {
 
     #[test]
     fn identity_build_constraints_swap_and_clear() {
-        let a = fixture(GameBuild::Fm24Steam, 42);
-        let b = fixture(GameBuild::Fm24Steam, 43);
-        let foreign = fixture(GameBuild::Fm27Steam, 44);
+        let a = fixture(GameBuild::FM24_STEAM, 42);
+        let b = fixture(GameBuild::FM24_STEAM, 43);
+        let foreign = fixture(GameBuild::FM27_STEAM, 44);
         let mut comparison = PlayerComparison::default();
         comparison.capture(0, &a, None, true);
         comparison.capture(1, &a, None, true);
@@ -671,8 +671,8 @@ mod tests {
 
     #[test]
     fn capture_refusal_does_not_follow_another_player_profile() {
-        let a = fixture(GameBuild::Fm24Steam, 42);
-        let b = fixture(GameBuild::Fm24Steam, 43);
+        let a = fixture(GameBuild::FM24_STEAM, 42);
+        let b = fixture(GameBuild::FM24_STEAM, 43);
         let ctx = egui::Context::default();
         let mut comparison = PlayerComparison::default();
         comparison.capture(0, &a, None, true);
@@ -686,11 +686,11 @@ mod tests {
 
     #[test]
     fn select_visit_compare_opens_and_reselection_replaces_both_snapshots() {
-        let mut first = fixture(GameBuild::Fm24Steam, 42);
+        let mut first = fixture(GameBuild::FM24_STEAM, 42);
         first.name = Some("First Player".into());
         let mut second = fixture(first.build, 43);
         second.name = Some("Second Player".into());
-        let foreign = fixture(GameBuild::Fm27Steam, 44);
+        let foreign = fixture(GameBuild::FM27_STEAM, 44);
         let ctx = egui::Context::default();
         let mut comparison = PlayerComparison::default();
         click(&ctx, &mut comparison, &first, true, "Select for compare");
@@ -794,7 +794,7 @@ mod tests {
     #[test]
     fn disabled_and_missing_identity_clicks_do_not_capture_but_enabled_click_does() {
         for missing in [false, true] {
-            let mut p = fixture(GameBuild::Fm27Steam, 42);
+            let mut p = fixture(GameBuild::FM27_STEAM, 42);
             if missing {
                 p.raw.clear();
             }
@@ -803,7 +803,7 @@ mod tests {
             click(&ctx, &mut comparison, &p, missing, "Select for compare");
             assert!(comparison.slots.iter().all(Option::is_none));
         }
-        let p = fixture(GameBuild::Fm27Steam, 42);
+        let p = fixture(GameBuild::FM27_STEAM, 42);
         let ctx = egui::Context::default();
         let mut comparison = PlayerComparison::default();
         click(&ctx, &mut comparison, &p, true, "Select for compare");
@@ -880,7 +880,7 @@ mod tests {
     fn named_headers_stay_pinned_while_body_scrolls_and_new_pair_starts_at_top() {
         for (width, height) in [(1280.0, 700.0), (700.0, 500.0), (400.0, 350.0)] {
             let ctx = egui::Context::default();
-            let mut first = fixture(GameBuild::Fm24Steam, 42);
+            let mut first = fixture(GameBuild::FM24_STEAM, 42);
             first.name = Some("First Player".into());
             let mut second = fixture(first.build, 43);
             second.name = Some("Second Player".into());
@@ -972,7 +972,7 @@ mod tests {
 
     #[test]
     fn toolbar_opens_empty_window_and_responsive_render_preserves_buffers() {
-        let p = fixture(GameBuild::Fm27Steam, 42);
+        let p = fixture(GameBuild::FM27_STEAM, 42);
         let raw = p.raw.clone();
         let contract = p.contract_raw.clone();
         let ctx = egui::Context::default();
