@@ -19,8 +19,10 @@ main editor when launching a feature branch. Runtime workflows still need testin
 after startup; the script is not a UI or memory-layout test.
 
 A loaded game is needed for live editing tests, not for compile/unit tests or
-read-only disconnected UI checks. Never change system permissions, disable build
-fingerprint checks or assume a Steam schema works on Game Pass to make a test pass.
+read-only disconnected UI checks. Never change system permissions, skip layout
+validation or assume a Steam schema's addresses work on another storefront without
+the fingerprint or runtime validation confirming them to make a test pass.
+Available here: FM24 Steam, FM26 Steam and FM27 Game Pass; FM27 Steam is not.
 See [Linux setup](../README.md#linux--proton) for the available memory-access options.
 
 Worktree launches use `.mcp-port` and a branch-specific executable

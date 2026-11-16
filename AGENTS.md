@@ -1,18 +1,36 @@
 # fm-editor — project guidance
 
 Real-time `fm.exe` memory editor for FM24/FM26/FM27: Win32 on Windows,
-`process_vm_readv`/`process_vm_writev` against Proton on Linux. Schemas are selected
-per attached build (release + storefront), not globally. Game Pass support is
-unverified; never assume another build's layout is compatible.
+`process_vm_readv`/`process_vm_writev` against Proton on Linux. The goal is one
+editor that works with every copy of these games the user owns, whatever the
+storefront. Prefer making an unrecognised build work safely at runtime over
+refusing it.
+
+Schemas are selected per attached build (release + storefront), not globally.
+A **recorded** build has a schema in `src/fields/` with documented evidence. An
+**unrecognised** build of a supported release reuses that release's record
+layouts; its module addresses must be confirmed or detected at runtime and
+validated by decoding before use (plan: `docs/plans/runtime-layout-detection.md`).
+A detected build whose addresses match its release's recorded schema may be edited
+without a prompt; one found at new addresses may be edited once the user accepts an
+"unvalidated build" warning; a partially detected one is read-only until the user
+accepts an "edit anyway" warning, and its undetected fields are never editable.
+Detected builds are marked as unvalidated in the status bar.
 
 ## Safety invariants
 
 - **Schema-only offsets.** Resolve memory offsets through the attached process or
   record's schema (`fm.schemas()` / `build.schemas()`). No hardcoded layout offsets
   in readers, writers or UI. Keep different attachments/builds independent.
-- **Evidence before mapping.** Confirm new or changed mappings against at least two
-  entities with independently known in-game values. Inherited notes are leads, not
-  verification for a new build or a changed mapping.
+- **Evidence before recording a mapping.** Confirm new or changed recorded mappings
+  against at least two entities with independently known in-game values. Evidence
+  can come from someone else for builds the maintainer does not own (other
+  storefronts, retired releases) when it is recorded with its source, date and exact
+  build. Inherited notes from another build are leads, not evidence.
+- **Validate detected layouts.** Runtime-detected addresses must pass a decoding
+  check on sample players, staff and clubs before any read is shown; refuse to
+  attach when it fails rather than display guesses. Release-specific record layouts
+  are never detected or guessed; an unknown release (e.g. FM28) is refused.
 - **Schema + documentation together.** Update `src/fields/<version>/` and the matching
   `docs/<version>/memory-layout.md` in the same change. Record build, encoding and
   witnesses; label unverified coverage honestly.
@@ -23,6 +41,8 @@ unverified; never assume another build's layout is compatible.
   never write speculatively or as a side effect of rendering/clamping. Keep failed
   writes visible and retryable; disable editing while disconnected or awaiting a
   write acknowledgement. Never reuse undo addresses across saves/reconnections.
+  Editing rules for detected builds (above) are enforced by the worker, not only
+  the UI.
 - **Bind UI data to identity.** Async results and retained buffers must match the
   active entity's type/address. Failed loads must not expose a previous entity's
   editable data. Resolve related clubs by cached object identity, not fuzzy names.
@@ -46,12 +66,15 @@ unverified; never assume another build's layout is compatible.
 |---|---|
 | Rust code | `cargo check` and relevant tests; `cargo test` for integration |
 | Runtime/UI behaviour | `bash Tools/build-and-launch.sh`, then exercise the affected workflow; inspect UI changes at desktop and narrow sizes |
-| Field mapping | Live FM verification for the affected build against independently known in-game values; read-only mappings require no test writes |
-| Write path | Live FM verification for the affected build; round-trip an edit through Undo and confirm restoration |
+| Field mapping | Live FM verification for the affected build against independently known in-game values, or recorded contributed evidence for a build the maintainer cannot run; read-only mappings require no test writes |
+| Write path | Live FM verification on a build available here; round-trip an edit through Undo and confirm restoration |
+| Layout detection | Force detection on each available build and confirm it reproduces that build's recorded addresses; confirm the validation check refuses a wrong layout |
 | Documentation only | Check paths, links and consistency; no game launch needed |
 
 Report what actually ran and any missing live evidence. A successful launch or an
 old `.launch-verified` file does not prove the current behaviour or field layout.
+Builds that cannot be run here (FM27 Steam, FM24/FM26 on other storefronts) are
+supported through detection and user reports; say so rather than blocking on them.
 Format only owned Rust modules (`rustfmt --config skip_children=true ...`).
 
 ## Working context
