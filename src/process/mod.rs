@@ -10,6 +10,7 @@
 //! install; only the process-access primitives differ.
 
 mod detection_log;
+pub mod layout_validate;
 mod version_resource;
 
 #[cfg(windows)]

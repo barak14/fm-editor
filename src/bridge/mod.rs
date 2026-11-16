@@ -16,7 +16,7 @@
 
 mod bulk_load;
 mod cmd;
-mod entity_load;
+pub(crate) mod entity_load;
 mod worker;
 
 pub use cmd::{

@@ -84,7 +84,7 @@ pub(super) fn load_staff_extras(fm: &FmProcess, base: u64) -> StaffExtras {
     }
 }
 
-pub(super) fn load_club_view(fm: &FmProcess, addr: u64, index: usize) -> Result<ClubView, String> {
+pub(crate) fn load_club_view(fm: &FmProcess, addr: u64, index: usize) -> Result<ClubView, String> {
     let schema = fm.schemas();
     let raw = fm.read_bytes(addr, schema.club_read_size)?;
 
@@ -219,7 +219,7 @@ fn read_sub_bytes(
 /// is another class (FM27's smaller one for minor clubs) gets no finance
 /// sub-record, so its fields stay hidden instead of reading — and offering to
 /// write — bytes outside the object.
-fn resolve_club_sub_ptr(fm: &FmProcess, club_ptr: u64, id: SubRecordId) -> Option<u64> {
+pub(crate) fn resolve_club_sub_ptr(fm: &FmProcess, club_ptr: u64, id: SubRecordId) -> Option<u64> {
     let schema = fm.schemas();
     let ptr = resolve_sub_ptr(fm, club_ptr, id, schema.club_sub_records)?;
     let rva = fm.addresses().full_finance_vtable_rva;
@@ -229,7 +229,7 @@ fn resolve_club_sub_ptr(fm: &FmProcess, club_ptr: u64, id: SubRecordId) -> Optio
     Some(ptr)
 }
 
-pub(super) fn read_club_field_u32(fm: &FmProcess, club_ptr: u64, key: &str) -> Option<u32> {
+pub(crate) fn read_club_field_u32(fm: &FmProcess, club_ptr: u64, key: &str) -> Option<u32> {
     let schema = fm.schemas();
     let field = schema.field(key)?;
     match field.offset.as_ref()? {
