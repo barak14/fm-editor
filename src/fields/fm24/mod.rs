@@ -89,3 +89,14 @@ pub static FM24: VersionedSchemas = VersionedSchemas {
     human_manager_vtable_rva: 0,
     age_reference_year: 2023,
 };
+
+/// FM24 schema, Epic Games Store build (Windows, 24.4.2+2081827).
+///
+/// The Steam layout and addresses with the Epic `fm.exe` fingerprint.
+/// Contributed evidence (array roots, player attributes, club transfer
+/// budget, write and restore) and the fields that are only inherited from
+/// Steam are in docs/fm24/memory-layout.md ("Epic build").
+pub static FM24_EPIC: VersionedSchemas = VersionedSchemas {
+    known_dll_hash: 0x8FA1_13DB_9DCD_8883,
+    ..FM24
+};

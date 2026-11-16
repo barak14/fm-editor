@@ -191,9 +191,12 @@ neutral path. It does not exercise the fallback or verify offsets. On 2026-11-09
 the local Steam FM24 EXE reported `Football Manager 2024`, `24.4.2+2081827`;
 the local Steam FM27 plugin reported `Football Manager 27`, `27.0.0+2493426`.
 FM27's EXE reported Unity `6000.3.18f1-custom (96cdb67fb884)`, not an FM release.
-Epic file metadata and layouts remain untested. Storefront hints still depend
-on paths/manifests; renamed/moved Epic installs are not reliably distinguished
-from Steam. Do not infer storefront or field compatibility from ProductName.
+Epic FM24 metadata and layout evidence was contributed, not run here
+([FM24 Epic build](fm24/memory-layout.md#epic-build)). Storefront hints depend
+on paths/manifests; a moved install is still matched to a recorded build by its
+module fingerprint (`GameBuild::with_fingerprint`), but an unknown fingerprint
+keeps the path's storefront. Do not infer storefront or field compatibility from
+ProductName.
 
 ## Read-only memory tools
 

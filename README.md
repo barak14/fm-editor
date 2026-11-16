@@ -64,6 +64,7 @@ Live name/UID filtering, ability and age filters, and sortable results.
 | Game | Status | Notes |
 |------|--------|-------|
 | FM24 | Players, staff, clubs, stadiums | [docs/fm24/memory-layout.md](docs/fm24/memory-layout.md) |
+| FM24 (Epic) | Steam schema with the Epic fingerprint for 24.4.2+2081827; two players and one club checked in game, including an edit and restore, by a contributor | [Epic build](docs/fm24/memory-layout.md#epic-build) |
 | FM26 | Main target (2026-10 patch) | [docs/fm26/memory-layout.md](docs/fm26/memory-layout.md) |
 | FM27 | In progress — most fields verified against a live save | [docs/fm27/memory-layout.md](docs/fm27/memory-layout.md) |
 | FM27 (Game Pass) | Bring-up on Store package 0.9.2435.0 — players, staff, clubs, date and manager read correctly; one edit/Undo checked in game | [Game Pass build](docs/fm27/memory-layout.md#game-pass-build) |
@@ -76,9 +77,12 @@ names. Explicit unsupported/conflicting FM product names are rejected rather
 than overridden by the directory. This works on Windows and Linux/Proton.
 
 Storefront detection remains separate, using install-location hints and the
-Game Pass manifest. Recognised `Epic Games` installs are reported as unsupported:
-there is no verified Epic schema, and identifying FM24 does not prove Steam's
-offsets work on Epic. Unrecognised locations retain the historical Steam default.
+Game Pass manifest. When the module fingerprint matches another recorded build
+of the same release, that build is used, so a moved Epic FM24 install is still
+recognised. FM24 Epic uses Steam's layout and addresses; only a few of its fields
+have Epic witnesses, and the maintainer cannot test it. Epic installs of FM26 and
+FM27 have no schema and are rejected. Unrecognised locations retain the historical
+Steam default.
 FM27 Game Pass uses the Steam struct layouts with its own module addresses, recorded for
 one Store package; features that depend on unmapped Game Pass addresses stay disabled.
 A game patch can move fields. For builds with a recorded module fingerprint, the

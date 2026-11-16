@@ -22,9 +22,8 @@ install directory. Read-only file inspection on 2026-11-09 of the installed Stea
 `fm.exe` found `ProductName = Football Manager 2024`, `FileVersion = 24.4.2`
 and `ProductVersion = 24.4.2+2081827`. These identify the release/build, not
 field-layout compatibility; the existing module fingerprint gate is unchanged.
-No mappings or writes were tested by this metadata inspection. Epic metadata
-and offsets remain unverified; recognised Epic installs have no schema and are
-rejected rather than routed to Steam's layout.
+No mappings or writes were tested by this metadata inspection. The Epic build
+has its own schema (`FM24_EPIC`); see [Epic build](#epic-build).
 
 ## Entity arrays (RVA relative to fm.exe)
 
@@ -319,6 +318,46 @@ Live write/Undo (same session, editor builds of this branch):
 Sample checks (1500 players): GK position vs handling r=0.93, handling/reflexes
 r=0.89, DL/WBL r=0.82, attribute bytes ≤ 100, max(left, right foot) = 20 for all.
 1500 staff: CA ≤ PA, attribute bytes ≤ 100, personality 1..20, plausible DOBs.
+
+## Epic build
+
+`FM24_EPIC` is the Steam schema (layout, entity arrays, date) with the Epic
+`fm.exe` fingerprint `0x8FA113DB9DCD8883` (Steam: `0xFB39952A20287907`). An
+install under `Epic Games` selects it; an install elsewhere selects it by that
+fingerprint. A different Epic fingerprint is rejected.
+
+Contributed evidence, not reproduced here (the maintainer owns no Epic copy).
+Source: Mehmet Ali, github.com/mehmetaligumusler/fm-editor, commits `37686ae`,
+`f022428` and `13eddc6` and its `docs/fm24/epic-preview.md`, sessions on
+2026-11-06 to 2026-11-08. Build: Windows Epic install
+`Epic Games/FootballManager24/fm.exe`, FileVersion `24.4.2`, ProductVersion
+`24.4.2+2081827`, module base 0x140000000. The user checked each value on the
+in-game screens on a backup career save:
+
+- Players, staff and clubs at `0x642EDD0`, `0x642EDE8` and `0x642EF58`, first
+  objects carrying the Steam vtables (`0x5A4E958`, `0x5A4C2E8`, `0x5A51F38`).
+- Tanju Başar (UID 2002179387): Crossing 6, Dribbling 7, Finishing 7,
+  Heading 4, Long Shots 8, Passing 13, Tackling 7, Technique 15, First Touch
+  15 matched his profile. Finishing written 7 → 15 showed live in the squad
+  list's attribute column, was restored, and the column returned to 7.
+- Kerim Demir (UID 2002179385): Passing 6, Technique 4, Tackling 3 matched.
+- Antalyaspor (UID 1865): transfer budget (finance `+0x7CC`, i32) read
+  4,100,645, shown as €4,782,290. Written to 5,100,645, the finance screen
+  changed live to €5,948,520; restored, and the screen reverted.
+
+FM's detailed player profile keeps showing attribute values from when it was
+opened; squad-list columns and the finance screen re-read live.
+
+Only those paths have Epic witnesses. Staff fields, names, morale, traits,
+weight, contracts, player lists and the rest are inherited from Steam.
+
+Current date: `0x631D5BC`, as on Steam. On the contributor's save three
+seasons in (21 Jun 2026 on screen), three statics held that date: `0x631D5BC`,
+`0x642F458` and `0x6356C90`. The fork chose `0x642F458`, but on Steam that one
+kept the start date while `0x631D5BC` followed the clock (see
+[Current game date](#current-game-date)). Both observations fit `0x631D5BC`
+as the clock. Unconfirmed on Epic: the date is display-only (ages) and is not
+editable.
 
 ## Unmapped worklist
 

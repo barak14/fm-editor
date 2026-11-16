@@ -212,9 +212,11 @@ fn has_gdk_config(exe_path: &str) -> bool {
 /// Storefront of an install, from its exe (or module) path and whether the
 /// GDK manifest sits next to the exe. Game Pass installs live under an
 /// `XboxGames` folder (any drive, the Xbox app default) or, for older Store
-/// packages, `Program Files\WindowsApps`. Recognised Epic installs must not
-/// inherit Steam's schema. Other locations retain the historical Steam default;
+/// packages, `Program Files\WindowsApps`. Epic installs live under
+/// `Epic Games`. Other locations retain the historical Steam default;
 /// metadata identifies the release, not the storefront or compatible offsets.
+/// The attachment's module fingerprint corrects a wrong hint between
+/// recorded builds of one release (`GameBuild::with_fingerprint`).
 fn storefront_of(path: &str, has_gdk_config: bool) -> Storefront {
     let lower = path.to_lowercase().replace('\\', "/");
     if has_gdk_config || lower.contains("/xboxgames/") || lower.contains("/windowsapps/") {
@@ -271,16 +273,21 @@ impl FmProcess {
     /// process's own install path, never from any other attachment.
     pub fn attach_pid(pid: u32) -> Result<Self, String> {
         let handle = backend::open(pid)?;
-        let build = detect_build(pid)?;
-        let module = build.version().module_name();
+        let path_build = detect_build(pid)?;
+        let module = path_build.version().module_name();
         let (gp_base, gp_size, gp_path) = backend::find_module_info(pid, module)?;
         // Probe one read up front so a blocked cross-process access path
         // (e.g. Linux yama ptrace_scope) fails the attach with the OS hint
         // instead of erroring on the first field read later.
         backend::read_bytes(&handle, gp_base, 2)
             .map_err(|e| format!("attached to pid {pid} but cannot read its memory: {e}"))?;
+        let module_hash = hash_module_header(&gp_path);
+        let build = match &module_hash {
+            Ok(hash) => path_build.with_fingerprint(*hash),
+            Err(_) => path_build,
+        };
         let known = build.schemas().known_dll_hash;
-        let dll_hash_notice = match (known, hash_module_header(&gp_path)) {
+        let dll_hash_notice = match (known, module_hash) {
             // Schema not yet calibrated — allow attach but surface the hash.
             (0, Ok(hash)) => Some(format!(
                 "{} {module} hash not calibrated (current: 0x{hash:016X}). \
@@ -589,22 +596,33 @@ mod tests {
 
     #[test]
     fn detection_report_retains_metadata_when_schema_is_unsupported() {
+        let path = r"C:\Program Files\Epic Games\FootballManager26\fm.exe";
+        let (result, report) =
+            detect_build_from_modules(1, module_info(path), Err("not mapped".into()), |_| {
+                Ok(metadata("Football Manager 2026", "26.3.2"))
+            });
+        assert!(
+            result
+                .unwrap_err()
+                .contains("no schema for the Epic build of FM26")
+        );
+        assert!(report.contains("26.3.2"), "{report}");
+        assert!(
+            report.contains("release: FM26; source: PE ProductName"),
+            "{report}"
+        );
+        assert!(report.contains("storefront hint: Epic"), "{report}");
+    }
+
+    #[test]
+    fn epic_fm24_install_selects_the_epic_schema() {
         let path = r"C:\Program Files\Epic Games\FootballManager24\fm.exe";
         let (result, report) =
             detect_build_from_modules(1, module_info(path), Err("not mapped".into()), |_| {
                 Ok(metadata("Football Manager 2024", "24.4.2+2081827"))
             });
-        assert!(
-            result
-                .unwrap_err()
-                .contains("no schema for the Epic build of FM24")
-        );
-        assert!(report.contains("24.4.2+2081827"), "{report}");
-        assert!(
-            report.contains("release: FM24; source: PE ProductName"),
-            "{report}"
-        );
-        assert!(report.contains("storefront hint: Epic"), "{report}");
+        assert_eq!(result, Ok(GameBuild::Fm24Epic));
+        assert!(report.contains("FM24 Epic schema FM24_EPIC"), "{report}");
     }
 
     #[test]
@@ -799,7 +817,10 @@ mod tests {
         assert_eq!(storefront_of(store, false), Storefront::GamePass);
         let epic = r"C:\Program Files\Epic Games\FootballManager24\fm.exe";
         assert_eq!(storefront_of(epic, false), Storefront::Epic);
-        assert!(GameBuild::resolve(GameVersion::Fm24, storefront_of(epic, false)).is_err());
+        assert_eq!(
+            GameBuild::resolve(GameVersion::Fm24, storefront_of(epic, false)),
+            Ok(GameBuild::Fm24Epic)
+        );
         // A moved Game Pass install is still recognised by its GDK manifest.
         assert_eq!(
             storefront_of(r"E:\Games\FM27\fm.exe", true),

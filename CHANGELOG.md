@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Features
+
+- FM24 Epic (24.4.2+2081827): attach, read and edit using the FM24 Steam schema with the Epic `fm.exe` fingerprint. Evidence was contributed from a Windows Epic install (two players' attributes and one club's transfer budget matched in game, and an attribute and budget edit were confirmed and restored); other fields are inherited from Steam and not tested on Epic. See docs/fm24/memory-layout.md ("Epic build").
+- A module fingerprint that matches another recorded build of the same release selects that build, so a moved or renamed install no longer depends on its folder name.
+
 ## 0.4.3 (prerelease)
 
 FM27 PC Game Pass bring-up. FM24, FM26 and FM27 Steam behaviour is unchanged.

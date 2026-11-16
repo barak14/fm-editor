@@ -305,6 +305,8 @@ static FM26_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
     LazyLock::new(|| key_map(&fm26::FM26));
 static FM24_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
     LazyLock::new(|| key_map(&fm24::FM24));
+static FM24_EPIC_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
+    LazyLock::new(|| key_map(&fm24::FM24_EPIC));
 static FM27_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
     LazyLock::new(|| key_map(&fm27::FM27));
 static FM27_GAMEPASS_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
@@ -621,7 +623,8 @@ fn label_or_code(table: &[(u8, &'static str)], code: u8, prefix: &str) -> String
 /// Complete field / layout / RVA schema for one game build.
 ///
 /// There is exactly one `static` of this type per supported build
-/// (`fm24::FM24`, `fm26::FM26`, `fm27::FM27`, `fm27::FM27_GAMEPASS`; see
+/// (`fm24::FM24`, `fm24::FM24_EPIC`, `fm26::FM26`, `fm27::FM27`,
+/// `fm27::FM27_GAMEPASS`; see
 /// `GameBuild::schemas`); `VersionedSchemas::field` relies on that address
 /// identity. `FmProcess::schemas()` returns the
 /// schema that matches the attached process. There is no global "active"
@@ -748,6 +751,8 @@ impl VersionedSchemas {
             &*FM26_KEYS
         } else if std::ptr::eq(self, &fm24::FM24) {
             &*FM24_KEYS
+        } else if std::ptr::eq(self, &fm24::FM24_EPIC) {
+            &*FM24_EPIC_KEYS
         } else if std::ptr::eq(self, &fm27::FM27) {
             &*FM27_KEYS
         } else if std::ptr::eq(self, &fm27::FM27_GAMEPASS) {
@@ -809,6 +814,7 @@ mod schema_lookup_tests {
     fn current_date_rva_is_specific_to_the_verified_build() {
         assert_eq!(GameBuild::Fm27Steam.schemas().rva_current_date, 0x56AD378);
         assert_eq!(GameBuild::Fm24Steam.schemas().rva_current_date, 0x631D5BC);
+        assert_eq!(GameBuild::Fm24Epic.schemas().rva_current_date, 0x631D5BC);
         assert_eq!(GameBuild::Fm27GamePass.schemas().rva_current_date, 0x53597C8);
         for build in [GameBuild::Fm26Steam] {
             assert_eq!(build.schemas().rva_current_date, 0, "{build:?}");
@@ -1143,6 +1149,30 @@ mod player_schema_tests {
         ] {
             assert_ne!(gp, st, "Game Pass {name} inherits the Steam value");
         }
+    }
+
+    #[test]
+    fn fm24_epic_is_the_steam_schema_with_its_own_fingerprint() {
+        let (steam, epic) = (&fm24::FM24, &fm24::FM24_EPIC);
+        assert!(std::ptr::eq(steam.player_fields, epic.player_fields));
+        assert!(std::ptr::eq(steam.staff_fields, epic.staff_fields));
+        assert!(std::ptr::eq(steam.club_fields, epic.club_fields));
+        assert!(std::ptr::eq(steam.club_sub_records, epic.club_sub_records));
+        assert_eq!(steam.player_struct_size, epic.player_struct_size);
+        assert_eq!(steam.staff_struct_size, epic.staff_struct_size);
+        for (name, s, e) in [
+            ("players", steam.rva_humans_data, epic.rva_humans_data),
+            ("players end", steam.rva_humans_end, epic.rva_humans_end),
+            ("staff", steam.rva_staff_data, epic.rva_staff_data),
+            ("staff end", steam.rva_staff_end, epic.rva_staff_end),
+            ("clubs", steam.rva_clubs_data, epic.rva_clubs_data),
+            ("clubs end", steam.rva_clubs_end, epic.rva_clubs_end),
+            ("date", steam.rva_current_date, epic.rva_current_date),
+        ] {
+            assert_eq!(s, e, "Epic {name}");
+        }
+        assert_eq!(epic.known_dll_hash, 0x8FA1_13DB_9DCD_8883);
+        assert_ne!(steam.known_dll_hash, epic.known_dll_hash);
     }
 
     #[test]
