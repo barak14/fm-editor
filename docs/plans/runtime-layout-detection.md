@@ -1,6 +1,6 @@
 # Plan: runtime layout detection for unrecognised builds
 
-Status: proposed, not started. Written 2026-11-13, revised 2026-11-16
+Status: Phase 1 implemented (unverified live). Written 2026-11-13, revised 2026-11-16
 (schema split, two phases, gaps from review).
 
 ## Goal

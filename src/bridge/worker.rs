@@ -13,8 +13,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 
 use crate::club;
+use crate::game_version::GameBuild;
 use crate::player;
-use crate::process::{self, FmProcess};
+use crate::process::layout_validate::run_gate;
+use crate::process::{self, DetectionStatus, FmProcess};
 use crate::staff;
 
 use super::bulk_load;
@@ -98,6 +100,85 @@ fn counts_are_plausible(ac: &ArrayCache) -> bool {
         && (100..=200_000).contains(&ac.clubs_count)
 }
 
+fn plausible_candidate(caches: &[ArrayCache]) -> Option<usize> {
+    caches.iter().position(counts_are_plausible)
+}
+
+fn select_waiting_candidate(fm: &mut FmProcess) -> ArrayCache {
+    let original = fm.build;
+    let candidates = GameBuild::candidates(original.version(), original.storefront());
+    let mut caches: Vec<_> = candidates
+        .iter()
+        .map(|&candidate| {
+            fm.build = GameBuild::detected(candidate, original.storefront());
+            build_cache(fm)
+        })
+        .collect();
+    if let Some(index) = plausible_candidate(&caches) {
+        fm.build = GameBuild::detected(candidates[index], original.storefront());
+        caches.swap_remove(index)
+    } else {
+        fm.build = original;
+        build_cache(fm)
+    }
+}
+
+fn validate_save(fm: &mut FmProcess) -> Result<Option<String>, String> {
+    let report = run_gate(fm);
+    let passed = report.passed();
+    let summary = report.summary();
+    let first_failure = report.first_failure().map(|check| check.name);
+    fm.detection.gate = Some(report);
+    if fm.detection.pinned {
+        return Ok((!passed).then(|| format!("Layout validation warning: {summary}")));
+    }
+    let mut failures = vec![format!("{}: {summary}", fm.build.schema_name())];
+    if !passed {
+        let initial = fm.build;
+        for candidate in GameBuild::candidates(initial.version(), initial.storefront()) {
+            if std::ptr::eq(candidate, initial.recorded) {
+                continue;
+            }
+            fm.build = GameBuild::detected(candidate, initial.storefront());
+            if !counts_are_plausible(&build_cache(fm)) {
+                continue;
+            }
+            let report = run_gate(fm);
+            let passed = report.passed();
+            failures.push(format!("{}: {}", fm.build.schema_name(), report.summary()));
+            fm.detection.gate = Some(report);
+            if passed {
+                fm.detection.chosen = Some(fm.build.schema_name());
+                fm.detection.status = DetectionStatus::Validated;
+                return Ok(None);
+            }
+        }
+        let message = format!(
+            "Layout validation failed ({}): {}",
+            first_failure.unwrap_or("unknown check"),
+            failures.join("\n")
+        );
+        fm.detection.chosen = None;
+        fm.detection.status = DetectionStatus::Failed(message.clone());
+        return Err(message);
+    }
+    fm.detection.chosen = Some(fm.build.schema_name());
+    fm.detection.status = DetectionStatus::Validated;
+    Ok(None)
+}
+
+fn write_context_ready(
+    loaded: Option<&ArrayCache>,
+    current: &ArrayCache,
+    pinned: bool,
+    gate_passed: bool,
+) -> bool {
+    (pinned || gate_passed)
+        && loaded.is_some_and(|loaded| {
+            counts_are_plausible(current) && loaded.save_identity == current.save_identity
+        })
+}
+
 fn counts_tuple(ac: &ArrayCache) -> (usize, usize, usize) {
     (ac.humans_count, ac.staff_count, ac.clubs_count)
 }
@@ -176,11 +257,18 @@ pub(super) fn worker_loop(
     // consecutive probes report the same plausible counts — rejects the
     // save-creation window where counts drift as FM populates the world.
     let mut last_counts: Option<(usize, usize, usize)> = None;
+    let mut gate_passed = false;
 
     while let Ok(cmd) = rx.recv() {
         match cmd {
+            BridgeCmd::DiscoverGames => {
+                let _ = tx.send(BridgeResult::GamesDiscovered(
+                    process::running_games().unwrap_or_default(),
+                ));
+            }
             BridgeCmd::Attach(pid) => {
                 policy_epoch = next_policy_epoch();
+                gate_passed = false;
                 let attached = match pid {
                     Some(pid) => FmProcess::attach_pid(pid),
                     None => match process::running_games() {
@@ -199,7 +287,6 @@ pub(super) fn worker_loop(
                     Ok(process) => {
                         let pid = process.pid;
                         let build = process.build;
-                        let notice = process.dll_hash_notice.clone();
                         let game_date = process.game_date();
                         let ac = build_cache(&process);
                         // Never promote on the first observation — even if
@@ -214,9 +301,6 @@ pub(super) fn worker_loop(
                         cache = None;
                         fm = Some(process);
                         let _ = tx.send(BridgeResult::Attached(pid, build, game_date));
-                        if let Some(msg) = notice {
-                            let _ = tx.send(BridgeResult::Error(msg));
-                        }
                     }
                     Err(e) => {
                         let _ = tx.send(BridgeResult::Error(e));
@@ -312,7 +396,12 @@ pub(super) fn worker_loop(
                     .as_ref()
                     .ok_or_else(|| "No process attached".to_owned())
                     .and_then(|f| {
-                        if cache.is_none() || !counts_are_plausible(&build_cache(f)) {
+                        if !write_context_ready(
+                            cache.as_ref(),
+                            &build_cache(f),
+                            f.detection.pinned,
+                            gate_passed,
+                        ) {
                             return Err("Save is not ready for a policy preview".into());
                         }
                         crate::club_policy::prepare(f, policy_epoch, identity)
@@ -328,6 +417,9 @@ pub(super) fn worker_loop(
                 policy_guard,
             } => {
                 let result = match &fm {
+                    Some(f) if !write_context_ready(cache.as_ref(), &build_cache(f), f.detection.pinned, gate_passed) => {
+                        Err(("Cannot write: save is not ready or its layout has not passed validation".into(), Some(false)))
+                    }
                     Some(f) if policy_guard.is_some() => {
                         if !allow_policy_trial {
                             Err(("Policy writes are disabled; start explicitly with --enable-policy-trial for a separate-copy trial".into(),Some(false)))
@@ -363,7 +455,7 @@ pub(super) fn worker_loop(
             }
 
             BridgeCmd::Ping => {
-                if let Some(f) = &fm {
+                if let Some(f) = &mut fm {
                     // Cheap process-alive probe first
                     if f.read_u8(f.gp_base).is_err() {
                         let had_cache = cache.is_some();
@@ -371,6 +463,7 @@ pub(super) fn worker_loop(
                         policy_epoch = next_policy_epoch();
                         cache = None;
                         last_counts = None;
+                        gate_passed = false;
                         if had_cache {
                             // Game exited while save was loaded — enter ReadOnly.
                             // The app preserves its Arc<EntityCache>; send
@@ -381,18 +474,45 @@ pub(super) fn worker_loop(
                         }
                     } else {
                         let pid = f.pid;
-                        let current = build_cache(f);
+                        let previous_build = f.build;
+                        let current = if cache.is_none() && !f.detection.pinned {
+                            select_waiting_candidate(f)
+                        } else {
+                            build_cache(f)
+                        };
+                        if f.build != previous_build {
+                            last_counts = None;
+                        }
                         let plausible = counts_are_plausible(&current);
                         let current_tuple = counts_tuple(&current);
 
                         match ping_transition(cache.as_ref(), &current, last_counts) {
                             PingTransition::SaveReady => {
-                                // Two consecutive stable probes → save ready.
-                                // Auto-trigger human manager + entity cache load.
-                                let counts = entity_counts(&current);
-                                cache = Some(current);
-                                let _ =
-                                    tx.send(BridgeResult::Connected(pid, counts, f.game_date()));
+                                let warning = match validate_save(f) {
+                                    Ok(warning) => {
+                                        gate_passed = true;
+                                        warning
+                                    }
+                                    Err(message) => {
+                                        let _ =
+                                            tx.send(BridgeResult::LayoutRejected { pid, message });
+                                        fm = None;
+                                        cache = None;
+                                        last_counts = None;
+                                        gate_passed = false;
+                                        policy_epoch = next_policy_epoch();
+                                        continue;
+                                    }
+                                };
+                                let validated_cache = build_cache(f);
+                                let counts = entity_counts(&validated_cache);
+                                cache = Some(validated_cache);
+                                let _ = tx.send(BridgeResult::Connected(
+                                    pid,
+                                    f.build,
+                                    counts,
+                                    f.game_date(),
+                                ));
                                 // Human manager (fast, goes first)
                                 if let (Some(f2), Some(_)) = (&fm, &cache) {
                                     match entity_load::load_human_manager(f2) {
@@ -415,12 +535,20 @@ pub(super) fn worker_loop(
                                         }
                                     }
                                 }
+                                if let Some(warning) = warning {
+                                    let _ = tx.send(BridgeResult::Error(warning));
+                                }
                             }
                             PingTransition::SaveUnloaded => {
                                 policy_epoch = next_policy_epoch();
                                 // The save identity changed or the arrays became
                                 // implausible → a different save, or none.
                                 cache = None;
+                                gate_passed = false;
+                                if !f.detection.pinned {
+                                    f.detection.status = DetectionStatus::AwaitingSave;
+                                    f.detection.chosen = None;
+                                }
                                 let _ = tx.send(BridgeResult::SaveUnloaded(pid));
                             }
                             PingTransition::SameSave {
@@ -535,6 +663,48 @@ mod tests {
     const SAVE_A: [u64; 3] = [0x2_56F3_0040, 0x2_56F3_01B0, 0x2_56F3_0320];
     const SAVE_B: [u64; 3] = [0x2_57CB_0930, 0x2_57CB_07C0, 0x2_57CB_0650];
     const COUNTS: (usize, usize, usize) = (103_516, 49_197, 33_471);
+
+    #[test]
+    fn candidate_selection_uses_first_plausible_cache() {
+        assert_eq!(plausible_candidate(&[]), None);
+        assert_eq!(plausible_candidate(&[arrays((0, 0, 0), &[])]), None);
+        assert_eq!(
+            plausible_candidate(&[
+                arrays(COUNTS, &[]),
+                arrays(COUNTS, &SAVE_B),
+                arrays(COUNTS, &SAVE_A),
+            ]),
+            Some(1)
+        );
+        assert_eq!(
+            plausible_candidate(&[arrays(COUNTS, &SAVE_A), arrays(COUNTS, &SAVE_B)]),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn writes_require_a_gate_pass_for_the_current_unpinned_save() {
+        let loaded = arrays(COUNTS, &SAVE_A);
+        let current = arrays(COUNTS, &SAVE_A);
+        assert!(!write_context_ready(Some(&loaded), &current, false, false));
+        assert!(write_context_ready(Some(&loaded), &current, false, true));
+        assert!(write_context_ready(Some(&loaded), &current, true, false));
+        for pinned in [false, true] {
+            assert!(!write_context_ready(None, &current, pinned, true));
+            assert!(!write_context_ready(
+                Some(&loaded),
+                &arrays(COUNTS, &SAVE_B),
+                pinned,
+                true
+            ));
+            assert!(!write_context_ready(
+                Some(&loaded),
+                &arrays((0, 0, 0), &[]),
+                pinned,
+                true
+            ));
+        }
+    }
 
     #[test]
     fn records_added_to_the_same_save_keep_it_loaded() {

@@ -133,6 +133,7 @@ pub struct FmEditorApp {
     /// none chosen yet). Cleared once a game is attached.
     game_choices: Vec<RunningGame>,
     auto_connect: bool,
+    rejected_pid: Option<u32>,
     last_ping: Instant,
     last_auto_connect: Instant,
 
@@ -222,6 +223,7 @@ impl FmEditorApp {
             window_branch: None,
             game_choices: Vec::new(),
             auto_connect: true,
+            rejected_pid: None,
             last_ping: Instant::now(),
             last_auto_connect: Instant::now() - std::time::Duration::from_secs(10),
             player_search: PlayerSearchState::default(),
@@ -358,7 +360,9 @@ impl FmEditorApp {
     fn process_results(&mut self) {
         while let Some(result) = self.bridge.try_recv() {
             match result {
-                BridgeResult::Connected(pid, counts, game_date) => {
+                BridgeResult::Connected(pid, build, counts, game_date) => {
+                    self.attached_build = Some(build);
+                    self.rejected_pid = None;
                     self.game_date = game_date;
                     self.clear_entity_state("Save ready: previous editing context closed");
                     self.clear_cache();
@@ -381,6 +385,22 @@ impl FmEditorApp {
                     self.game_choices.clear();
                     let game = self.game_label(pid);
                     self.set_status(format!("Attached to {game} \u{2014} waiting for save"));
+                }
+                BridgeResult::LayoutRejected { pid, message } => {
+                    self.reject_layout(pid, message);
+                }
+                BridgeResult::GamesDiscovered(games) => {
+                    if self.rejected_pid.is_none()
+                        || !matches!(self.conn, ConnState::Disconnected | ConnState::ReadOnly(_))
+                    {
+                        continue;
+                    }
+                    let games = auto_connect_candidates(&mut self.rejected_pid, games);
+                    match games.as_slice() {
+                        [] => {}
+                        [game] => self.bridge.send(BridgeCmd::Attach(Some(game.pid))),
+                        _ => self.game_choices = games,
+                    }
                 }
                 BridgeResult::ChooseGame(games) => {
                     // A stale auto-connect answer after a game was attached.
@@ -424,6 +444,9 @@ impl FmEditorApp {
                     self.game_date = game_date;
                     self.entity_counts = Some(counts);
                 }
+                BridgeResult::PingFail
+                    if self.rejected_pid.is_some()
+                        && matches!(self.conn, ConnState::Disconnected) => {}
                 BridgeResult::PingFail => {
                     self.game_date = None;
                     self.conn = ConnState::Disconnected;
@@ -496,6 +519,14 @@ impl FmEditorApp {
     /// version is known.
     fn game_label(&self, pid: u32) -> String {
         match self.attached_build {
+            Some(build)
+                if build.is_detected() && matches!(self.conn, ConnState::WaitingForSave(_)) =>
+            {
+                format!(
+                    "{} (checking layout\u{2026}) (PID {pid})",
+                    build.display_name()
+                )
+            }
             Some(build) => RunningGame { pid, build }.to_string(),
             None => format!("PID {pid}"),
         }
@@ -505,6 +536,23 @@ impl FmEditorApp {
         self.status_msg = Some((msg, Instant::now()));
     }
 
+    fn reject_layout(&mut self, pid: u32, message: String) {
+        self.conn = ConnState::Disconnected;
+        self.rejected_pid = Some(pid);
+        self.game_date = None;
+        self.attached_build = None;
+        self.game_choices.clear();
+        self.clear_entity_state("Layout validation failed");
+        self.clear_cache();
+        self.set_status(message);
+    }
+
+    fn request_attach(&mut self, pid: Option<u32>) {
+        self.rejected_pid = None;
+        self.game_date = None;
+        self.bridge.send(BridgeCmd::Attach(pid));
+    }
+
     fn handle_auto_connect(&mut self) {
         // Retry attach when disconnected OR in read-only mode (game exited).
         // In WaitingForSave, Ping handles the promotion — no need to re-attach.
@@ -512,9 +560,13 @@ impl FmEditorApp {
             && matches!(self.conn, ConnState::Disconnected | ConnState::ReadOnly(_))
             && self.last_auto_connect.elapsed().as_secs() >= 3
         {
-            self.game_date = None;
-            self.bridge.send(BridgeCmd::Attach(None));
             self.last_auto_connect = Instant::now();
+            if self.rejected_pid.is_some() {
+                self.bridge.send(BridgeCmd::DiscoverGames);
+            } else {
+                self.game_date = None;
+                self.bridge.send(BridgeCmd::Attach(None));
+            }
         }
     }
 
@@ -1030,10 +1082,9 @@ impl eframe::App for FmEditorApp {
         // Only filter the active page — running all three every frame on a
         // large save (50k+ players) causes visible lag and hangs.
         let player_filtered: Vec<&CachedPlayer> = if self.active_page == Page::PlayerSearch {
-            if let (Some(c), Some(build), Some(schemas)) = (&cache_arc, self.attached_build, schemas) {
+            if let (Some(c), Some(build)) = (&cache_arc, self.attached_build) {
                 pages::player_search::filter_with_clubs(
                     build,
-                    schemas,
                     self.game_date,
                     &c.players,
                     &self.player_search,
@@ -1199,7 +1250,12 @@ impl eframe::App for FmEditorApp {
                                 egui::Color32::from_rgb(244, 67, 54),
                                 "\u{25CF} Disconnected",
                             );
-                            if ui.button("Load Game").clicked() {
+                            let label = if self.rejected_pid.is_some() {
+                                "Reconnect"
+                            } else {
+                                "Load Game"
+                            };
+                            if ui.button(label).clicked() {
                                 attach_requested = true;
                             }
                         }
@@ -1252,25 +1308,44 @@ impl eframe::App for FmEditorApp {
             ui.horizontal(|ui| {
                 match self.conn {
                     ConnState::Ready(pid) => {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(76, 175, 80),
+                        let detected = self.attached_build.is_some_and(GameBuild::is_detected);
+                        let response = ui.colored_label(
+                            if detected {
+                                egui::Color32::from_rgb(255, 193, 7)
+                            } else {
+                                egui::Color32::from_rgb(76, 175, 80)
+                            },
                             format!("\u{25CF} Connected to {}", self.game_label(pid)),
                         );
+                        if detected {
+                            response.on_hover_text("This build hasn't been validated. Back up your save before editing.");
+                        }
                     }
                     ConnState::WaitingForSave(pid) => {
-                        ui.colored_label(
+                        let response = ui.colored_label(
                             egui::Color32::from_rgb(255, 193, 7),
                             format!(
                                 "\u{25CF} Attached to {} \u{2014} waiting for save",
                                 self.game_label(pid)
                             ),
                         );
+                        if self.attached_build.is_some_and(GameBuild::is_detected) {
+                            response.on_hover_text("This build hasn't been validated. Back up your save before editing.");
+                        }
                     }
-                    ConnState::ReadOnly(_) => {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(255, 152, 0),
-                            "\u{25CF} Game not running \u{2014} browse only",
+                    ConnState::ReadOnly(pid) => {
+                        let detected = self.attached_build.is_some_and(GameBuild::is_detected);
+                        let response = ui.colored_label(
+                            if detected {
+                                egui::Color32::from_rgb(255, 193, 7)
+                            } else {
+                                egui::Color32::from_rgb(255, 152, 0)
+                            },
+                            format!("\u{25CF} {} not running \u{2014} browse only", self.game_label(pid)),
                         );
+                        if detected {
+                            response.on_hover_text("This build hasn't been validated. Back up your save before editing.");
+                        }
                     }
                     ConnState::Disconnected => {
                         ui.colored_label(
@@ -1288,7 +1363,7 @@ impl eframe::App for FmEditorApp {
                 }
                 ui.separator();
                 if let Some((ref msg, t)) = self.status_msg {
-                    if t.elapsed().as_secs() < 8 {
+                    if self.rejected_pid.is_some() || t.elapsed().as_secs() < 8 {
                         ui.label(msg.as_str());
                     }
                 }
@@ -1372,7 +1447,7 @@ impl eframe::App for FmEditorApp {
                     match self.active_page {
                         Page::PlayerSearch => {
                             if pages::player_search::filter_row(
-                                ui, &mut self.player_search, Some(build), Some(schemas),
+                                ui, &mut self.player_search, Some(build),
                                 cache_arc.as_ref().and_then(|c| c.my_clubs.as_ref()),
                             )
                                 && !self.advanced_open
@@ -1663,12 +1738,10 @@ impl eframe::App for FmEditorApp {
         // =================================================================
 
         if attach_requested {
-            self.game_date = None;
-            self.bridge.send(BridgeCmd::Attach(None));
+            self.request_attach(None);
         }
         if let Some(pid) = attach_pid_requested {
-            self.game_date = None;
-            self.bridge.send(BridgeCmd::Attach(Some(pid)));
+            self.request_attach(Some(pid));
         }
 
         // A write becomes undoable only after the worker confirms success.
@@ -2035,9 +2108,72 @@ fn patch_player_list_buffers(player: &mut PlayerRecord, addr: u64, bytes: &[u8])
     }
 }
 
+fn auto_connect_candidates(
+    rejected_pid: &mut Option<u32>,
+    games: Vec<RunningGame>,
+) -> Vec<RunningGame> {
+    if !games.iter().any(|game| Some(game.pid) == *rejected_pid) {
+        *rejected_pid = None;
+    }
+    games
+        .into_iter()
+        .filter(|game| Some(game.pid) != *rejected_pid)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn layout_rejection_suppresses_only_the_rejected_pid() {
+        let mut app = FmEditorApp::from_settings(AppSettings::default());
+        app.conn = ConnState::Ready(123);
+        app.attached_build = Some(GameBuild::FM27_STEAM);
+        app.reject_layout(123, "Player decoding failed".into());
+        assert!(matches!(app.conn, ConnState::Disconnected));
+        assert!(app.attached_build.is_none());
+        assert_eq!(app.status_msg.as_ref().unwrap().0, "Player decoding failed");
+        let game = |pid| RunningGame {
+            pid,
+            build: GameBuild::FM27_STEAM,
+        };
+        assert!(auto_connect_candidates(&mut app.rejected_pid, vec![game(123)]).is_empty());
+        assert_eq!(
+            auto_connect_candidates(&mut app.rejected_pid, vec![game(123), game(456)]),
+            vec![game(456)]
+        );
+        assert_eq!(app.rejected_pid, Some(123));
+        assert_eq!(
+            auto_connect_candidates(&mut app.rejected_pid, vec![game(456)]),
+            vec![game(456)]
+        );
+        assert_eq!(app.rejected_pid, None);
+    }
+
+    #[test]
+    fn reconnect_clears_layout_rejection() {
+        let mut app = FmEditorApp::from_settings(AppSettings::default());
+        app.reject_layout(123, "Player decoding failed".into());
+        app.request_attach(Some(123));
+        assert_eq!(app.rejected_pid, None);
+    }
+
+    #[test]
+    fn detected_waiting_label_keeps_observed_storefront() {
+        let mut app = FmEditorApp::from_settings(AppSettings::default());
+        app.conn = ConnState::WaitingForSave(123);
+        app.attached_build = Some(GameBuild::detected(
+            GameBuild::FM27_STEAM.recorded,
+            crate::game_version::Storefront::Epic,
+        ));
+        assert_eq!(
+            app.game_label(123),
+            "FM27 Epic (checking layout\u{2026}) (PID 123)"
+        );
+        app.conn = ConnState::Ready(123);
+        assert_eq!(app.game_label(123), "FM27 Epic (PID 123)");
+    }
+
     #[test]
     fn list_acknowledgements_and_undo_patch_only_matching_addresses() {
         use crate::player::{Absence, Clause, GameDate, Injury, ListState};

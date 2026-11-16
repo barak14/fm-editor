@@ -40,11 +40,7 @@ impl GameVersion {
     }
 }
 
-/// Where a game install came from, from the install location. Epic is a
-/// schema only for FM24; locations not recognised as Game Pass or Epic retain
-/// the historical Steam default. Either way the attachment's module
-/// fingerprint selects among the release's recorded builds
-/// ([`GameBuild::with_fingerprint`]).
+/// Where a game install came from, inferred from its install location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Storefront {
     Steam,
@@ -69,6 +65,12 @@ impl Storefront {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Recognition {
     Recorded,
+    Detected(DetectionOutcome),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetectionOutcome {
+    MatchesRecorded,
 }
 
 /// An attached build's recorded identity and resolved module addresses.
@@ -77,6 +79,7 @@ pub struct GameBuild {
     pub recorded: &'static RecordedBuild,
     pub addresses: ModuleAddresses,
     pub recognition: Recognition,
+    pub storefront: Storefront,
 }
 
 impl PartialEq for GameBuild {
@@ -84,6 +87,7 @@ impl PartialEq for GameBuild {
         std::ptr::eq(self.recorded, other.recorded)
             && self.addresses == other.addresses
             && self.recognition == other.recognition
+            && self.storefront == other.storefront
     }
 }
 
@@ -104,30 +108,35 @@ impl GameBuild {
         recorded: &fm24::FM24_STEAM,
         addresses: fm24::FM24_STEAM.addresses,
         recognition: Recognition::Recorded,
+        storefront: Storefront::Steam,
     };
 
     pub const FM24_EPIC: Self = Self {
         recorded: &fm24::FM24_EPIC,
         addresses: fm24::FM24_EPIC.addresses,
         recognition: Recognition::Recorded,
+        storefront: Storefront::Epic,
     };
 
     pub const FM26_STEAM: Self = Self {
         recorded: &fm26::FM26_STEAM,
         addresses: fm26::FM26_STEAM.addresses,
         recognition: Recognition::Recorded,
+        storefront: Storefront::Steam,
     };
 
     pub const FM27_STEAM: Self = Self {
         recorded: &fm27::FM27_STEAM,
         addresses: fm27::FM27_STEAM.addresses,
         recognition: Recognition::Recorded,
+        storefront: Storefront::Steam,
     };
 
     pub const FM27_GAMEPASS: Self = Self {
         recorded: &fm27::FM27_GAMEPASS,
         addresses: fm27::FM27_GAMEPASS.addresses,
         recognition: Recognition::Recorded,
+        storefront: Storefront::GamePass,
     };
 
     pub const ALL: [Self; 5] = [
@@ -138,20 +147,52 @@ impl GameBuild {
         Self::FM27_GAMEPASS,
     ];
 
-    /// The build for this release and storefront, or an error when no
-    /// schema exists for that combination (e.g. FM26 on Game Pass).
-    pub fn resolve(version: GameVersion, storefront: Storefront) -> Result<Self, String> {
-        Self::ALL
+    pub fn candidates(version: GameVersion, storefront: Storefront) -> Vec<&'static RecordedBuild> {
+        let mut candidates: Vec<_> = Self::ALL
             .into_iter()
-            .find(|b| b.version() == version && b.storefront() == storefront)
-            .ok_or_else(|| {
-                format!(
-                    "no schema for the {} build of {} — only the {} build is mapped",
-                    storefront.display_name(),
-                    version.display_name(),
-                    Storefront::Steam.display_name(),
-                )
+            .filter(|build| build.version() == version)
+            .map(|build| build.recorded)
+            .collect();
+        candidates.sort_by_key(|build| {
+            if build.storefront == storefront {
+                0
+            } else if build.storefront == Storefront::Steam {
+                1
+            } else {
+                2
+            }
+        });
+        candidates
+    }
+
+    pub fn resolve(version: GameVersion, storefront: Storefront) -> Result<Self, String> {
+        let recorded = Self::candidates(version, storefront)
+            .into_iter()
+            .next()
+            .ok_or_else(|| format!("no recorded layouts for {}", version.display_name()))?;
+        if recorded.storefront == storefront {
+            Ok(Self {
+                recorded,
+                addresses: recorded.addresses,
+                recognition: Recognition::Recorded,
+                storefront,
             })
+        } else {
+            Ok(Self::detected(recorded, storefront))
+        }
+    }
+
+    pub fn detected(recorded: &'static RecordedBuild, storefront: Storefront) -> Self {
+        Self {
+            recorded,
+            addresses: recorded.addresses,
+            recognition: Recognition::Detected(DetectionOutcome::MatchesRecorded),
+            storefront,
+        }
+    }
+
+    pub fn is_detected(self) -> bool {
+        matches!(self.recognition, Recognition::Detected(_))
     }
 
     /// The recorded build of the same release whose schema pins this module
@@ -159,8 +200,12 @@ impl GameBuild {
     /// whose path gave the wrong storefront still gets its own schema; an
     /// unknown fingerprint is left to the attachment's fingerprint gate.
     pub fn with_fingerprint(self, hash: u64) -> Self {
-        if self.fingerprint() == hash {
-            return self;
+        if self.fingerprint() != 0 && self.fingerprint() == hash {
+            return Self {
+                recognition: Recognition::Recorded,
+                storefront: self.recorded.storefront,
+                ..self
+            };
         }
         Self::ALL
             .into_iter()
@@ -176,7 +221,7 @@ impl GameBuild {
     }
 
     pub fn storefront(self) -> Storefront {
-        self.recorded.storefront
+        self.storefront
     }
 
     pub fn schemas(self) -> &'static ReleaseLayout {
@@ -197,9 +242,15 @@ impl GameBuild {
 
     pub fn display_name(self) -> &'static str {
         match (self.version(), self.storefront()) {
+            (GameVersion::Fm24, Storefront::Steam) => "FM24",
             (GameVersion::Fm24, Storefront::Epic) => "FM24 Epic",
+            (GameVersion::Fm24, Storefront::GamePass) => "FM24 Game Pass",
+            (GameVersion::Fm26, Storefront::Steam) => "FM26",
+            (GameVersion::Fm26, Storefront::Epic) => "FM26 Epic",
+            (GameVersion::Fm26, Storefront::GamePass) => "FM26 Game Pass",
+            (GameVersion::Fm27, Storefront::Steam) => "FM27",
+            (GameVersion::Fm27, Storefront::Epic) => "FM27 Epic",
             (GameVersion::Fm27, Storefront::GamePass) => "FM27 Game Pass",
-            (version, _) => version.display_name(),
         }
     }
 }
@@ -219,20 +270,19 @@ mod tests {
     }
 
     #[test]
-    fn resolve_rejects_unmapped_storefront() {
-        let err = GameBuild::resolve(GameVersion::Fm26, Storefront::GamePass).unwrap_err();
-        assert!(err.contains("Game Pass") && err.contains("FM26"), "{err}");
-        for version in [GameVersion::Fm26, GameVersion::Fm27] {
-            let err = GameBuild::resolve(version, Storefront::Epic).unwrap_err();
-            assert!(
-                err.contains("Epic") && err.contains(version.display_name()),
-                "{err}"
-            );
+    fn resolve_detects_unrecorded_storefronts() {
+        for (version, storefront) in [
+            (GameVersion::Fm24, Storefront::GamePass),
+            (GameVersion::Fm26, Storefront::GamePass),
+            (GameVersion::Fm26, Storefront::Epic),
+            (GameVersion::Fm27, Storefront::Epic),
+        ] {
+            let build = GameBuild::resolve(version, storefront).unwrap();
+            assert_eq!(build.version(), version);
+            assert_eq!(build.storefront(), storefront);
+            assert!(build.is_detected());
+            assert_eq!(build.recorded.storefront, Storefront::Steam);
         }
-        assert_eq!(
-            GameBuild::resolve(GameVersion::Fm24, Storefront::Epic),
-            Ok(GameBuild::FM24_EPIC)
-        );
     }
 
     #[test]
@@ -251,7 +301,7 @@ mod tests {
             GameBuild::FM24_EPIC.with_fingerprint(epic),
             GameBuild::FM24_EPIC
         );
-        // An unknown fingerprint keeps the path's build for the gate to refuse.
+        // Unknown fingerprints retain the candidate for runtime validation.
         assert_eq!(
             GameBuild::FM24_STEAM.with_fingerprint(0x1234),
             GameBuild::FM24_STEAM
@@ -301,5 +351,74 @@ mod tests {
         assert_ne!(original, altered);
         assert!(std::ptr::eq(original.recorded, altered.recorded));
         assert_eq!(original, original);
+    }
+
+    #[test]
+    fn candidate_order_prefers_observed_then_steam() {
+        for version in [GameVersion::Fm24, GameVersion::Fm26, GameVersion::Fm27] {
+            for storefront in [Storefront::Steam, Storefront::Epic, Storefront::GamePass] {
+                let candidates = GameBuild::candidates(version, storefront);
+                let priority = |build: &&RecordedBuild| {
+                    if build.storefront == storefront {
+                        0
+                    } else if build.storefront == Storefront::Steam {
+                        1
+                    } else {
+                        2
+                    }
+                };
+                assert!(
+                    candidates
+                        .windows(2)
+                        .all(|pair| priority(&pair[0]) <= priority(&pair[1]))
+                );
+                assert_eq!(
+                    candidates.len(),
+                    GameBuild::ALL
+                        .iter()
+                        .filter(|b| b.version() == version)
+                        .count()
+                );
+                assert!(candidates.iter().all(|build| build.version == version));
+            }
+        }
+    }
+
+    #[test]
+    fn display_names_cover_every_release_and_storefront() {
+        for (version, names) in [
+            (GameVersion::Fm24, ["FM24", "FM24 Epic", "FM24 Game Pass"]),
+            (GameVersion::Fm26, ["FM26", "FM26 Epic", "FM26 Game Pass"]),
+            (GameVersion::Fm27, ["FM27", "FM27 Epic", "FM27 Game Pass"]),
+        ] {
+            for (storefront, name) in [Storefront::Steam, Storefront::Epic, Storefront::GamePass]
+                .into_iter()
+                .zip(names)
+            {
+                assert_eq!(
+                    GameBuild::resolve(version, storefront)
+                        .unwrap()
+                        .display_name(),
+                    name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn detected_builds_never_equal_recorded_builds() {
+        for recorded in GameBuild::ALL {
+            let detected = GameBuild::detected(recorded.recorded, recorded.storefront());
+            assert_ne!(detected, recorded);
+            assert!(detected.is_detected());
+            assert!(!recorded.is_detected());
+            let mut other_storefront = detected;
+            other_storefront.storefront = if detected.storefront == Storefront::Epic {
+                Storefront::Steam
+            } else {
+                Storefront::Epic
+            };
+            assert_ne!(detected, other_storefront);
+        }
     }
 }

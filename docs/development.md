@@ -21,8 +21,10 @@ after startup; the script is not a UI or memory-layout test.
 A loaded game is needed for live editing tests, not for compile/unit tests or
 read-only disconnected UI checks. Never change system permissions, skip layout
 validation or assume a Steam schema's addresses work on another storefront without
-the fingerprint or runtime validation confirming them to make a test pass.
-Available here: FM24 Steam, FM26 Steam and FM27 Game Pass; FM27 Steam is not.
+the fingerprint or runtime validation confirming them to make a test pass. The
+debug-only fingerprint override below exercises validation; it does not bypass the
+decoding gate. Available here: FM24 Steam, FM26 Steam and FM27 Game Pass; FM27
+Steam is not.
 See [Linux setup](../README.md#linux--proton) for the available memory-access options.
 
 Worktree launches use `.mcp-port` and a branch-specific executable
@@ -160,7 +162,7 @@ path/manifest hints; and the schema-selection result. Optional plugin discovery
 is labelled explicitly; it never substitutes a DLL path from a different PID.
 If no candidate can be identified, the error retains all candidates' reports,
 not only the first failure. Skipped candidates are logged even if another game
-is supported. These reports do not verify offsets or bypass the fingerprint gate.
+is supported. Release identification alone does not verify memory layouts.
 
 Reports go to stderr and a persistent JSON-lines log, including in release builds:
 
@@ -197,6 +199,39 @@ on paths/manifests; a moved install is still matched to a recorded build by its
 module fingerprint (`GameBuild::with_fingerprint`), but an unknown fingerprint
 keeps the path's storefront. Do not infer storefront or field compatibility from
 ProductName.
+
+### Runtime layout validation
+
+`ReleaseLayout` holds per-release record layouts; `RecordedBuild` pairs one with
+module addresses and a fingerprint. Each attachment's `GameBuild` also records the
+observed storefront, selected addresses and recognition outcome. A nonzero recorded
+fingerprint matching the module pins the build; otherwise the worker tries the
+release's recorded address sets, preferring the observed storefront, then Steam.
+Unknown releases are never guessed. No runtime address scanning is implemented yet.
+
+The worker waits for plausible, stable save counts, then runs the read-only gate
+on players, staff, clubs and related records before sending Connected. Unpinned
+builds must pass; pinned builds retain their fingerprint evidence and only warn
+on failure. Every later save load/reload reruns the gate, and writes remain blocked
+while an unpinned save has not passed. Rejected PIDs require explicit Reconnect or
+a process change before auto-connect retries.
+
+The attachment's detection report records release, observed storefront, module
+hash, pinning, candidate order, chosen address set, status and last gate checks.
+`attach_status` exposes this report for its independent read-only MCP attachment;
+it is not the GUI worker's validation state. Attach diagnostics also log the hash
+and selection via the game-detection log above.
+
+To exercise the unpinned path on a recorded build, launch a **debug build** with
+`FME_IGNORE_FINGERPRINT=1`. Release builds ignore this environment variable. The
+override removes fingerprint pinning, not validation or write guards; it must not
+be used as evidence that a mapping is correct.
+
+Promoting a matched build to a recorded/pinned build requires independently known
+in-game values for at least two entities, the exact build/storefront and source/date
+of the evidence, plus the module fingerprint. Update the recorded build in
+`src/fields/<version>/` and its matching memory-layout document together. A passing
+gate, an inherited mapping or an unverified fingerprint lead is not that evidence.
 
 ## Read-only memory tools
 

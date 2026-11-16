@@ -6,6 +6,10 @@
 
 - FM24 Epic (24.4.2+2081827): attach, read and edit using the FM24 Steam schema with the Epic `fm.exe` fingerprint. Evidence was contributed from a Windows Epic install (two players' attributes and one club's transfer budget matched in game, and an attribute and budget edit were confirmed and restored); other fields are inherited from Steam and not tested on Epic. See docs/fm24/memory-layout.md ("Epic build").
 - A module fingerprint that matches another recorded build of the same release selects that build, so a moved or renamed install no longer depends on its folder name.
+- Runtime layout validation for unpinned FM24/FM26/FM27 builds: try the release's recorded module addresses and decode sample players, staff, clubs and related records before allowing editing. Unknown storefronts and changed/unreadable fingerprints no longer cause an immediate refusal; no passing candidate means the attachment is rejected. Pinned builds run the same gate with warning-only failures.
+- Show matched builds with an amber version label and backup warning, including FM27 Steam until its fingerprint is recorded. Show “checking layout…” while waiting, and keep a rejected PID disconnected until Reconnect or a different process appears.
+- Keep FM27 club-policy trial and contract inspection restricted to pinned recorded builds; detected builds cannot use those separate, undetected addresses.
+- Include the detection report in debug `attach_status`; debug builds can exercise the unpinned path with `FME_IGNORE_FINGERPRINT=1`. This phase has compile/unit coverage only; live validation is outstanding.
 
 ## 0.4.3 (prerelease)
 

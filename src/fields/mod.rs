@@ -713,15 +713,12 @@ pub struct RecordedBuild {
     pub storefront: crate::game_version::Storefront,
     pub layout: &'static ReleaseLayout,
     pub addresses: ModuleAddresses,
-    /// FNV-1a hash of the first 64 KB of `game_plugin.dll` for the patch
-    /// this schema was validated against.
+    /// Project fingerprint of the first 64 KB of the build's game module.
+    /// Zero means uncalibrated; a matching nonzero hash pins this recorded build.
+    /// Other hashes require the runtime layout gate before editing.
     ///
-    /// Convention:
-    ///   0  — not yet calibrated; attach is allowed but a notice is shown.
-    ///   other — hard gate: attach fails if the running DLL hashes differently.
-    ///
-    /// To calibrate: launch the editor once with the target FM build, read
-    /// the hash from the status bar notice, paste it here, commit.
+    /// Recording a fingerprint requires independent in-game witnesses and matching
+    /// build documentation. The detection report and log expose the module hash.
     pub fingerprint: u64,
     // FMRTE reference counts — used by `src/bin/scan_arrays.rs` to
     // validate candidate RVA pairs. Per-version because FMRTE's own

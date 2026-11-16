@@ -113,6 +113,7 @@ pub enum BridgeCmd {
     /// Attach to the game with this PID, or with `None` to the only running
     /// game. With several games running, `None` answers `ChooseGame`.
     Attach(Option<u32>),
+    DiscoverGames,
     LoadEntityCache,
     LoadPlayer(u64, usize),
     LoadStaff(u64, usize),
@@ -140,7 +141,16 @@ pub enum BridgeCmd {
 pub enum BridgeResult {
     /// fm.exe attached AND a save is loaded (entity arrays populated and
     /// stable across two consecutive probes).
-    Connected(u32, EntityCounts, Option<crate::game_date::GameDate>),
+    Connected(
+        u32,
+        crate::game_version::GameBuild,
+        EntityCounts,
+        Option<crate::game_date::GameDate>,
+    ),
+    LayoutRejected {
+        pid: u32,
+        message: String,
+    },
     /// fm.exe attached but no save is loaded yet, or save creation is
     /// still in progress. The worker keeps pinging; once counts are
     /// stable + plausible, we promote to Connected.
@@ -152,6 +162,7 @@ pub enum BridgeResult {
     /// Several games are running (they all run as `fm.exe`) and no PID was
     /// given. Nothing was attached; the UI asks which one to use.
     ChooseGame(Vec<crate::process::RunningGame>),
+    GamesDiscovered(Vec<crate::process::RunningGame>),
     /// fm.exe still alive but the save got unloaded, replaced by another
     /// save (its identity changed) or returned to the main menu. Caller
     /// should wipe entity state, including Undo, and wait.

@@ -2,7 +2,7 @@
 //!
 //! Platform backends implement the raw primitives — pid lookup, module
 //! enumeration, cross-process byte transfer. Everything above raw bytes
-//! (version sniffing, the DLL-hash gate, typed reads, FM name decoding)
+//! (version sniffing, fingerprint pinning, typed reads, FM name decoding)
 //! is shared and platform-independent.
 //!
 //! On Linux the target is the same Windows fm.exe running under
@@ -23,9 +23,92 @@ mod linux;
 #[cfg(target_os = "linux")]
 use self::linux as backend;
 
+use self::layout_validate::GateReport;
 use crate::fields::{ModuleAddresses, ReleaseLayout};
 use crate::game_date::GameDate;
 use crate::game_version::{GameBuild, GameVersion, Storefront};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DetectionStatus {
+    Pinned,
+    AwaitingSave,
+    Validated,
+    Failed(String),
+}
+
+pub struct DetectionReport {
+    pub release: GameVersion,
+    pub storefront: Storefront,
+    pub module_hash: Option<u64>,
+    pub pinned: bool,
+    pub candidates: Vec<&'static str>,
+    pub chosen: Option<&'static str>,
+    pub status: DetectionStatus,
+    pub gate: Option<GateReport>,
+}
+
+impl DetectionReport {
+    pub fn summary(&self) -> String {
+        let hash = self
+            .module_hash
+            .map_or_else(|| "unavailable".into(), |hash| format!("0x{hash:016X}"));
+        let mut summary = format!(
+            "{} {}; module hash: {}; pinned: {}; candidates: {}; chosen: {}; status: {:?}",
+            self.release.display_name(),
+            self.storefront.display_name(),
+            hash,
+            self.pinned,
+            self.candidates.join(", "),
+            self.chosen.unwrap_or("none"),
+            self.status,
+        );
+        if let Some(gate) = &self.gate {
+            summary.push('\n');
+            summary.push_str(&gate.summary());
+        }
+        summary
+    }
+}
+
+fn attachment_build(
+    path_build: GameBuild,
+    module_hash: Option<u64>,
+    ignore_fingerprint: bool,
+) -> (GameBuild, DetectionReport) {
+    let matched = module_hash.map_or(path_build, |hash| path_build.with_fingerprint(hash));
+    let pinned = !ignore_fingerprint
+        && matched.fingerprint() != 0
+        && module_hash == Some(matched.fingerprint());
+    let storefront = if pinned {
+        matched.storefront()
+    } else {
+        path_build.storefront()
+    };
+    let candidates = GameBuild::candidates(path_build.version(), storefront);
+    let build = if pinned {
+        matched
+    } else {
+        GameBuild::detected(candidates[0], storefront)
+    };
+    let detection = DetectionReport {
+        release: build.version(),
+        storefront,
+        module_hash,
+        pinned,
+        candidates: candidates
+            .iter()
+            .map(|candidate| candidate.schema_name)
+            .collect(),
+        chosen: pinned.then_some(build.schema_name()),
+        status: if pinned {
+            DetectionStatus::Pinned
+        } else {
+            DetectionStatus::AwaitingSave
+        },
+        gate: None,
+    };
+    (build, detection)
+}
 
 /// A running `fm.exe` whose game build could be identified.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,7 +269,7 @@ fn detect_build_from_modules(
         Ok(build) => {
             let _ = writeln!(
                 report,
-                "result: selected {} schema {}; layout compatibility still requires the attachment fingerprint gate",
+                "result: selected {} schema {}; layout compatibility still requires attachment validation",
                 build.display_name(),
                 build.schema_name()
             );
@@ -242,10 +325,7 @@ pub struct FmProcess {
     /// On-disk path of that module, as the OS reports it.
     pub module_path: String,
     pub build: GameBuild,
-    /// Set when `fingerprint` is 0 in the recorded build (not yet calibrated).
-    /// The worker forwards this to the UI as a status notice so the developer
-    /// knows the current hash to paste into `fields/<version>/mod.rs`.
-    pub dll_hash_notice: Option<String>,
+    pub detection: DetectionReport,
 }
 
 impl FmProcess {
@@ -283,42 +363,18 @@ impl FmProcess {
         backend::read_bytes(&handle, gp_base, 2)
             .map_err(|e| format!("attached to pid {pid} but cannot read its memory: {e}"))?;
         let module_hash = hash_module_header(&gp_path);
-        let build = match &module_hash {
-            Ok(hash) => path_build.with_fingerprint(*hash),
-            Err(_) => path_build,
-        };
-        let known = build.fingerprint();
-        let dll_hash_notice = match (known, module_hash) {
-            // Schema not yet calibrated — allow attach but surface the hash.
-            (0, Ok(hash)) => Some(format!(
-                "{} {module} hash not calibrated (current: 0x{hash:016X}). \
-                 Set fingerprint: 0x{hash:016X} in {} in src/fields/{}/mod.rs \
-                 to enable the version gate.",
-                build.display_name(),
-                build.schema_name(),
-                build.version().short_name(),
-            )),
-            (0, Err(e)) => Some(format!(
-                "{} {module} hash not calibrated and unavailable: {e}",
-                build.display_name(),
-            )),
-            (_, Err(e)) => {
-                return Err(format!(
-                    "cannot check the {} build: {e}",
-                    build.display_name()
-                ));
-            }
-            (known, Ok(hash)) if known != hash => {
-                return Err(format!(
-                    "{} version mismatch — schema {} built for 0x{known:016X}, \
-                     running 0x{hash:016X} ({gp_path}). Re-verify offsets \
-                     against the new patch before use.",
-                    build.display_name(),
-                    build.schema_name(),
-                ));
-            }
-            _ => None,
-        };
+        let ignore_fingerprint = cfg!(debug_assertions)
+            && std::env::var("FME_IGNORE_FINGERPRINT").is_ok_and(|value| value == "1");
+        let (build, detection) = attachment_build(
+            path_build,
+            module_hash.as_ref().ok().copied(),
+            ignore_fingerprint,
+        );
+        let mut report = detection.summary();
+        if let Err(error) = module_hash {
+            report.push_str(&format!("\nmodule hash unavailable: {error}"));
+        }
+        detection_log::record(pid, &report);
         Ok(Self {
             handle,
             pid,
@@ -326,7 +382,7 @@ impl FmProcess {
             gp_end: gp_base + gp_size,
             module_path: gp_path,
             build,
-            dll_hash_notice,
+            detection,
         })
     }
 
@@ -523,6 +579,66 @@ mod tests {
     use super::*;
 
     #[test]
+    fn fingerprints_pin_only_calibrated_builds() {
+        for recorded in GameBuild::ALL {
+            let (build, report) = attachment_build(recorded, Some(recorded.fingerprint()), false);
+            if recorded.fingerprint() == 0 {
+                assert!(build.is_detected());
+                assert_eq!(report.status, DetectionStatus::AwaitingSave);
+            } else {
+                assert_eq!(build, recorded);
+                assert!(report.pinned);
+                assert_eq!(report.status, DetectionStatus::Pinned);
+                assert_eq!(report.chosen, Some(recorded.schema_name()));
+            }
+        }
+    }
+
+    #[test]
+    fn unpinned_builds_await_validation() {
+        for hash in [None, Some(0x1234)] {
+            let (build, report) = attachment_build(GameBuild::FM24_EPIC, hash, false);
+            assert!(build.is_detected());
+            assert_eq!(build.storefront(), Storefront::Epic);
+            assert_eq!(build.recorded.schema_name, "FM24_EPIC");
+            assert!(!report.pinned);
+            assert_eq!(report.chosen, None);
+            assert_eq!(report.status, DetectionStatus::AwaitingSave);
+            assert_eq!(report.module_hash, hash);
+        }
+    }
+
+    #[test]
+    fn fingerprints_correct_storefront_unless_forced_to_detect() {
+        let steam = GameBuild::FM24_STEAM;
+        let epic = GameBuild::FM24_EPIC;
+        let (build, report) = attachment_build(steam, Some(epic.fingerprint()), false);
+        assert_eq!(build, epic);
+        assert_eq!(report.storefront, Storefront::Epic);
+        let (build, report) = attachment_build(steam, Some(epic.fingerprint()), true);
+        assert!(build.is_detected());
+        assert_eq!(build.storefront(), Storefront::Steam);
+        assert_eq!(report.status, DetectionStatus::AwaitingSave);
+        assert!(!report.pinned);
+    }
+
+    #[test]
+    fn detection_summary_includes_hash_candidates_and_failure() {
+        let (_, mut report) = attachment_build(GameBuild::FM24_STEAM, Some(0x1234), false);
+        report.status = DetectionStatus::Failed("players failed validation".into());
+        let summary = report.summary();
+        for expected in [
+            "0x0000000000001234",
+            "FM24_STEAM",
+            "FM24_EPIC",
+            "players failed validation",
+            "chosen: none",
+        ] {
+            assert!(summary.contains(expected), "{summary}");
+        }
+    }
+
+    #[test]
     fn running_game_label_names_build_and_pid() {
         let game = RunningGame {
             pid: 4242,
@@ -596,17 +712,16 @@ mod tests {
     }
 
     #[test]
-    fn detection_report_retains_metadata_when_schema_is_unsupported() {
+    fn detection_report_retains_metadata_for_unrecorded_storefront() {
         let path = r"C:\Program Files\Epic Games\FootballManager26\fm.exe";
         let (result, report) =
             detect_build_from_modules(1, module_info(path), Err("not mapped".into()), |_| {
                 Ok(metadata("Football Manager 2026", "26.3.2"))
             });
-        assert!(
-            result
-                .unwrap_err()
-                .contains("no schema for the Epic build of FM26")
-        );
+        let build = result.unwrap();
+        assert_eq!(build.version(), GameVersion::Fm26);
+        assert_eq!(build.storefront(), Storefront::Epic);
+        assert!(build.is_detected());
         assert!(report.contains("26.3.2"), "{report}");
         assert!(
             report.contains("release: FM26; source: PE ProductName"),

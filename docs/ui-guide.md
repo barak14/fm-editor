@@ -12,6 +12,21 @@ The left sidebar groups **Players**, **Staff** and **Clubs** under Browse, with 
 
 When a game's version is known, the window title and sidebar heading identify it (for example, **FM27 Editor**); worktree titles retain their branch suffix. The connection block shows Connected/Waiting for save rather than repeating version and PID. The status bar retains attached-game details.
 
+An **amber version label** identifies a build that was not pinned by a recorded
+module fingerprint. Its tooltip says: “This build hasn't been validated. Back up
+your save before editing.” The label includes the observed storefront (Steam is
+unqualified), and adds **(checking layout…)** while waiting for a loaded save's
+layout check. FM27 Steam currently follows this path because its fingerprint is
+not recorded. Passing the decoding check permits editing but keeps the amber
+label; it is not independent verification of every field.
+
+The editor tries that release's recorded module addresses and checks decoded
+records before loading an unpinned save into the UI. If no candidate passes, it
+disconnects and shows the failing check in the status line. Auto-connect is
+suppressed for that PID until you press **Reconnect** or the process changes.
+Every save load/reload reruns the check. A pinned build's failed check produces a
+warning rather than blocking. Detection and attachment do not write game memory.
+
 - Click a blue club name to open its club details. Where a club address is resolved through an existing schema chain, it must match an entry in the loaded club cache. Without an address, only a unique cached name is navigable. Full and short club names can differ; address-based links do not depend on their spelling.
 - Click a club's ground name to open its **Stadium (read-only)** tab. This is the existing ground information associated with that club, not a separate searchable ground entity.
 - **Back** and **Forward** follow one browser-style history across entity types and search pages. Search filters are retained when following related links.

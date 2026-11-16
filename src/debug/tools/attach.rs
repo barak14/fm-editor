@@ -11,7 +11,7 @@ use std::sync::atomic::Ordering;
 use serde_json::{Value, json};
 
 use crate::debug::DebugState;
-use crate::process::{self, FmProcess};
+use crate::process::{self, DetectionReport, DetectionStatus, FmProcess};
 use crate::{club, player, staff};
 
 pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
@@ -93,7 +93,7 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
         "module_header_hash": fm.module_header_hash().ok().map(|h| format!("0x{h:016X}")),
         "schema_known_dll_hash": format!("0x{:016X}", fm.build.fingerprint()),
         "fingerprint_calibrated": fm.build.fingerprint() != 0,
-        "compatibility_notice": fm.dll_hash_notice,
+        "detection": detection_json(&fm.detection),
         "pid":           fm.pid,
         "editor_pid":    state.editor_pid.load(Ordering::Relaxed),
         "running_games": running,
@@ -102,4 +102,80 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
         "clubs":         clubs
     }))
     .unwrap())
+}
+
+fn detection_json(report: &DetectionReport) -> Value {
+    let (status, failure) = match &report.status {
+        DetectionStatus::Pinned => ("pinned", None),
+        DetectionStatus::AwaitingSave => ("awaiting_save", None),
+        DetectionStatus::Validated => ("validated", None),
+        DetectionStatus::Failed(message) => ("failed", Some(message.as_str())),
+    };
+    let gate = report.gate.as_ref().map(|gate| {
+        json!({
+            "passed": gate.passed(),
+            "summary": gate.summary(),
+            "checks": gate.checks.iter().map(|check| json!({
+                "name": check.name,
+                "sampled": check.sampled,
+                "passed": check.passed,
+                "required_percent": check.required_percent,
+                "ok": check.ok,
+                "note": check.note,
+            })).collect::<Vec<_>>(),
+        })
+    });
+    json!({
+        "release": report.release.display_name(),
+        "storefront": report.storefront.display_name(),
+        "module_hash": report.module_hash.map(|hash| format!("0x{hash:016X}")),
+        "pinned": report.pinned,
+        "candidates": report.candidates,
+        "chosen": report.chosen,
+        "status": status,
+        "failure": failure,
+        "gate": gate,
+        "summary": report.summary(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game_version::{GameVersion, Storefront};
+    use crate::process::layout_validate::{GateCheck, GateReport};
+
+    #[test]
+    fn detection_json_preserves_failure_and_gate_checks() {
+        let report = DetectionReport {
+            release: GameVersion::Fm27,
+            storefront: Storefront::Epic,
+            module_hash: Some(42),
+            pinned: false,
+            candidates: vec!["FM27", "FM27 Game Pass"],
+            chosen: None,
+            status: DetectionStatus::Failed("players failed".to_owned()),
+            gate: Some(GateReport {
+                checks: vec![GateCheck {
+                    name: "players",
+                    sampled: 256,
+                    passed: 0,
+                    required_percent: 95,
+                    ok: false,
+                    note: Some("unreadable".to_owned()),
+                }],
+            }),
+        };
+        let value = detection_json(&report);
+        assert_eq!(value["pinned"], false);
+        assert_eq!(value["module_hash"], "0x000000000000002A");
+        assert_eq!(value["storefront"], "Epic");
+        assert_eq!(value["status"], "failed");
+        assert_eq!(value["failure"], "players failed");
+        assert_eq!(value["candidates"].as_array().unwrap().len(), 2);
+        assert!(value["chosen"].is_null());
+        assert_eq!(value["gate"]["passed"], false);
+        assert_eq!(value["gate"]["checks"][0]["name"], "players");
+        assert_eq!(value["gate"]["checks"][0]["note"], "unreadable");
+    }
 }

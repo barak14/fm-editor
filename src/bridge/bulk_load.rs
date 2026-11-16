@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::sync::{mpsc, Arc};
 
 use crate::cache::{CachedClub, CachedPlayer, CachedStaff, EntityCache};
+use crate::game_version::{GameBuild, GameVersion, Storefront};
 use crate::process::FmProcess;
 
 use super::cmd::BridgeResult;
@@ -285,11 +286,11 @@ pub(super) fn load_entity_cache(
     // ------------------------------------------------------------------
     // Resolve membership only through the attached build's existing schema.
     // Game Pass inherits Steam layouts but has not been verified.
-    if fm.build != crate::game_version::GameBuild::FM27_GAMEPASS {
+    if supports_club_membership(fm.build) {
         let clubs_by_addr: HashMap<u64, u32> = clubs.iter().map(|c| (c.addr, c.uid)).collect();
         for player in &mut players {
             let phys = |off| crate::player::player_phys_offset(schemas, off, player.person_shift);
-            if fm.build == crate::game_version::GameBuild::FM27_STEAM {
+            if supports_fm27_steam_membership(fm.build) {
                 player.owning_club_id = crate::fields::resolve_sub_ptr_mapped(
                     fm,
                     player.addr,
@@ -346,8 +347,21 @@ fn read_u64_le(buf: &[u8], off: usize) -> u64 {
         .unwrap_or(0)
 }
 
+fn supports_fm27_steam_membership(build: GameBuild) -> bool {
+    let steam = GameBuild::FM27_STEAM;
+    std::ptr::eq(build.recorded, steam.recorded)
+        && build.addresses() == steam.addresses()
+        && build.storefront() == Storefront::Steam
+}
+
+fn supports_club_membership(build: GameBuild) -> bool {
+    build.version() != GameVersion::Fm27
+        || (build.storefront() != Storefront::GamePass
+            && !std::ptr::eq(build.recorded, GameBuild::FM27_GAMEPASS.recorded))
+}
+
 fn load_my_clubs(fm: &FmProcess, clubs: &[CachedClub]) -> Option<crate::cache::MyClubs> {
-    if fm.build != crate::game_version::GameBuild::FM27_STEAM {
+    if !supports_fm27_steam_membership(fm.build) {
         return None;
     }
     let manager = super::entity_load::load_human_manager(fm).ok()?;
@@ -430,6 +444,49 @@ fn collect_club_group(
 #[cfg(test)]
 mod membership_tests {
     use super::*;
+
+    #[test]
+    fn steam_membership_requires_recorded_candidate_addresses_and_storefront() {
+        let steam = GameBuild::FM27_STEAM;
+        assert!(supports_fm27_steam_membership(steam));
+        assert!(supports_fm27_steam_membership(GameBuild::detected(
+            steam.recorded,
+            Storefront::Steam,
+        )));
+        for storefront in [Storefront::GamePass, Storefront::Epic] {
+            assert!(!supports_fm27_steam_membership(GameBuild::detected(
+                steam.recorded,
+                storefront,
+            )));
+        }
+        for candidate in GameBuild::ALL {
+            if std::ptr::eq(candidate.recorded, steam.recorded) {
+                continue;
+            }
+            assert!(!supports_fm27_steam_membership(GameBuild::detected(
+                candidate.recorded,
+                Storefront::Steam,
+            )));
+        }
+        let mut moved = GameBuild::detected(steam.recorded, Storefront::Steam);
+        moved.addresses.human_manager_vtable_rva += 8;
+        assert!(!supports_fm27_steam_membership(moved));
+    }
+
+    #[test]
+    fn gamepass_membership_exclusion_survives_detection_and_storefront_changes() {
+        for candidate in GameBuild::ALL {
+            for storefront in [Storefront::Steam, Storefront::GamePass, Storefront::Epic] {
+                let detected = GameBuild::detected(candidate.recorded, storefront);
+                let expected = candidate.version() != GameVersion::Fm27
+                    || (storefront != Storefront::GamePass
+                        && !std::ptr::eq(candidate.recorded, GameBuild::FM27_GAMEPASS.recorded));
+                assert_eq!(supports_club_membership(detected), expected);
+            }
+        }
+        assert!(!supports_club_membership(GameBuild::FM27_GAMEPASS));
+        assert!(supports_club_membership(GameBuild::FM27_STEAM));
+    }
     fn club(addr: u64, uid: u32) -> CachedClub {
         CachedClub {
             addr,

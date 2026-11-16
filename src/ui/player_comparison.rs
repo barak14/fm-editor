@@ -261,7 +261,12 @@ impl PlayerComparison {
                         "Values do not auto-refresh. Reload a profile and select it again to update. No game memory is written. — means missing, invalid or unmapped data. Identity colors distinguish players, not better values. Age uses the captured game date, or the build's reference year."
                     );
                 });
-                if self.slots.iter().flatten().any(|s| s.identity.build == GameBuild::FM27_GAMEPASS) {
+                if self.slots.iter().flatten().any(|s| {
+                    let build = s.identity.build;
+                    build.version() == crate::game_version::GameVersion::Fm27
+                        && (build.storefront() == crate::game_version::Storefront::GamePass
+                            || std::ptr::eq(build.recorded, GameBuild::FM27_GAMEPASS.recorded))
+                }) {
                     ui.label(egui::RichText::new("Game Pass layout unverified").color(ui.visuals().warn_fg_color));
                 }
                 ui.separator();

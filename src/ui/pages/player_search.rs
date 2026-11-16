@@ -176,27 +176,24 @@ pub fn advanced_filter_count(state: &PlayerSearchState) -> usize {
 /// Runs every frame — all comparisons are on already-decoded cache fields.
 pub fn filter<'a>(
     build: GameBuild,
-    schemas: &'static crate::fields::ReleaseLayout,
     today: Option<crate::game_date::GameDate>,
     cache: &'a [CachedPlayer],
     state: &PlayerSearchState,
 ) -> Vec<&'a CachedPlayer> {
-    filter_with_clubs(build, schemas, today, cache, state, None)
+    filter_with_clubs(build, today, cache, state, None)
 }
 
 pub fn filter_with_clubs<'a>(
     build: GameBuild,
-    schemas: &'static crate::fields::ReleaseLayout,
     today: Option<crate::game_date::GameDate>,
     cache: &'a [CachedPlayer],
     state: &PlayerSearchState,
     my_clubs: Option<&crate::cache::MyClubs>,
 ) -> Vec<&'a CachedPlayer> {
+    let schemas = build.schemas();
     if (state.my_clubs && my_clubs.is_none())
         || state.validation_error().is_some()
-        || (!state.my_clubs
-            && !state.club_id.trim().is_empty()
-            && !club_filter_supported(build, schemas))
+        || (!state.my_clubs && !state.club_id.trim().is_empty() && !club_filter_supported(build))
     {
         return Vec::new();
     }
@@ -312,7 +309,6 @@ pub fn filter_row(
     ui: &mut egui::Ui,
     state: &mut PlayerSearchState,
     build: Option<GameBuild>,
-    schemas: Option<&'static crate::fields::ReleaseLayout>,
     my_clubs: Option<&crate::cache::MyClubs>,
 ) -> bool {
     let mut advanced_clicked = false;
@@ -367,9 +363,7 @@ pub fn filter_row(
     }
     if !state.my_clubs
         && !state.club_id.trim().is_empty()
-        && !build
-            .zip(schemas)
-            .is_some_and(|(build, schemas)| club_filter_supported(build, schemas))
+        && !build.is_some_and(club_filter_supported)
     {
         ui.colored_label(
             ui.visuals().error_fg_color,
@@ -656,16 +650,7 @@ mod tests {
         for bad in ["abc", "-1", "201", "1.5"] {
             state.ca_min = bad.into();
             assert!(state.validation_error().is_some());
-            assert!(
-                filter(
-                    GameBuild::FM26_STEAM,
-                    crate::game_version::GameBuild::FM26_STEAM.schemas(),
-                    None,
-                    &[player(1, 2000)],
-                    &state
-                )
-                .is_empty()
-            );
+            assert!(filter(GameBuild::FM26_STEAM, None, &[player(1, 2000)], &state).is_empty());
         }
         state.ca_min = "150".into();
         state.ca_max = "100".into();
@@ -673,14 +658,7 @@ mod tests {
         state.ca_min = "100".into();
         state.ca_max = "100".into();
         assert_eq!(
-            filter(
-                GameBuild::FM26_STEAM,
-                crate::game_version::GameBuild::FM26_STEAM.schemas(),
-                None,
-                &[player(1, 2000)],
-                &state
-            )
-            .len(),
+            filter(GameBuild::FM26_STEAM, None, &[player(1, 2000)], &state).len(),
             1
         );
     }
@@ -770,43 +748,15 @@ mod search_tests {
         let mut state = PlayerSearchState::default();
         for query in ["EXAMPLE ada", "42", "  ada  "] {
             state.query = query.into();
-            assert_eq!(
-                filter(
-                    GameBuild::FM26_STEAM,
-                    crate::game_version::GameBuild::FM26_STEAM.schemas(),
-                    None,
-                    &cache,
-                    &state
-                )
-                .len(),
-                1
-            );
+            assert_eq!(filter(GameBuild::FM26_STEAM, None, &cache, &state).len(), 1);
         }
         for query in ["ada missing", "4"] {
             state.query = query.into();
-            assert!(
-                filter(
-                    GameBuild::FM26_STEAM,
-                    crate::game_version::GameBuild::FM26_STEAM.schemas(),
-                    None,
-                    &cache,
-                    &state
-                )
-                .is_empty()
-            );
+            assert!(filter(GameBuild::FM26_STEAM, None, &cache, &state).is_empty());
         }
         state.query = "42".into();
         state.pa_min = "151".into();
-        assert!(
-            filter(
-                GameBuild::FM26_STEAM,
-                crate::game_version::GameBuild::FM26_STEAM.schemas(),
-                None,
-                &cache,
-                &state
-            )
-            .is_empty()
-        );
+        assert!(filter(GameBuild::FM26_STEAM, None, &cache, &state).is_empty());
     }
 }
 
@@ -839,43 +789,29 @@ mod position_tests {
 
     #[test]
     fn inclusive_per_position_minima_and_or_semantics() {
-        let schemas = crate::game_version::GameBuild::FM26_STEAM.schemas();
         let cache = [witness(&[(0, 1), (1, 20)]), witness(&[(0, 10), (1, 19)])];
         let mut state = PlayerSearchState::default();
         assert_eq!(state.position_minimums, [2; 15]);
-        assert_eq!(
-            filter(GameBuild::FM26_STEAM, schemas, None, &cache, &state).len(),
-            2
-        );
+        assert_eq!(filter(GameBuild::FM26_STEAM, None, &cache, &state).len(), 2);
         state.position_minimums = [20; 15];
-        assert_eq!(
-            filter(GameBuild::FM26_STEAM, schemas, None, &cache, &state).len(),
-            2
-        );
+        assert_eq!(filter(GameBuild::FM26_STEAM, None, &cache, &state).len(), 2);
         assert_eq!(advanced_filter_count(&state), 0);
         state.position_minimums = [2; 15];
         state.positions = 1;
-        assert_eq!(
-            filter(GameBuild::FM26_STEAM, schemas, None, &cache, &state).len(),
-            1
-        );
+        assert_eq!(filter(GameBuild::FM26_STEAM, None, &cache, &state).len(), 1);
         state.position_minimums[0] = 1;
-        assert_eq!(
-            filter(GameBuild::FM26_STEAM, schemas, None, &cache, &state).len(),
-            2
-        );
+        assert_eq!(filter(GameBuild::FM26_STEAM, None, &cache, &state).len(), 2);
         state.position_minimums[0] = 11;
-        assert!(filter(GameBuild::FM26_STEAM, schemas, None, &cache, &state).is_empty());
+        assert!(filter(GameBuild::FM26_STEAM, None, &cache, &state).is_empty());
         state.positions |= 1 << 1;
         state.position_minimums[1] = 20;
-        let matches = filter(GameBuild::FM26_STEAM, schemas, None, &cache, &state);
+        let matches = filter(GameBuild::FM26_STEAM, None, &cache, &state);
         assert_eq!(matches.len(), 1);
         assert!(std::ptr::eq(matches[0], &cache[0]));
     }
 
     #[test]
     fn missing_unmapped_and_corrupt_familiarity_never_match() {
-        let schemas = crate::game_version::GameBuild::FM26_STEAM.schemas();
         let mut state = PlayerSearchState::default();
         state.positions = 1;
         state.position_minimums[0] = 1;
@@ -883,7 +819,6 @@ mod position_tests {
             assert!(
                 filter(
                     GameBuild::FM26_STEAM,
-                    schemas,
                     None,
                     &[witness(&[(0, value)])],
                     &state
@@ -893,15 +828,21 @@ mod position_tests {
         }
         let mut missing = witness(&[(0, 20)]);
         missing.raw.clear();
-        assert!(filter(GameBuild::FM26_STEAM, schemas, None, &[missing], &state).is_empty());
+        assert!(filter(GameBuild::FM26_STEAM, None, &[missing], &state).is_empty());
         static UNMAPPED: crate::fields::ReleaseLayout = crate::fields::ReleaseLayout {
             player_fields: &[],
             ..crate::fields::fm26::FM26
         };
+        static UNMAPPED_BUILD: crate::fields::RecordedBuild = crate::fields::RecordedBuild {
+            layout: &UNMAPPED,
+            ..crate::fields::fm26::FM26_STEAM
+        };
         assert!(
             filter(
-                GameBuild::FM26_STEAM,
-                &UNMAPPED,
+                GameBuild {
+                    recorded: &UNMAPPED_BUILD,
+                    ..GameBuild::FM26_STEAM
+                },
                 None,
                 &[witness(&[(0, 20)])],
                 &state
@@ -935,11 +876,16 @@ mod position_tests {
 }
 
 /// The Game Pass build is unverified even when it shares a release layout.
-pub fn club_filter_supported(
-    build: GameBuild,
-    schemas: &'static crate::fields::ReleaseLayout,
-) -> bool {
-    build != GameBuild::FM27_GAMEPASS && schemas.player_sub_records.iter().any(|sr| sr.id == "club")
+pub fn club_filter_supported(build: GameBuild) -> bool {
+    let unsupported_gamepass = build.version() == crate::game_version::GameVersion::Fm27
+        && (build.storefront() == crate::game_version::Storefront::GamePass
+            || std::ptr::eq(build.recorded, GameBuild::FM27_GAMEPASS.recorded));
+    !unsupported_gamepass
+        && build
+            .schemas()
+            .player_sub_records
+            .iter()
+            .any(|sr| sr.id == "club")
 }
 
 #[cfg(test)]
@@ -949,9 +895,21 @@ mod club_filter_tests {
 
     #[test]
     fn shared_layout_preserves_build_specific_club_support() {
-        let schemas = GameBuild::FM27_STEAM.schemas();
-        assert!(club_filter_supported(GameBuild::FM27_STEAM, schemas));
-        assert!(!club_filter_supported(GameBuild::FM27_GAMEPASS, schemas));
+        assert!(club_filter_supported(GameBuild::FM27_STEAM));
+        assert!(!club_filter_supported(GameBuild::FM27_GAMEPASS));
+        for storefront in [
+            crate::game_version::Storefront::GamePass,
+            crate::game_version::Storefront::Steam,
+        ] {
+            assert!(!club_filter_supported(GameBuild::detected(
+                GameBuild::FM27_GAMEPASS.recorded,
+                storefront,
+            )));
+        }
+        assert!(!club_filter_supported(GameBuild::detected(
+            GameBuild::FM27_STEAM.recorded,
+            crate::game_version::Storefront::GamePass,
+        )));
     }
     fn row(uid: u32, club_id: Option<u32>) -> CachedPlayer {
         CachedPlayer {
@@ -977,24 +935,20 @@ mod club_filter_tests {
             club_id: " 1751 ".into(),
             ..Default::default()
         };
-        let schemas = GameBuild::FM27_STEAM.schemas();
         assert_eq!(
-            filter(GameBuild::FM27_STEAM, schemas, None, &rows, &state)
+            filter(GameBuild::FM27_STEAM, None, &rows, &state)
                 .iter()
                 .map(|p| p.uid)
                 .collect::<Vec<_>>(),
             [1]
         );
         state.query = "2".into();
-        assert!(filter(GameBuild::FM27_STEAM, schemas, None, &rows, &state).is_empty());
+        assert!(filter(GameBuild::FM27_STEAM, None, &rows, &state).is_empty());
         state.query.clear();
         state.ca_min = "101".into();
-        assert!(filter(GameBuild::FM27_STEAM, schemas, None, &rows, &state).is_empty());
+        assert!(filter(GameBuild::FM27_STEAM, None, &rows, &state).is_empty());
         state.clear_filters();
-        assert_eq!(
-            filter(GameBuild::FM27_STEAM, schemas, None, &rows, &state).len(),
-            3
-        );
+        assert_eq!(filter(GameBuild::FM27_STEAM, None, &rows, &state).len(), 3);
     }
     #[test]
     fn my_clubs_unions_current_and_owned_membership_and_overrides_manual() {
@@ -1016,50 +970,24 @@ mod club_filter_tests {
             club_id: "invalid".into(),
             ..Default::default()
         };
-        let schemas = GameBuild::FM27_STEAM.schemas();
         assert_eq!(
-            filter_with_clubs(
-                GameBuild::FM27_STEAM,
-                schemas,
-                None,
-                &rows,
-                &state,
-                Some(&scope)
-            )
-            .iter()
-            .map(|p| p.uid)
-            .collect::<Vec<_>>(),
+            filter_with_clubs(GameBuild::FM27_STEAM, None, &rows, &state, Some(&scope))
+                .iter()
+                .map(|p| p.uid)
+                .collect::<Vec<_>>(),
             [1, 2, 3]
         );
-        assert!(
-            filter_with_clubs(GameBuild::FM27_STEAM, schemas, None, &rows, &state, None).is_empty()
-        );
+        assert!(filter_with_clubs(GameBuild::FM27_STEAM, None, &rows, &state, None).is_empty());
         let other = crate::cache::MyClubs {
             club_ids: [8888].into_iter().collect(),
             label: "Other save".into(),
         };
         assert!(
-            filter_with_clubs(
-                GameBuild::FM27_STEAM,
-                schemas,
-                None,
-                &rows,
-                &state,
-                Some(&other)
-            )
-            .is_empty()
+            filter_with_clubs(GameBuild::FM27_STEAM, None, &rows, &state, Some(&other)).is_empty()
         );
         state.ca_min = "101".into();
         assert!(
-            filter_with_clubs(
-                GameBuild::FM27_STEAM,
-                schemas,
-                None,
-                &rows,
-                &state,
-                Some(&scope)
-            )
-            .is_empty()
+            filter_with_clubs(GameBuild::FM27_STEAM, None, &rows, &state, Some(&scope)).is_empty()
         );
     }
     #[test]
@@ -1069,52 +997,15 @@ mod club_filter_tests {
         for value in ["-1", "1.5", "abc", "4294967296"] {
             state.club_id = value.into();
             assert!(state.validation_error().is_some());
-            assert!(
-                filter(
-                    GameBuild::FM27_STEAM,
-                    GameBuild::FM27_STEAM.schemas(),
-                    None,
-                    &rows,
-                    &state
-                )
-                .is_empty()
-            );
+            assert!(filter(GameBuild::FM27_STEAM, None, &rows, &state).is_empty());
         }
         state.club_id = "9999".into();
         assert!(state.validation_error().is_none());
-        assert!(
-            filter(
-                GameBuild::FM27_STEAM,
-                GameBuild::FM27_STEAM.schemas(),
-                None,
-                &rows,
-                &state
-            )
-            .is_empty()
-        );
+        assert!(filter(GameBuild::FM27_STEAM, None, &rows, &state).is_empty());
         state.club_id = "1751".into();
         // FM26 maps the current club (player+0x130 -> team+0x30) since 2026-11-01.
-        assert_eq!(
-            filter(
-                GameBuild::FM26_STEAM,
-                GameBuild::FM26_STEAM.schemas(),
-                None,
-                &rows,
-                &state
-            )
-            .len(),
-            1
-        );
-        assert!(
-            filter(
-                GameBuild::FM27_GAMEPASS,
-                GameBuild::FM27_GAMEPASS.schemas(),
-                None,
-                &rows,
-                &state
-            )
-            .is_empty()
-        );
+        assert_eq!(filter(GameBuild::FM26_STEAM, None, &rows, &state).len(), 1);
+        assert!(filter(GameBuild::FM27_GAMEPASS, None, &rows, &state).is_empty());
     }
     #[test]
     fn inactive_manual_id_is_preserved_and_not_validated_or_counted() {
@@ -1184,9 +1075,9 @@ mod game_date_tests {
             age_max: "35".into(),
             ..Default::default()
         };
-        let found = filter(GameBuild::FM27_STEAM, schemas, today, &rows, &state);
+        let found = filter(GameBuild::FM27_STEAM, today, &rows, &state);
         assert_eq!(found.iter().map(|p| p.uid).collect::<Vec<_>>(), [1]);
-        assert!(filter(GameBuild::FM27_STEAM, schemas, None, &rows, &state).is_empty());
+        assert!(filter(GameBuild::FM27_STEAM, None, &rows, &state).is_empty());
         assert_eq!(
             compare_players(
                 schemas,

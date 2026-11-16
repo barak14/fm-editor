@@ -348,18 +348,28 @@ pub fn find_human_manager(fm: &FmProcess) -> Result<u64, String> {
         // FM27 has a verified human-manager class on Steam and Game Pass.
         // Generic staff can otherwise pass the shifted-name heuristic by
         // reading bytes in neighbouring objects.
-        if (fm.build == crate::game_version::GameBuild::FM27_STEAM
-            || fm.build == crate::game_version::GameBuild::FM27_GAMEPASS)
+        if fm.build.version() == crate::game_version::GameVersion::Fm27
             && fm.addresses().human_manager_vtable_rva != 0
         {
             if gp_base.checked_add(fm.addresses().human_manager_vtable_rva) != Some(vtable) {
                 return false;
             }
-            let Ok((identity, identity_shift)) = staff::read_staff_raw(fm, ptr) else { return false; };
-            let Some(off) = schema.offset_of("s_dob") else { return false; };
-            let Some(year) = identity.get(off + 2..off + 4)
-                .and_then(|b| <[u8; 2]>::try_from(b).ok()).map(u16::from_le_bytes) else { return false; };
-            if year == 0 || staff::is_account_placeholder(identity_shift, year) { return false; }
+            let Ok((identity, identity_shift)) = staff::read_staff_raw(fm, ptr) else {
+                return false;
+            };
+            let Some(off) = schema.offset_of("s_dob") else {
+                return false;
+            };
+            let Some(year) = identity
+                .get(off + 2..off + 4)
+                .and_then(|b| <[u8; 2]>::try_from(b).ok())
+                .map(u16::from_le_bytes)
+            else {
+                return false;
+            };
+            if year == 0 || staff::is_account_placeholder(identity_shift, year) {
+                return false;
+            }
         }
         // CA / PA sanity
         let ca = buf[ca_offset];

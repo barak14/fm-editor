@@ -1037,6 +1037,16 @@ mod tests {
         assert!(layout_for(GameBuild::FM27_STEAM, 0, true).is_err());
         assert!(layout_for(GameBuild::FM27_STEAM, WINDOWS_STEAM.hash, false).is_err());
         assert!(layout_for(GameBuild::FM27_GAMEPASS, WINDOWS_STEAM.hash, true).is_err());
+        for recorded in GameBuild::ALL {
+            assert!(
+                layout_for(
+                    GameBuild::detected(recorded.recorded, recorded.storefront()),
+                    WINDOWS_STEAM.hash,
+                    true,
+                )
+                .is_err()
+            );
+        }
     }
 
     #[test]

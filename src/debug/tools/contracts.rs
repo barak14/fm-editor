@@ -286,7 +286,7 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
     let result = json!({
         "pid":pid, "build":fm.build.display_name(), "storefront":fm.build.storefront().display_name(),
         "module_path":fm.module_path, "module_header_hash":format!("0x{hash:016X}"),
-        "schema_fingerprint_calibrated":fm.build.fingerprint() != 0, "compatibility_notice":fm.dll_hash_notice,
+        "schema_fingerprint_calibrated":fm.build.fingerprint() != 0, "detection_summary":fm.detection.summary(),
         "game_date":fm.game_date().map(|d| json!({"day":d.day,"year":d.year})),
         "index":index, "uid":uid, "name":name, "current_club":current_club, "owning_club":owning_club,
         "player_address":format!("0x{address:X}"), "player_raw_hex":hex(&snapshot.player_raw),
@@ -393,6 +393,13 @@ mod tests {
             );
             assert!(inspection(build, 0).is_err());
             assert!(inspection(build, STEAM_INSPECTION.module_header_hash ^ 1).is_err());
+            assert!(
+                inspection(
+                    GameBuild::detected(build.recorded, build.storefront()),
+                    STEAM_INSPECTION.module_header_hash,
+                )
+                .is_err()
+            );
         }
         assert!(
             GameBuild::FM27_STEAM

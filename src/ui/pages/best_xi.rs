@@ -52,7 +52,7 @@ pub fn show(
         ui.label("Load a save to build a lineup.");
         return None;
     };
-    if !super::player_search::club_filter_supported(build, schemas) {
+    if !super::player_search::club_filter_supported(build) {
         state.clear();
         ui.label(
             "Best XI is unavailable: current club membership is not supported for this build.",
@@ -406,12 +406,7 @@ mod tests {
         });
         let _ = ctx.run(Default::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                show(
-                    ui,
-                    &mut state,
-                    GameBuild::FM27_GAMEPASS,
-                    Some(&cache),
-                );
+                show(ui, &mut state, GameBuild::FM27_GAMEPASS, Some(&cache));
             });
         });
         assert!(state.source.is_none());
@@ -665,13 +660,7 @@ mod tests {
                 |ctx| {
                     egui::CentralPanel::default().show(ctx, |ui| {
                         assert!(
-                            show(
-                                ui,
-                                &mut state,
-                                GameBuild::FM27_STEAM,
-                                Some(&cache)
-                            )
-                            .is_none()
+                            show(ui, &mut state, GameBuild::FM27_STEAM, Some(&cache)).is_none()
                         );
                     });
                 },

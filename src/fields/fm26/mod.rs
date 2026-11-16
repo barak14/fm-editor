@@ -100,8 +100,7 @@ pub static FM26_STEAM: RecordedBuild = RecordedBuild {
     fmrte_clubs: 113894,
     fmrte_humans: 1,
 
-    // FNV-1a hash of the first 64 KB of game_plugin.dll for the FM26 build
-    // this schema was verified against (2026-10 patch). Attach fails with a
-    // version-mismatch error when the running DLL hashes differently.
+    // Project fingerprint of the first 64 KB of game_plugin.dll for the FM26
+    // build verified against the 2026-10 patch. Other hashes require validation.
     fingerprint: 0x3039_4AFE_C086_E3DC,
 };
