@@ -11,6 +11,10 @@
 - Keep FM27 club-policy trial and contract inspection restricted to pinned recorded builds; detected builds cannot use those separate, undetected addresses.
 - Include the detection report in debug `attach_status`; debug builds can exercise the unpinned path with `FME_IGNORE_FINGERPRINT=1`. This phase has compile/unit coverage only; live validation is outstanding.
 
+### Fixes
+
+- Update `rfd` to 0.18 so Linux builds compile with Rust 1.100; `rfd` 0.14 pulled in `ashpd` 0.8.1, which fails to compile under Rust 1.100's type-inference change.
+
 ## 0.4.3 (prerelease)
 
 FM27 PC Game Pass bring-up. FM24, FM26 and FM27 Steam behaviour is unchanged.

@@ -14,7 +14,7 @@ dirs = "5"
 eframe = "0.31"
 egui_extras = { version = "0.31", features = ["image"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
-rfd = "0.14"
+rfd = "0.18"
 # fm-debug MCP server for live memory probing (src/debug/). The server code is
 # compiled only when debug_assertions is set (cargo run / cargo build); Cargo
 # cannot select dependencies on debug_assertions, so these crates are always
