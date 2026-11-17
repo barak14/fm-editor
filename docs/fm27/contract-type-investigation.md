@@ -26,8 +26,10 @@ It deliberately does not extend to arbitrary policies, unmanaged clubs or builds
 | Existing editor header fingerprint | 0x74A331ED3E28B06C |
 
 The historical header-hash multiplier is preserved; it is not standard FNV-1a.
-The global FM27 `known_dll_hash` remains zero (uncalibrated). Successful attachment
-therefore does not verify the full layout. Narrow inspection/policy metadata has
+FM27 Steam's recorded fingerprint (`FM27_STEAM.fingerprint`) remains zero
+(uncalibrated), so each attachment is checked by the layout validation gate rather
+than pinned by fingerprint; that gate samples records and does not verify every
+field. Narrow inspection/policy metadata has
 its own exact build/hash/class gates. Game Pass is not covered; policy writes are
 also disabled on Linux/Proton. Neither compatibility checks nor localhost binding
 were relaxed.
