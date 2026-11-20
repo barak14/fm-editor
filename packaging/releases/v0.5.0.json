@@ -1,0 +1,20 @@
+{
+  "tag": "v0.5.0",
+  "version": "0.5.0",
+  "commit": "c507d8a62a3a7e696ca77aa3506b5e76a1b7c125",
+  "build_run": 44837984573,
+  "targets": {
+    "x86_64-pc-windows-msvc": {
+      "archive_sha256": "70a80d454c83d2c7a50cd7becc6bb514ff2dfbbec081749a525c55f19354d8d6",
+      "executable_sha256": "bd21d3d058ce610aa9433acad0f575dfde297a1ec24daaa6f955a660fdcdd99c",
+      "canonical_name": "fm-editor-0.5.0-windows-input.zip",
+      "canonical_sha256": "d7a964ac191a3beaa81aef5c0d3f9d6a76ea03c3bd78d574953496bef6773280"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "archive_sha256": "8ab2738d51d25f9b9b3364c3434df9215a712fea104fc3ff03dcf20488c3d514",
+      "executable_sha256": "5595670e056dc71ee6eae106b6ebd19e53d0b0983481d2da0656ea1dace7f7b6",
+      "canonical_name": "fm-editor-0.5.0-linux-input.tar",
+      "canonical_sha256": "9e31c2ea7777850ac9090d5ee367660ca6d9a97177dd9e8ee02d674c9b07a645"
+    }
+  }
+}

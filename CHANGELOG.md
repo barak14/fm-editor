@@ -23,6 +23,10 @@ FM24 Epic and FM27 Game Pass 27.1 become recorded builds. Other builds of FM24, 
 - An unpinned build whose recorded addresses never show a save (for example FM27 Game Pass 27.1.0+2505117, package 0.9.2524.0, issue #7) no longer waits silently: after 20 seconds the status line says no save was found and the build may be unsupported, and the detection log records it. The editor stays attached, since moved addresses look the same as FM's main menu.
 - **File → Load Save** no longer shows "Loading save… 0%" forever when no save is connected: the menu item is disabled until the editor is connected, and the worker answers an early request with an error instead of ignoring it.
 
+### Packaging
+
+- Pin the 0.5.0 native packaging identity to the immutable `v0.5.0` application tag at commit `c507d8a62a3a7e696ca77aa3506b5e76a1b7c125` from successful build `44837984573`, with an independent packaging revision.
+
 ## 0.4.3 (prerelease)
 
 FM27 PC Game Pass bring-up. FM24, FM26 and FM27 Steam behaviour is unchanged.
