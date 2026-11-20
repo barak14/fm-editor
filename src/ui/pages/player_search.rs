@@ -875,11 +875,10 @@ mod position_tests {
     }
 }
 
-/// The Game Pass build is unverified even when it shares a release layout.
+/// Game Pass builds are unverified even when they share a release layout.
 pub fn club_filter_supported(build: GameBuild) -> bool {
-    let unsupported_gamepass = build.version() == crate::game_version::GameVersion::Fm27
-        && (build.storefront() == crate::game_version::Storefront::GamePass
-            || std::ptr::eq(build.recorded, GameBuild::FM27_GAMEPASS.recorded));
+    let unsupported_gamepass =
+        build.version() == crate::game_version::GameVersion::Fm27 && build.uses_gamepass_layout();
     !unsupported_gamepass
         && build
             .schemas()

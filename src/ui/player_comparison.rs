@@ -263,9 +263,7 @@ impl PlayerComparison {
                 });
                 if self.slots.iter().flatten().any(|s| {
                     let build = s.identity.build;
-                    build.version() == crate::game_version::GameVersion::Fm27
-                        && (build.storefront() == crate::game_version::Storefront::GamePass
-                            || std::ptr::eq(build.recorded, GameBuild::FM27_GAMEPASS.recorded))
+                    build.version() == crate::game_version::GameVersion::Fm27 && build.uses_gamepass_layout()
                 }) {
                     ui.label(egui::RichText::new("Game Pass layout unverified").color(ui.visuals().warn_fg_color));
                 }

@@ -830,6 +830,10 @@ mod schema_lookup_tests {
             GameBuild::FM27_GAMEPASS.addresses().rva_current_date,
             0x53597C8
         );
+        assert_eq!(
+            GameBuild::FM27_GAMEPASS_27_1.addresses().rva_current_date,
+            0x539DD10
+        );
         for build in [GameBuild::FM26_STEAM] {
             assert_eq!(build.addresses().rva_current_date, 0, "{build:?}");
         }
@@ -1155,51 +1159,53 @@ mod player_schema_tests {
         assert!(std::ptr::eq(layout, gamepass.player_lists.unwrap()));
         assert_eq!(schemas.morale_labels, gamepass.morale_labels);
         // Module-relative addresses are per binary: none come from Steam.
-        let (gamepass, steam) = (&fm27::FM27_GAMEPASS, &fm27::FM27_STEAM);
-        for (name, gp, st) in [
-            (
-                "date",
-                gamepass.addresses.rva_current_date,
-                steam.addresses.rva_current_date,
-            ),
-            (
-                "players",
-                gamepass.addresses.rva_humans_data,
-                steam.addresses.rva_humans_data,
-            ),
-            (
-                "staff",
-                gamepass.addresses.rva_staff_data,
-                steam.addresses.rva_staff_data,
-            ),
-            (
-                "clubs",
-                gamepass.addresses.rva_clubs_data,
-                steam.addresses.rva_clubs_data,
-            ),
-            (
-                "stadium",
-                gamepass.addresses.rva_stadium_base,
-                steam.addresses.rva_stadium_base,
-            ),
-            (
-                "finance",
-                gamepass.addresses.full_finance_vtable_rva,
-                steam.addresses.full_finance_vtable_rva,
-            ),
-            (
-                "player-coach",
-                gamepass.addresses.player_coach_vtable_rva,
-                steam.addresses.player_coach_vtable_rva,
-            ),
-            (
-                "manager",
-                gamepass.addresses.human_manager_vtable_rva,
-                steam.addresses.human_manager_vtable_rva,
-            ),
-            ("hash", gamepass.fingerprint, steam.fingerprint),
-        ] {
-            assert_ne!(gp, st, "Game Pass {name} inherits the Steam value");
+        for gamepass in [&fm27::FM27_GAMEPASS, &fm27::FM27_GAMEPASS_27_1] {
+            let steam = &fm27::FM27_STEAM;
+            for (name, gp, st) in [
+                (
+                    "date",
+                    gamepass.addresses.rva_current_date,
+                    steam.addresses.rva_current_date,
+                ),
+                (
+                    "players",
+                    gamepass.addresses.rva_humans_data,
+                    steam.addresses.rva_humans_data,
+                ),
+                (
+                    "staff",
+                    gamepass.addresses.rva_staff_data,
+                    steam.addresses.rva_staff_data,
+                ),
+                (
+                    "clubs",
+                    gamepass.addresses.rva_clubs_data,
+                    steam.addresses.rva_clubs_data,
+                ),
+                (
+                    "stadium",
+                    gamepass.addresses.rva_stadium_base,
+                    steam.addresses.rva_stadium_base,
+                ),
+                (
+                    "finance",
+                    gamepass.addresses.full_finance_vtable_rva,
+                    steam.addresses.full_finance_vtable_rva,
+                ),
+                (
+                    "player-coach",
+                    gamepass.addresses.player_coach_vtable_rva,
+                    steam.addresses.player_coach_vtable_rva,
+                ),
+                (
+                    "manager",
+                    gamepass.addresses.human_manager_vtable_rva,
+                    steam.addresses.human_manager_vtable_rva,
+                ),
+                ("hash", gamepass.fingerprint, steam.fingerprint),
+            ] {
+                assert_ne!(gp, st, "Game Pass {name} inherits the Steam value");
+            }
         }
     }
 

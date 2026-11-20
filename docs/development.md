@@ -242,8 +242,10 @@ recorded build, a forced scan must reproduce its recorded arrays, stadium and cl
 RVAs exactly, and the date must match or be 0. Checked 2026-11-20 on FM24 Steam
 (24.4.2) and FM26 Steam (26.3.2): arrays and stadium matched; date 0 on both
 (FM24 has several date-shaped statics in the window; FM26 has no recorded date).
-FM27 class detection (player-coach, human-manager, full finance) has not been run
-live.
+FM27 class detection (player-coach, human-manager, full finance) ran live on
+2026-11-20 on Game Pass 27.1 (package 0.9.2524.0) before it was recorded; after
+recording it, a forced scan reproduced its arrays, stadium and class RVAs, date
+0 (7 date-shaped candidates in the window). FM27 Steam has not been scanned.
 
 Promoting a matched build to a recorded/pinned build requires independently known
 in-game values for at least two entities, the exact build/storefront and source/date

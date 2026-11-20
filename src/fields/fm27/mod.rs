@@ -102,7 +102,8 @@ pub static FM27_STEAM: RecordedBuild = RecordedBuild {
     fingerprint: 0,
 };
 
-/// FM27 schema, PC Game Pass build (Microsoft GDK, Xbox app install).
+/// FM27 schema, PC Game Pass build (Microsoft GDK, Xbox app install), Store
+/// package 0.9.2435.0 (27.0.1).
 ///
 /// The Steam struct layouts with this binary's own module hash and
 /// module-relative RVAs (entity arrays, current date, class vtables).
@@ -135,4 +136,34 @@ pub static FM27_GAMEPASS: RecordedBuild = RecordedBuild {
         human_manager_vtable_rva: 0x4A072BC,
     },
     ..FM27_STEAM
+};
+
+/// FM27 Game Pass, Store package 0.9.2524.0 (27.1.0+2505117). Same layouts as
+/// the earlier package; evidence in docs/fm27/memory-layout.md ("Store package
+/// 0.9.2524.0").
+pub static FM27_GAMEPASS_27_1: RecordedBuild = RecordedBuild {
+    schema_name: "FM27_GAMEPASS_27_1",
+    fingerprint: 0x136C_8A4D_64A3_35FD,
+    addresses: ModuleAddresses {
+        // Raw 0x07EA1AC2 (day 194, 13 Jul 2026), the only 2026 date-shaped
+        // static near the arrays; the module scan found 7 date-shaped words there.
+        rva_current_date: 0x539DD10,
+        // The 0.9.2435.0 cluster shifted +0x430A8 as a block, found by the
+        // module scan (layout_detect) and decoded at the FM27 struct offsets.
+        rva_humans_data: 0x53FAE88,
+        rva_humans_end: 0x53FAE90,
+        rva_staff_data: 0x53FAED0,
+        rva_staff_end: 0x53FAED8,
+        rva_clubs_data: 0x53FB040,
+        rva_clubs_end: 0x53FB048,
+        // Same shift applied; not yet checked.
+        rva_stadium_base: 0x53FAE08,
+        // Class RVAs from the scan's vtable census: 38 full-finance clubs (small
+        // class +0x4A702E8, 0x4D0 below it), 22 player-coaches, and the last two
+        // staff entries for the human manager.
+        full_finance_vtable_rva: 0x4A707B8,
+        player_coach_vtable_rva: 0x4C9ECB8,
+        human_manager_vtable_rva: 0x4A471CC,
+    },
+    ..FM27_GAMEPASS
 };

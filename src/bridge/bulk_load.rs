@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::sync::{mpsc, Arc};
 
 use crate::cache::{CachedClub, CachedPlayer, CachedStaff, EntityCache};
-use crate::game_version::{GameBuild, GameVersion, Storefront};
+use crate::game_version::{GameBuild, GameVersion};
 use crate::process::FmProcess;
 
 use super::cmd::BridgeResult;
@@ -352,9 +352,7 @@ fn supports_fm27_steam_membership(build: GameBuild) -> bool {
 }
 
 fn supports_club_membership(build: GameBuild) -> bool {
-    build.version() != GameVersion::Fm27
-        || (build.storefront() != Storefront::GamePass
-            && !std::ptr::eq(build.recorded, GameBuild::FM27_GAMEPASS.recorded))
+    build.version() != GameVersion::Fm27 || !build.uses_gamepass_layout()
 }
 
 fn load_my_clubs(fm: &FmProcess, clubs: &[CachedClub]) -> Option<crate::cache::MyClubs> {
@@ -441,6 +439,7 @@ fn collect_club_group(
 #[cfg(test)]
 mod membership_tests {
     use super::*;
+    use crate::game_version::Storefront;
 
     #[test]
     fn steam_membership_requires_recorded_candidate_addresses_and_storefront() {
@@ -477,11 +476,12 @@ mod membership_tests {
                 let detected = GameBuild::detected(candidate.recorded, storefront);
                 let expected = candidate.version() != GameVersion::Fm27
                     || (storefront != Storefront::GamePass
-                        && !std::ptr::eq(candidate.recorded, GameBuild::FM27_GAMEPASS.recorded));
+                        && candidate.storefront() != Storefront::GamePass);
                 assert_eq!(supports_club_membership(detected), expected);
             }
         }
         assert!(!supports_club_membership(GameBuild::FM27_GAMEPASS));
+        assert!(!supports_club_membership(GameBuild::FM27_GAMEPASS_27_1));
         assert!(supports_club_membership(GameBuild::FM27_STEAM));
     }
     fn club(addr: u64, uid: u32) -> CachedClub {

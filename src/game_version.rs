@@ -147,13 +147,29 @@ impl GameBuild {
         storefront: Storefront::GamePass,
     };
 
-    pub const ALL: [Self; 5] = [
+    pub const FM27_GAMEPASS_27_1: Self = Self {
+        recorded: &fm27::FM27_GAMEPASS_27_1,
+        addresses: fm27::FM27_GAMEPASS_27_1.addresses,
+        recognition: Recognition::Recorded,
+        storefront: Storefront::GamePass,
+    };
+
+    /// Within a storefront, newer packages come first: they are tried first while
+    /// waiting for a save, and `resolve` picks the first.
+    pub const ALL: [Self; 6] = [
         Self::FM24_STEAM,
         Self::FM24_EPIC,
         Self::FM26_STEAM,
         Self::FM27_STEAM,
+        Self::FM27_GAMEPASS_27_1,
         Self::FM27_GAMEPASS,
     ];
+
+    /// Attached as Game Pass or using a Game Pass build's addresses, whose
+    /// club membership and filters are unverified.
+    pub fn uses_gamepass_layout(self) -> bool {
+        self.storefront == Storefront::GamePass || self.recorded.storefront == Storefront::GamePass
+    }
 
     pub fn candidates(version: GameVersion, storefront: Storefront) -> Vec<&'static RecordedBuild> {
         let mut candidates: Vec<_> = Self::ALL
@@ -300,7 +316,8 @@ mod tests {
     fn resolve_round_trips_every_build() {
         for build in GameBuild::ALL {
             assert_eq!(
-                GameBuild::resolve(build.version(), build.storefront()),
+                GameBuild::resolve(build.version(), build.storefront())
+                    .map(|resolved| resolved.with_fingerprint(build.fingerprint())),
                 Ok(build)
             );
         }
@@ -348,15 +365,18 @@ mod tests {
             GameBuild::FM26_STEAM.with_fingerprint(epic),
             GameBuild::FM26_STEAM
         );
-        let gamepass = GameBuild::FM27_GAMEPASS.fingerprint();
+        for gamepass in [GameBuild::FM27_GAMEPASS, GameBuild::FM27_GAMEPASS_27_1] {
+            assert_eq!(
+                GameBuild::FM27_STEAM.with_fingerprint(gamepass.fingerprint()),
+                gamepass
+            );
+            // FM27 Steam's fingerprint is uncalibrated (0): it is never matched.
+            assert_eq!(gamepass.with_fingerprint(0), gamepass);
+        }
         assert_eq!(
-            GameBuild::FM27_STEAM.with_fingerprint(gamepass),
             GameBuild::FM27_GAMEPASS
-        );
-        // FM27 Steam's fingerprint is uncalibrated (0): it is never matched.
-        assert_eq!(
-            GameBuild::FM27_GAMEPASS.with_fingerprint(0),
-            GameBuild::FM27_GAMEPASS
+                .with_fingerprint(GameBuild::FM27_GAMEPASS_27_1.fingerprint()),
+            GameBuild::FM27_GAMEPASS_27_1
         );
     }
 

@@ -777,8 +777,36 @@ Still disabled or unverified on Game Pass: club finances, stadium, the
 contract-type tooling, club membership / My clubs and club policy
 (fingerprint-gated to Steam).
 
-A new Store package needs this redone: run `scan_arrays`, find the cluster by
-decoding names, census the vtables, and record the new fingerprint.
+A new Store package needs this redone. The module scan (`src/process/layout_detect.rs`)
+now finds the cluster and classes on an unrecorded package; record what it finds
+once witnesses confirm it, as for 0.9.2524.0 below.
+
+### Store package 0.9.2524.0 (2026-11-20)
+
+Recorded build `FM27_GAMEPASS_27_1`. `game_plugin.dll` ProductVersion
+`27.1.0+2505117`, FileVersion `27.1`, fingerprint `0x136C8A4D64A335FD`. Same
+Spurs save as above (13,633 players, 10,304 staff, 17,178 clubs). Struct layouts
+are unchanged; only module addresses moved.
+
+The editor's module scan found every address below except the date on its
+first attach, before this build was recorded (unpinned, read-only, gate passed:
+players 256/256, staff 128/128, clubs 127/128, contracts 233/233). With the build
+recorded, `FME_FORCE_DETECT=1` reproduces the same arrays, stadium and class RVAs,
+with date 0 (allowed).
+
+| Value | 0.9.2435.0 | 0.9.2524.0 | Evidence |
+|---|---|---|---|
+| Players data/end | 0x53B7DE0 | 0x53FAE88 / 0x53FAE90 | Cluster shifted +0x430A8 as a block. DOB at 0x310 matches real birth dates: Harry Kane 28/7/1993, James Maddison 23/11/1996, Cristian Romero 27/4/1998 |
+| Staff data/end | 0x53B7E28 | 0x53FAED0 / 0x53FAED8 | DOB at 0x188 matches: Thomas Frank 9/10/1973, Pep Guardiola 18/1/1971, Mikel Arteta 26/3/1982 |
+| Clubs data/end | 0x53B7F98 | 0x53FB040 / 0x53FB048 | Tottenham Hotspur / Spurs, UID 728 (as on the earlier package) |
+| Stadium root | 0x53B7D60 | 0x53FAE08 | Same shift; **unverified** |
+| Current date | 0x53597C8 | 0x539DD10 | Raw 0x07EA1AC2 (day 194, 13 Jul 2026), the only 2026 date-shaped word near the cluster. The scan found 7 date-shaped words in its windows and left the date unset. **Single snapshot**: not yet seen to advance with the game day |
+| Full-finance class | 0x4A2F9E8 | 0x4A707B8 | Scan census: 38/38 clubs with plausible money fields; small class 0x4A702E8 is 0x4D0 lower |
+| Player-coach class | 0x4C5FE88 | 0x4C9ECB8 | Scan census: 22/22 valid at the +0xF8 shift, 0/22 unshifted |
+| Human-manager class | 0x4A072BC | 0x4A471CC | Scan census: last two staff entries, valid at the 0x340 shift. The editor shows the user's manager (Andre Webster, Spurs, DOB 24/3/1980, age 46 from the recorded date) |
+
+Not yet checked on this package: a write and Undo confirmed in FM, and the date
+advancing after a game day. Feature gating is the same as the earlier package.
 
 ### Bring-up checklist for a new package
 
