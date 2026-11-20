@@ -14,6 +14,8 @@
 ### Fixes
 
 - Update `rfd` to 0.18 so Linux builds compile with Rust 1.100; `rfd` 0.14 pulled in `ashpd` 0.8.1, which fails to compile under Rust 1.100's type-inference change.
+- An unpinned build whose recorded addresses never show a save (for example FM27 Game Pass 27.1.0+2505117, package 0.9.2524.0, issue #7) no longer waits silently: after 20 seconds the status line says no save was found and the build may be unsupported, and the detection log records it. The editor stays attached, since moved addresses look the same as FM's main menu.
+- **File → Load Save** no longer shows "Loading save… 0%" forever when no save is connected: the menu item is disabled until the editor is connected, and the worker answers an early request with an error instead of ignoring it.
 
 ## 0.4.3 (prerelease)
 

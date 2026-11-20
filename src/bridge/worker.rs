@@ -11,6 +11,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use crate::club;
 use crate::player;
@@ -47,6 +48,52 @@ pub(super) struct ArrayCache {
 /// and staff address stayed put; reloading the same save replaced all of
 /// them, and the counts then differed by one from before the reload.
 const SAVE_IDENTITY_SAMPLE: usize = 8;
+
+/// How long an unrecognised build may wait without any candidate address set
+/// showing a save before the user is told the build may be unsupported. A save
+/// at moved addresses reads the same as no save, so the worker keeps waiting.
+const SAVE_WAIT_NOTICE: Duration = Duration::from_secs(20);
+
+/// When the worker should tell the user that no save has been found.
+#[derive(Debug, Default)]
+struct SaveWait {
+    since: Option<Instant>,
+    reported: bool,
+}
+
+impl SaveWait {
+    fn start(pinned: bool) -> Self {
+        Self {
+            since: (!pinned).then(Instant::now),
+            reported: false,
+        }
+    }
+
+    /// True exactly once, when an unpinned build has waited past the notice.
+    fn notice_due(&mut self, now: Instant) -> bool {
+        let due = !self.reported
+            && self
+                .since
+                .is_some_and(|since| now.saturating_duration_since(since) >= SAVE_WAIT_NOTICE);
+        self.reported |= due;
+        due
+    }
+}
+
+fn save_wait_message(fm: &FmProcess) -> String {
+    let detection = &fm.detection;
+    let hash = detection
+        .module_hash
+        .map_or_else(|| "unavailable".into(), |hash| format!("0x{hash:016X}"));
+    format!(
+        "No save found after {} s at any known {} address set ({}). If a save is already loaded in FM, this {} {} build (module hash {hash}) keeps its data at addresses this editor version does not know yet; please report it with game-detection.log.",
+        SAVE_WAIT_NOTICE.as_secs(),
+        detection.release.display_name(),
+        detection.candidates.join(", "),
+        detection.release.display_name(),
+        detection.storefront.display_name(),
+    )
+}
 
 pub(super) fn build_cache(fm: &FmProcess) -> ArrayCache {
     let (hd, _, hc) = player::humans_array(fm).unwrap_or((0, 0, 0));
@@ -190,6 +237,7 @@ pub(super) fn worker_loop(
     // save-creation window where counts drift as FM populates the world.
     let mut last_counts: Option<(usize, usize, usize)> = None;
     let mut gate_passed = false;
+    let mut save_wait = SaveWait::default();
 
     while let Ok(cmd) = rx.recv() {
         match cmd {
@@ -235,6 +283,7 @@ pub(super) fn worker_loop(
                             None
                         };
                         cache = None;
+                        save_wait = SaveWait::start(process.detection.pinned);
                         fm = Some(process);
                         let _ = tx.send(BridgeResult::Attached(pid, build, game_date));
                     }
@@ -244,8 +293,8 @@ pub(super) fn worker_loop(
                 }
             }
 
-            BridgeCmd::LoadEntityCache => {
-                if let (Some(f), Some(c)) = (&fm, &cache) {
+            BridgeCmd::LoadEntityCache => match (&fm, &cache) {
+                (Some(f), Some(c)) => {
                     let _ = tx.send(BridgeResult::PingOk(f.game_date()));
                     match bulk_load::load_entity_cache(f, c, &tx) {
                         Ok(arc) => {
@@ -256,7 +305,15 @@ pub(super) fn worker_loop(
                         }
                     }
                 }
-            }
+                (Some(_), None) => {
+                    let _ = tx.send(BridgeResult::CacheFailed(
+                        "no save is loaded and validated yet; load one in FM and wait for the editor to connect".into(),
+                    ));
+                }
+                (None, _) => {
+                    let _ = tx.send(BridgeResult::CacheFailed("no game is attached".into()));
+                }
+            },
 
             BridgeCmd::LoadPlayer(addr, index) => {
                 if let Some(f) = &fm {
@@ -423,6 +480,7 @@ pub(super) fn worker_loop(
 
                         match ping_transition(cache.as_ref(), &current, last_counts) {
                             PingTransition::SaveReady => {
+                                save_wait = SaveWait::default();
                                 let warning = match validate_save(f) {
                                     Ok(warning) => {
                                         gate_passed = true;
@@ -484,6 +542,7 @@ pub(super) fn worker_loop(
                                     f.detection.status = DetectionStatus::AwaitingSave;
                                     f.detection.chosen = None;
                                 }
+                                save_wait = SaveWait::start(f.detection.pinned);
                                 let _ = tx.send(BridgeResult::SaveUnloaded(pid));
                             }
                             PingTransition::SameSave {
@@ -500,6 +559,11 @@ pub(super) fn worker_loop(
                             }
                             | PingTransition::Waiting => {
                                 let _ = tx.send(BridgeResult::PingOk(f.game_date()));
+                                if cache.is_none() && save_wait.notice_due(Instant::now()) {
+                                    let message = save_wait_message(f);
+                                    f.log_detection_note(&format!("save wait: {message}"));
+                                    let _ = tx.send(BridgeResult::SaveNotFound { pid, message });
+                                }
                             }
                         }
                         last_counts = if plausible { Some(current_tuple) } else { None };
@@ -823,5 +887,33 @@ mod tests {
             _ => panic!("expected a write failure acknowledgement"),
         }
         assert!(result_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn load_entity_cache_without_attached_process_fails_instead_of_hanging() {
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        let (result_tx, result_rx) = mpsc::channel();
+        cmd_tx.send(BridgeCmd::LoadEntityCache).unwrap();
+        cmd_tx.send(BridgeCmd::Shutdown).unwrap();
+        worker_loop(cmd_rx, result_tx, false);
+        match result_rx.recv().unwrap() {
+            BridgeResult::CacheFailed(error) => assert!(error.contains("no game is attached")),
+            _ => panic!("expected a cache failure"),
+        }
+        assert!(result_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn save_wait_notice_is_due_once_for_unpinned_builds() {
+        let mut wait = SaveWait::start(false);
+        let since = wait.since.unwrap();
+        assert!(!wait.notice_due(since + SAVE_WAIT_NOTICE - Duration::from_millis(1)));
+        assert!(wait.notice_due(since + SAVE_WAIT_NOTICE));
+        assert!(!wait.notice_due(since + SAVE_WAIT_NOTICE * 2));
+
+        let mut pinned = SaveWait::start(true);
+        assert!(!pinned.notice_due(Instant::now() + SAVE_WAIT_NOTICE * 2));
+        let mut connected = SaveWait::default();
+        assert!(!connected.notice_due(Instant::now() + SAVE_WAIT_NOTICE * 2));
     }
 }

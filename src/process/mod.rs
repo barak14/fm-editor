@@ -386,6 +386,11 @@ impl FmProcess {
         })
     }
 
+    /// Append the current detection report and `note` to the detection log.
+    pub fn log_detection_note(&self, note: &str) {
+        detection_log::record(self.pid, &format!("{}\n{note}", self.detection.summary()));
+    }
+
     /// The release's record layout for this process.
     pub fn schemas(&self) -> &'static ReleaseLayout {
         self.build.schemas()

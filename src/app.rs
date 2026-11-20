@@ -190,6 +190,9 @@ pub struct FmEditorApp {
 
     // Status
     status_msg: Option<(String, Instant)>,
+    /// Why an unrecognised build may be unsupported, shown until the
+    /// connection state changes.
+    save_wait_notice: Option<String>,
     entity_counts: Option<EntityCounts>,
 
     // User preferences
@@ -256,6 +259,7 @@ impl FmEditorApp {
             write_error: None,
             policy_ui: Default::default(),
             status_msg: None,
+            save_wait_notice: None,
             entity_counts: None,
             settings,
             pending_scale_resize: None,
@@ -347,14 +351,21 @@ impl FmEditorApp {
         });
     }
 
-    /// Drop the entity cache — called when a save is unloaded or a new one
-    /// starts loading. Not called on GameClosed (cache is preserved for
-    /// read-only browsing).
+    /// Drop the entity cache and the save-wait notice — called when a save is
+    /// unloaded, a new one starts loading or the connection changes. Not called
+    /// on GameClosed (cache is preserved for read-only browsing).
     fn clear_cache(&mut self) {
         self.best_xi.clear();
         self.names.clear();
         self.entity_cache = None;
         self.cache_load_state = CacheLoadState::Idle;
+        self.save_wait_notice = None;
+    }
+
+    fn receive_save_not_found(&mut self, pid: u32, message: String) {
+        if self.conn == ConnState::WaitingForSave(pid) {
+            self.save_wait_notice = Some(message);
+        }
     }
 
     fn process_results(&mut self) {
@@ -384,6 +395,9 @@ impl FmEditorApp {
                     self.game_choices.clear();
                     let game = self.game_label(pid);
                     self.set_status(format!("Attached to {game} \u{2014} waiting for save"));
+                }
+                BridgeResult::SaveNotFound { pid, message } => {
+                    self.receive_save_not_found(pid, message);
                 }
                 BridgeResult::LayoutRejected { pid, message } => {
                     self.reject_layout(pid, message);
@@ -984,7 +998,14 @@ impl eframe::App for FmEditorApp {
         egui::TopBottomPanel::top("menu_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    if ui.button("Load Save").clicked() {
+                    let ready = matches!(self.conn, ConnState::Ready(_));
+                    if ui
+                        .add_enabled(ready, egui::Button::new("Load Save"))
+                        .on_disabled_hover_text(
+                            "Available once a save is loaded and the editor is connected",
+                        )
+                        .clicked()
+                    {
                         reload_save_clicked = true;
                         ui.close_menu();
                     }
@@ -1361,7 +1382,15 @@ impl eframe::App for FmEditorApp {
                     ));
                 }
                 ui.separator();
-                if let Some((ref msg, t)) = self.status_msg {
+                if let (ConnState::WaitingForSave(_), Some(notice)) =
+                    (self.conn, self.save_wait_notice.as_deref())
+                {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 152, 0),
+                        "No save found \u{2014} this build may be unsupported (hover for details)",
+                    )
+                    .on_hover_text(notice);
+                } else if let Some((msg, t)) = &self.status_msg {
                     if !self.rejected_pids.is_empty() || t.elapsed().as_secs() < 8 {
                         ui.label(msg.as_str());
                     }
@@ -2156,6 +2185,21 @@ mod tests {
         app.reject_layout(123, "Player decoding failed".into());
         app.request_attach(Some(123));
         assert!(app.rejected_pids.is_empty());
+    }
+
+    #[test]
+    fn save_wait_notice_applies_only_while_that_process_waits_and_clears_on_change() {
+        let mut app = FmEditorApp::from_settings(AppSettings::default());
+        app.conn = ConnState::Ready(123);
+        app.receive_save_not_found(123, "no save".into());
+        assert!(app.save_wait_notice.is_none());
+        app.conn = ConnState::WaitingForSave(123);
+        app.receive_save_not_found(456, "other game".into());
+        assert!(app.save_wait_notice.is_none());
+        app.receive_save_not_found(123, "no save".into());
+        assert_eq!(app.save_wait_notice.as_deref(), Some("no save"));
+        app.reject_layout(123, "players failed".into());
+        assert!(app.save_wait_notice.is_none());
     }
 
     #[test]

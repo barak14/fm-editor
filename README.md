@@ -100,6 +100,9 @@ while waiting for validation it adds **(checking layout…)**. FM27 Steam curren
 has no recorded fingerprint, so it follows this path and stays amber even after
 passing. **Back up your save before editing.** The gate runs again after every
 save load/reload; pinned builds also run it, but a failure warns instead of blocking.
+If a save is loaded but the editor keeps waiting and reports **No save found —
+this build may be unsupported**, the build's addresses have probably moved;
+report it with the detection log below.
 
 For identification failures, include the [game-detection log](docs/development.md#release-identification-diagnostics)
 in your bug report. It records the candidate PID, actual module paths, PE product

@@ -159,6 +159,13 @@ pub enum BridgeResult {
         crate::game_version::GameBuild,
         Option<crate::game_date::GameDate>,
     ),
+    /// An unrecognised build has waited a while without any candidate address
+    /// set showing a save. Still attached and waiting; the UI keeps `message`
+    /// visible because the build's addresses may have moved.
+    SaveNotFound {
+        pid: u32,
+        message: String,
+    },
     /// Several games are running (they all run as `fm.exe`) and no PID was
     /// given. Nothing was attached; the UI asks which one to use.
     ChooseGame(Vec<crate::process::RunningGame>),

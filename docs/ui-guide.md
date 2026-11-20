@@ -27,6 +27,13 @@ suppressed for that PID until you press **Reconnect** or the process changes.
 Every save load/reload reruns the check. A pinned build's failed check produces a
 warning rather than blocking. Detection and attachment do not write game memory.
 
+If no recorded address set shows a save within 20 seconds on an unpinned build,
+the status line shows **No save found — this build may be unsupported** with the
+full explanation on hover, and the detection log records it. The editor stays
+attached and keeps checking, because a save at moved addresses looks the same as
+FM's main menu. **File → Load Save** is available only while connected to a
+loaded save; otherwise it is disabled.
+
 - Click a blue club name to open its club details. Where a club address is resolved through an existing schema chain, it must match an entry in the loaded club cache. Without an address, only a unique cached name is navigable. Full and short club names can differ; address-based links do not depend on their spelling.
 - Click a club's ground name to open its **Stadium (read-only)** tab. This is the existing ground information associated with that club, not a separate searchable ground entity.
 - **Back** and **Forward** follow one browser-style history across entity types and search pages. Search filters are retained when following related links.
