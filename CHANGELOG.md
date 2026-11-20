@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.5.0 (prerelease)
+
+FM24 Epic and FM27 Game Pass 27.1 become recorded builds. Other builds of FM24, FM26 and FM27 are validated at runtime instead of refused, and builds whose addresses moved can be opened read-only from a module scan.
+
 ### Features
 
 - FM24 Epic (24.4.2+2081827): attach, read and edit using the FM24 Steam schema with the Epic `fm.exe` fingerprint. Evidence was contributed from a Windows Epic install (two players' attributes and one club's transfer budget matched in game, and an attribute and budget edit were confirmed and restored); other fields are inherited from Steam and not tested on Epic. See docs/fm24/memory-layout.md ("Epic build").
@@ -9,7 +13,7 @@
 - Runtime layout validation for unpinned FM24/FM26/FM27 builds: try the release's recorded module addresses and decode sample players, staff, clubs and related records before allowing editing. Unknown storefronts and changed/unreadable fingerprints no longer cause an immediate refusal; no passing candidate means the attachment is rejected. Pinned builds run the same gate with warning-only failures.
 - Show matched builds with an amber version label and backup warning, including FM27 Steam until its fingerprint is recorded. Show “checking layout…” while waiting, and keep a rejected PID disconnected until Reconnect or a different process appears.
 - Keep FM27 club-policy trial and contract inspection restricted to pinned recorded builds; detected builds cannot use those separate, undetected addresses.
-- Include the detection report in debug `attach_status`; debug builds can exercise the unpinned path with `FME_IGNORE_FINGERPRINT=1`. This phase has compile/unit coverage only; live validation is outstanding.
+- Include the detection report in debug `attach_status`; debug builds can exercise the unpinned path with `FME_IGNORE_FINGERPRINT=1`. Live check on FM24 Steam with that override: the gate passed, an edit and Undo round-tripped, and reloading the save reran the gate.
 - Address scanning for unpinned builds whose recorded addresses do not fit (issue #7): while waiting for a save, the worker scans the game module's writable sections for the player, staff and club arrays (and, on FM27, the player-coach, human-manager and full-finance classes), then runs the decoding gate on the result. A build opened with scanned addresses is read-only (the worker refuses writes) and labelled "read-only: detected addresses"; the found addresses go to the game-detection log. Debug builds can force a scan with `FME_FORCE_DETECT=1`. Forced scans on FM24 Steam and FM26 Steam reproduced their recorded array and stadium addresses in under 0.1 s. On FM27 Game Pass 27.1 (unrecorded at the time) the scan found the arrays and all three classes in 0.3 s; it did not settle the current date (7 date-shaped candidates).
 - FM27 Game Pass Store package 0.9.2524.0 (27.1.0+2505117) is a recorded build (`FM27_GAMEPASS_27_1`), so it attaches pinned and editable. Its addresses came from the module scan and were checked by decoding real birth dates of three players and three staff; the current date is a single snapshot. A write/Undo has not yet been confirmed in FM on this package. See docs/fm27/memory-layout.md ("Store package 0.9.2524.0").
 
