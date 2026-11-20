@@ -10,6 +10,7 @@
 //! install; only the process-access primitives differ.
 
 mod detection_log;
+pub mod layout_detect;
 pub mod layout_validate;
 mod version_resource;
 
@@ -36,15 +37,59 @@ pub enum DetectionStatus {
     Failed(String),
 }
 
+/// The latest module scan for an attachment whose recorded addresses failed.
+pub struct ScanRecord {
+    pub at: std::time::Instant,
+    /// Build with the found addresses, or why the scan failed.
+    pub result: Result<GameBuild, String>,
+    pub missing: Vec<&'static str>,
+    pub notes: Vec<String>,
+}
+
+impl ScanRecord {
+    pub fn summary(&self) -> String {
+        let mut lines = vec![match &self.result {
+            Ok(build) => {
+                let a = build.addresses;
+                format!(
+                    "scan: humans 0x{:X}/0x{:X}, staff 0x{:X}/0x{:X}, clubs 0x{:X}/0x{:X}, stadium 0x{:X}, date 0x{:X}, finance vtable 0x{:X}, player-coach vtable 0x{:X}, human-manager vtable 0x{:X}; missing: {}",
+                    a.rva_humans_data,
+                    a.rva_humans_end,
+                    a.rva_staff_data,
+                    a.rva_staff_end,
+                    a.rva_clubs_data,
+                    a.rva_clubs_end,
+                    a.rva_stadium_base,
+                    a.rva_current_date,
+                    a.full_finance_vtable_rva,
+                    a.player_coach_vtable_rva,
+                    a.human_manager_vtable_rva,
+                    if self.missing.is_empty() {
+                        "none".to_owned()
+                    } else {
+                        self.missing.join(", ")
+                    },
+                )
+            }
+            Err(error) => format!("scan failed: {error}"),
+        }];
+        lines.extend(self.notes.iter().map(|note| format!("  {note}")));
+        lines.join("\n")
+    }
+}
+
 pub struct DetectionReport {
     pub release: GameVersion,
     pub storefront: Storefront,
     pub module_hash: Option<u64>,
     pub pinned: bool,
+    /// Debug-only `FME_FORCE_DETECT=1`: skip recorded address sets and scan.
+    pub force_scan: bool,
     pub candidates: Vec<&'static str>,
     pub chosen: Option<&'static str>,
     pub status: DetectionStatus,
     pub gate: Option<GateReport>,
+    pub scan: Option<ScanRecord>,
 }
 
 impl DetectionReport {
@@ -62,6 +107,10 @@ impl DetectionReport {
             self.chosen.unwrap_or("none"),
             self.status,
         );
+        if let Some(scan) = &self.scan {
+            summary.push('\n');
+            summary.push_str(&scan.summary());
+        }
         if let Some(gate) = &self.gate {
             summary.push('\n');
             summary.push_str(&gate.summary());
@@ -95,6 +144,7 @@ fn attachment_build(
         storefront,
         module_hash,
         pinned,
+        force_scan: false,
         candidates: candidates
             .iter()
             .map(|candidate| candidate.schema_name)
@@ -106,6 +156,7 @@ fn attachment_build(
             DetectionStatus::AwaitingSave
         },
         gate: None,
+        scan: None,
     };
     (build, detection)
 }
@@ -363,13 +414,17 @@ impl FmProcess {
         backend::read_bytes(&handle, gp_base, 2)
             .map_err(|e| format!("attached to pid {pid} but cannot read its memory: {e}"))?;
         let module_hash = hash_module_header(&gp_path);
-        let ignore_fingerprint = cfg!(debug_assertions)
-            && std::env::var("FME_IGNORE_FINGERPRINT").is_ok_and(|value| value == "1");
-        let (build, detection) = attachment_build(
+        let debug_flag = |name: &str| {
+            cfg!(debug_assertions) && std::env::var(name).is_ok_and(|value| value == "1")
+        };
+        let force_scan = debug_flag("FME_FORCE_DETECT");
+        let ignore_fingerprint = force_scan || debug_flag("FME_IGNORE_FINGERPRINT");
+        let (build, mut detection) = attachment_build(
             path_build,
             module_hash.as_ref().ok().copied(),
             ignore_fingerprint,
         );
+        detection.force_scan = force_scan;
         let mut report = detection.summary();
         if let Err(error) = module_hash {
             report.push_str(&format!("\nmodule hash unavailable: {error}"));

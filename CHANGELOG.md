@@ -10,6 +10,7 @@
 - Show matched builds with an amber version label and backup warning, including FM27 Steam until its fingerprint is recorded. Show “checking layout…” while waiting, and keep a rejected PID disconnected until Reconnect or a different process appears.
 - Keep FM27 club-policy trial and contract inspection restricted to pinned recorded builds; detected builds cannot use those separate, undetected addresses.
 - Include the detection report in debug `attach_status`; debug builds can exercise the unpinned path with `FME_IGNORE_FINGERPRINT=1`. This phase has compile/unit coverage only; live validation is outstanding.
+- Address scanning for unpinned builds whose recorded addresses do not fit (issue #7): while waiting for a save, the worker scans the game module's writable sections for the player, staff and club arrays (and, on FM27, the player-coach, human-manager and full-finance classes), then runs the decoding gate on the result. A build opened with scanned addresses is read-only (the worker refuses writes) and labelled "read-only: detected addresses"; the found addresses go to the game-detection log. Debug builds can force a scan with `FME_FORCE_DETECT=1`. Forced scans on FM24 Steam and FM26 Steam reproduced their recorded array and stadium addresses in under 0.1 s; FM27 class detection has not been run live.
 
 ### Fixes
 

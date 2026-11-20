@@ -540,6 +540,12 @@ impl FmEditorApp {
                     build.display_name()
                 )
             }
+            Some(build) if build.is_scanned() => {
+                format!(
+                    "{} (read-only: detected addresses) (PID {pid})",
+                    build.display_name()
+                )
+            }
             Some(build) => RunningGame { pid, build }.to_string(),
             None => format!("PID {pid}"),
         }
@@ -1094,7 +1100,9 @@ impl eframe::App for FmEditorApp {
         navigation::publish_cache(ctx, cache_arc.clone());
         navigation::set_editing_enabled(
             ctx,
-            self.conn.is_writable() && !self.change_history.is_pending(),
+            self.conn.is_writable()
+                && !self.change_history.is_pending()
+                && !self.attached_build.is_some_and(GameBuild::is_scanned),
         );
         let wage_period = self.settings.wage_period;
         let face_pack_path = self.settings.face_pack_path.clone();
@@ -1337,8 +1345,8 @@ impl eframe::App for FmEditorApp {
                             },
                             format!("\u{25CF} Connected to {}", self.game_label(pid)),
                         );
-                        if detected {
-                            response.on_hover_text("This build hasn't been validated. Back up your save before editing.");
+                        if let Some(warning) = build_warning(self.attached_build) {
+                            response.on_hover_text(warning);
                         }
                     }
                     ConnState::WaitingForSave(pid) => {
@@ -1349,8 +1357,8 @@ impl eframe::App for FmEditorApp {
                                 self.game_label(pid)
                             ),
                         );
-                        if self.attached_build.is_some_and(GameBuild::is_detected) {
-                            response.on_hover_text("This build hasn't been validated. Back up your save before editing.");
+                        if let Some(warning) = build_warning(self.attached_build) {
+                            response.on_hover_text(warning);
                         }
                     }
                     ConnState::ReadOnly(pid) => {
@@ -1361,10 +1369,13 @@ impl eframe::App for FmEditorApp {
                             } else {
                                 egui::Color32::from_rgb(255, 152, 0)
                             },
-                            format!("\u{25CF} {} not running \u{2014} browse only", self.game_label(pid)),
+                            format!(
+                                "\u{25CF} {} not running \u{2014} browse only",
+                                self.game_label(pid)
+                            ),
                         );
-                        if detected {
-                            response.on_hover_text("This build hasn't been validated. Back up your save before editing.");
+                        if let Some(warning) = build_warning(self.attached_build) {
+                            response.on_hover_text(warning);
                         }
                     }
                     ConnState::Disconnected => {
@@ -1432,6 +1443,8 @@ impl eframe::App for FmEditorApp {
                 if self.change_history.is_pending() {
                     ui.spinner();
                     ui.label("Applying changes to game memory…");
+                } else if self.attached_build.is_some_and(GameBuild::is_scanned) {
+                    ui.label("Read-only — this build's addresses were found by scanning and are not recorded yet.");
                 } else if self.conn.is_writable() {
                     ui.label("Editing live — changes apply immediately. Ctrl+Z to undo.");
                 } else {
@@ -2133,6 +2146,19 @@ fn patch_player_list_buffers(player: &mut PlayerRecord, addr: u64, bytes: &[u8])
             patch_buffer(&mut raw, clause.amount_addr, addr, bytes);
             clause.amount = i32::from_le_bytes(raw);
         }
+    }
+}
+
+/// Hover text for the version label of a build that is not pinned.
+fn build_warning(build: Option<GameBuild>) -> Option<&'static str> {
+    match build {
+        Some(build) if build.is_scanned() => Some(
+            "This build's addresses were found by scanning and have not been recorded. It is read-only.",
+        ),
+        Some(build) if build.is_detected() => {
+            Some("This build hasn't been validated. Back up your save before editing.")
+        }
+        _ => None,
     }
 }
 

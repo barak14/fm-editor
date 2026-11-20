@@ -1,7 +1,7 @@
 //! Read-only decoding gate for a candidate set of module addresses.
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::bridge::entity_load::{load_club_view, read_club_field_u32, resolve_club_sub_ptr};
 use crate::fields::Encoding;
@@ -9,7 +9,7 @@ use crate::game_version::GameBuild;
 use crate::player::{self, is_valid_ptr};
 use crate::staff;
 
-use super::{DetectionStatus, FmProcess};
+use super::{DetectionStatus, FmProcess, ScanRecord, layout_detect};
 
 const PLAYER_SAMPLES: usize = 256;
 const STAFF_SAMPLES: usize = 128;
@@ -68,7 +68,7 @@ impl GateReport {
     }
 }
 
-fn score(name: &'static str, samples: &[bool], required_percent: u8) -> GateCheck {
+pub(crate) fn score(name: &'static str, samples: &[bool], required_percent: u8) -> GateCheck {
     let passed = samples.iter().filter(|&&valid| valid).count();
     GateCheck {
         name,
@@ -97,24 +97,24 @@ fn not_applicable(name: &'static str, reason: &str) -> GateCheck {
 }
 
 #[derive(Clone, Default)]
-struct PersonSample {
-    name: Option<String>,
-    uid: Option<u32>,
-    dob_year: Option<u16>,
+pub(crate) struct PersonSample {
+    pub(crate) name: Option<String>,
+    pub(crate) uid: Option<u32>,
+    pub(crate) dob_year: Option<u16>,
 }
 
 #[derive(Clone, Default)]
-struct PlayerSample {
-    person: PersonSample,
-    ca: Option<u16>,
-    pa: Option<i16>,
+pub(crate) struct PlayerSample {
+    pub(crate) person: PersonSample,
+    pub(crate) ca: Option<u16>,
+    pub(crate) pa: Option<i16>,
 }
 
 fn named(name: &Option<String>) -> bool {
     name.as_ref().is_some_and(|name| !name.trim().is_empty())
 }
 
-fn person_validity(samples: &[PersonSample], reference_year: u16) -> Vec<bool> {
+pub(crate) fn person_validity(samples: &[PersonSample], reference_year: u16) -> Vec<bool> {
     let mut frequencies = HashMap::new();
     for sample in samples {
         if let Some(uid) = sample.uid {
@@ -135,7 +135,7 @@ fn person_validity(samples: &[PersonSample], reference_year: u16) -> Vec<bool> {
         .collect()
 }
 
-fn score_players(samples: &[PlayerSample], reference_year: u16) -> GateCheck {
+pub(crate) fn score_players(samples: &[PlayerSample], reference_year: u16) -> GateCheck {
     let people = samples
         .iter()
         .map(|sample| sample.person.clone())
@@ -154,7 +154,7 @@ fn score_players(samples: &[PlayerSample], reference_year: u16) -> GateCheck {
     score("players", &valid, ENTITY_PERCENT)
 }
 
-fn score_staff(samples: &[PersonSample], reference_year: u16) -> GateCheck {
+pub(crate) fn score_staff(samples: &[PersonSample], reference_year: u16) -> GateCheck {
     score(
         "staff",
         &person_validity(samples, reference_year),
@@ -162,7 +162,7 @@ fn score_staff(samples: &[PersonSample], reference_year: u16) -> GateCheck {
     )
 }
 
-fn indices(count: usize, limit: usize) -> Vec<usize> {
+pub(crate) fn indices(count: usize, limit: usize) -> Vec<usize> {
     let size = count.min(limit);
     (0..size)
         .map(|index| {
@@ -175,7 +175,7 @@ fn indices(count: usize, limit: usize) -> Vec<usize> {
         .collect()
 }
 
-fn range(address: u64, size: usize) -> Result<u64, String> {
+pub(crate) fn range(address: u64, size: usize) -> Result<u64, String> {
     let end = address.checked_add(size.saturating_sub(1) as u64);
     if size == 0 || !is_valid_ptr(address) || !end.is_some_and(is_valid_ptr) {
         return Err("invalid memory range".into());
@@ -195,7 +195,7 @@ fn array(fm: &FmProcess, data_rva: u64, end_rva: u64) -> Result<(u64, u64, usize
     fm.read_ptr_array(data_rva, end_rva)
 }
 
-fn entry(fm: &FmProcess, data: u64, index: usize, size: usize) -> Result<u64, String> {
+pub(crate) fn entry(fm: &FmProcess, data: u64, index: usize, size: usize) -> Result<u64, String> {
     let offset = (index as u64)
         .checked_mul(8)
         .ok_or("array index overflow")?;
@@ -258,17 +258,104 @@ fn candidate_counts(fm: &FmProcess) -> Option<(usize, usize, usize)> {
     Some((humans_count, staff_count, clubs_count))
 }
 
-/// Select the first plausible candidate while waiting for a save.
+/// Minimum time between module scans while an unpinned build waits for a save.
+const SCAN_INTERVAL: Duration = Duration::from_secs(10);
+
+fn scan_due(last: Option<Instant>, now: Instant) -> bool {
+    last.is_none_or(|at| now.saturating_duration_since(at) >= SCAN_INTERVAL)
+}
+
+fn scanned_build(fm: &FmProcess) -> Option<GameBuild> {
+    fm.detection.scan.as_ref()?.result.as_ref().ok().copied()
+}
+
+/// Scan the module and keep the result on the attachment. A failed scan keeps
+/// an earlier successful result, since FM's main menu also fails to scan.
+fn run_scan(fm: &mut FmProcess) {
+    let started = Instant::now();
+    let storefront = fm.build.storefront();
+    let scanned = layout_detect::scan(fm);
+    let elapsed = started.elapsed();
+    let record = match scanned {
+        Ok(found) => ScanRecord {
+            at: started,
+            result: Ok(GameBuild::scanned(
+                found.base,
+                storefront,
+                found.addresses,
+                found.missing.is_empty(),
+            )),
+            missing: found.missing,
+            notes: found.notes,
+        },
+        Err(error) => {
+            if let Some(previous) = &mut fm.detection.scan
+                && previous.result.is_ok()
+            {
+                previous.at = started;
+                return;
+            }
+            ScanRecord {
+                at: started,
+                result: Err(error),
+                missing: Vec::new(),
+                notes: Vec::new(),
+            }
+        }
+    };
+    let changed = fm
+        .detection
+        .scan
+        .as_ref()
+        .is_none_or(|previous| previous.summary() != record.summary());
+    fm.detection.scan = Some(record);
+    if changed {
+        fm.log_detection_note(&format!("scan took {:.2} s", elapsed.as_secs_f64()));
+    }
+}
+
+/// Select the first plausible candidate while waiting for a save: the recorded
+/// address sets of the release, then addresses found by scanning the module.
 pub fn select_waiting_candidate(fm: &mut FmProcess) -> bool {
     let original = fm.build;
-    for candidate in GameBuild::candidates(original.version(), original.storefront()) {
-        fm.build = GameBuild::detected(candidate, original.storefront());
+    if !fm.detection.force_scan {
+        for candidate in GameBuild::candidates(original.version(), original.storefront()) {
+            fm.build = GameBuild::detected(candidate, original.storefront());
+            if candidate_counts(fm).is_some() {
+                return true;
+            }
+        }
+    }
+    fm.build = original;
+    if let Some(scanned) = scanned_build(fm) {
+        fm.build = scanned;
         if candidate_counts(fm).is_some() {
             return true;
+        }
+        fm.build = original;
+    }
+    if scan_due(
+        fm.detection.scan.as_ref().map(|scan| scan.at),
+        Instant::now(),
+    ) {
+        run_scan(fm);
+        if let Some(scanned) = scanned_build(fm) {
+            fm.build = scanned;
+            if candidate_counts(fm).is_some() {
+                return true;
+            }
         }
     }
     fm.build = original;
     false
+}
+
+fn build_label(build: GameBuild) -> &'static str {
+    if build.is_scanned() {
+        "scanned"
+    } else {
+        build.schema_name()
+    }
 }
 
 fn stable_candidate_counts(
@@ -292,8 +379,8 @@ pub fn validate_save(fm: &mut FmProcess) -> Result<Option<String>, String> {
     if fm.detection.pinned {
         return Ok((!passed).then(|| format!("Layout validation warning: {summary}")));
     }
-    let mut failures = vec![format!("{}: {summary}", fm.build.schema_name())];
-    if !passed {
+    let mut failures = vec![format!("{}: {summary}", build_label(fm.build))];
+    if !passed && !fm.detection.force_scan {
         let initial = fm.build;
         for candidate in GameBuild::candidates(initial.version(), initial.storefront()) {
             if std::ptr::eq(candidate, initial.recorded) {
@@ -322,7 +409,7 @@ pub fn validate_save(fm: &mut FmProcess) -> Result<Option<String>, String> {
         fm.detection.status = DetectionStatus::Failed(message.clone());
         return Err(message);
     }
-    fm.detection.chosen = Some(fm.build.schema_name());
+    fm.detection.chosen = Some(build_label(fm.build));
     fm.detection.status = DetectionStatus::Validated;
     Ok(None)
 }
@@ -477,6 +564,39 @@ pub fn run_gate(fm: &FmProcess) -> GateReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scans_are_rate_limited() {
+        let now = Instant::now();
+        assert!(scan_due(None, now));
+        assert!(!scan_due(
+            Some(now),
+            now + SCAN_INTERVAL - Duration::from_millis(1)
+        ));
+        assert!(scan_due(Some(now), now + SCAN_INTERVAL));
+    }
+
+    #[test]
+    fn scanned_builds_are_labelled_and_read_only() {
+        let recorded = GameBuild::FM27_GAMEPASS;
+        let mut addresses = recorded.addresses;
+        addresses.rva_humans_data += 0x1000;
+        for complete in [true, false] {
+            let scanned = GameBuild::scanned(
+                recorded.recorded,
+                crate::game_version::Storefront::GamePass,
+                addresses,
+                complete,
+            );
+            assert!(scanned.is_scanned() && scanned.is_detected());
+            assert_eq!(build_label(scanned), "scanned");
+            assert_ne!(scanned, recorded);
+        }
+        assert!(!recorded.is_scanned());
+        assert_eq!(build_label(recorded), "FM27_GAMEPASS");
+        let matched = GameBuild::detected(recorded.recorded, recorded.storefront());
+        assert!(!matched.is_scanned());
+    }
 
     fn valid_players(count: usize) -> Vec<PlayerSample> {
         (1..=count)

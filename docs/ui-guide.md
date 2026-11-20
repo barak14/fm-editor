@@ -27,7 +27,15 @@ suppressed for that PID until you press **Reconnect** or the process changes.
 Every save load/reload reruns the check. A pinned build's failed check produces a
 warning rather than blocking. Detection and attachment do not write game memory.
 
-If no recorded address set shows a save within 20 seconds on an unpinned build,
+When none of the recorded address sets shows a save, the editor scans the game
+module for the entity arrays (at most every 10 seconds while it waits). If the
+scanned addresses pass the same decoding check, it connects with the label
+**(read-only: detected addresses)**: entities can be browsed and searched, edit
+controls are hidden and the worker refuses writes. The tooltip and the line above
+the detail panel say the addresses were found by scanning and are not recorded.
+If the scan fails the check, the attachment is refused as above.
+
+If neither the recorded address sets nor a scan show a save within 20 seconds on an unpinned build,
 the status line shows **No save found — this build may be unsupported** with the
 full explanation on hover, and the detection log records it. The editor stays
 attached and keeps checking, because a save at moved addresses looks the same as

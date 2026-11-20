@@ -91,9 +91,13 @@ Other builds of FM24, FM26 and FM27, including storefronts without a recorded bu
 and patched executables, try that release's recorded address sets. Once a save is
 loaded, a read-only decoding gate checks players, staff, clubs and related records
 before the editor makes an unpinned build available for editing. A failure refuses
-the attachment rather than displaying guessed data. This fast path cannot find
-new addresses or support an unknown release; matching addresses do not establish
-that every field has been independently verified on that build.
+the attachment rather than displaying guessed data. When no recorded address set
+fits (for example after a game update moved them), the editor scans the game module
+for the entity arrays and runs the same gate on what it finds. A build opened this
+way is **read-only** and labelled **(read-only: detected addresses)**; its detection
+log entry contains the found addresses, which can be recorded once they are
+confirmed in game. Unknown releases are refused. Matching or scanned addresses do
+not establish that every field has been independently verified on that build.
 
 Matched, unpinned builds show an **amber version label** with a backup warning;
 while waiting for validation it adds **(checking layout…)**. FM27 Steam currently

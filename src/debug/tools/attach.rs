@@ -227,6 +227,12 @@ fn detection_json(report: &DetectionReport) -> Value {
         "status": status,
         "failure": failure,
         "gate": gate,
+        "force_scan": report.force_scan,
+        "scan": report.scan.as_ref().map(|scan| json!({
+            "ok": scan.result.is_ok(),
+            "missing": scan.missing,
+            "summary": scan.summary(),
+        })),
         "summary": report.summary(),
     })
 }
@@ -244,6 +250,7 @@ mod tests {
             storefront: Storefront::Epic,
             module_hash: Some(42),
             pinned: false,
+            force_scan: false,
             candidates: vec!["FM27", "FM27 Game Pass"],
             chosen: None,
             status: DetectionStatus::Failed("players failed".to_owned()),
@@ -257,6 +264,7 @@ mod tests {
                     note: Some("unreadable".to_owned()),
                 }],
             }),
+            scan: None,
         };
         let value = detection_json(&report);
         assert_eq!(value["pinned"], false);
@@ -279,10 +287,12 @@ mod tests {
             storefront: Storefront::Epic,
             module_hash: None,
             pinned: false,
+            force_scan: false,
             candidates: vec![],
             chosen: None,
             status: DetectionStatus::AwaitingSave,
             gate: None,
+            scan: None,
         };
         assert!(
             gate_access(&report)

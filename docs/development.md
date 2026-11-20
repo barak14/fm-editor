@@ -231,6 +231,20 @@ To exercise the unpinned path on a recorded build, launch a **debug build** with
 override removes fingerprint pinning, not validation or write guards; it must not
 be used as evidence that a mapping is correct.
 
+To exercise address scanning, launch a debug build with `FME_FORCE_DETECT=1`
+(implies `FME_IGNORE_FINGERPRINT=1`). The worker then skips the recorded address
+sets and scans the module (`src/process/layout_detect.rs`) while it waits for a
+save, at most every 10 seconds, and runs the gate on the scanned addresses. The
+scan's addresses, per-candidate scores and timing are written to the
+game-detection log and `attach_status`. Builds with scanned addresses are
+read-only: the worker refuses every write and the UI hides edit controls. On a
+recorded build, a forced scan must reproduce its recorded arrays, stadium and class
+RVAs exactly, and the date must match or be 0. Checked 2026-11-20 on FM24 Steam
+(24.4.2) and FM26 Steam (26.3.2): arrays and stadium matched; date 0 on both
+(FM24 has several date-shaped statics in the window; FM26 has no recorded date).
+FM27 class detection (player-coach, human-manager, full finance) has not been run
+live.
+
 Promoting a matched build to a recorded/pinned build requires independently known
 in-game values for at least two entities, the exact build/storefront and source/date
 of the evidence, plus the module fingerprint. Update the recorded build in

@@ -85,8 +85,13 @@ fn save_wait_message(fm: &FmProcess) -> String {
     let hash = detection
         .module_hash
         .map_or_else(|| "unavailable".into(), |hash| format!("0x{hash:016X}"));
+    let scan = match detection.scan.as_ref().map(|scan| &scan.result) {
+        Some(Err(error)) => format!(" Scanning the module did not find them either ({error})."),
+        Some(Ok(_)) => " Addresses found by scanning do not show a save either.".to_owned(),
+        None => String::new(),
+    };
     format!(
-        "No save found after {} s at any known {} address set ({}). If a save is already loaded in FM, this {} {} build (module hash {hash}) keeps its data at addresses this editor version does not know yet; please report it with game-detection.log.",
+        "No save found after {} s at any known {} address set ({}).{scan} If a save is already loaded in FM, this {} {} build (module hash {hash}) keeps its data at addresses this editor version cannot find; please report it with game-detection.log.",
         SAVE_WAIT_NOTICE.as_secs(),
         detection.release.display_name(),
         detection.candidates.join(", "),
@@ -410,6 +415,10 @@ pub(super) fn worker_loop(
                 policy_guard,
             } => {
                 let result = match &fm {
+                    Some(f) if f.build.is_scanned() => Err((
+                        "Cannot write: this build's addresses were found by scanning, so it is read-only".into(),
+                        Some(false),
+                    )),
                     Some(f) if !write_context_ready(cache.as_ref(), &build_cache(f), f.detection.pinned, gate_passed) => {
                         Err(("Cannot write: save is not ready or its layout has not passed validation".into(), Some(false)))
                     }
@@ -481,7 +490,11 @@ pub(super) fn worker_loop(
                         match ping_transition(cache.as_ref(), &current, last_counts) {
                             PingTransition::SaveReady => {
                                 save_wait = SaveWait::default();
-                                let warning = match validate_save(f) {
+                                let validated = validate_save(f);
+                                if !f.detection.pinned {
+                                    f.log_detection_note("save gate ran");
+                                }
+                                let warning = match validated {
                                     Ok(warning) => {
                                         gate_passed = true;
                                         warning

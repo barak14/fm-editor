@@ -14,42 +14,10 @@
 //! arrays wherever a build put them.
 
 use fm_editor::process::FmProcess;
+use fm_editor::process::layout_detect::sections;
 
 const IMAGE_SCN_MEM_EXECUTE: u32 = 0x2000_0000;
 const IMAGE_SCN_MEM_WRITE: u32 = 0x8000_0000;
-
-/// One PE section: name, RVA range, characteristics.
-struct Section {
-    name: String,
-    start: u64,
-    end: u64,
-    flags: u32,
-}
-
-/// The module's section table, parsed from its PE header in memory.
-fn sections(fm: &FmProcess) -> Result<Vec<Section>, String> {
-    let head = fm.read_bytes(fm.gp_base, 0x1000)?;
-    let u16_at = |o: usize| head.get(o..o + 2).map(|b| u16::from_le_bytes(b.try_into().unwrap()));
-    let u32_at = |o: usize| head.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
-    let pe = u32_at(0x3C).ok_or("short header")? as usize;
-    if head.get(pe..pe + 4) != Some(b"PE\0\0") {
-        return Err("no PE signature at the module base".into());
-    }
-    let count = u16_at(pe + 6).ok_or("short header")? as usize;
-    let opt_size = u16_at(pe + 20).ok_or("short header")? as usize;
-    let table = pe + 24 + opt_size;
-    (0..count)
-        .map(|i| {
-            let s = table + i * 40;
-            let raw = head.get(s..s + 8).ok_or("section table past header page")?;
-            let name = String::from_utf8_lossy(raw).trim_end_matches('\0').to_string();
-            let vsize = u32_at(s + 8).ok_or("short header")? as u64;
-            let rva = u32_at(s + 12).ok_or("short header")? as u64;
-            let flags = u32_at(s + 36).ok_or("short header")?;
-            Ok(Section { name, start: rva, end: rva + vsize, flags })
-        })
-        .collect()
-}
 
 /// Print every 4-aligned word in `ranges` whose DateDayYear decodes to one of `dates`.
 fn scan_dates(fm: &FmProcess, ranges: &[(u64, u64)], dates: &[(u16, u16)]) {
@@ -86,10 +54,10 @@ fn is_heap_ptr(p: u64) -> bool {
 fn main() {
     // `--pid <n>` picks one game when several fm.exe are running.
     let args: Vec<String> = std::env::args().collect();
-    let pid = args
-        .windows(2)
-        .find(|w| w[0] == "--pid")
-        .map(|w| w[1].parse::<u32>().map_err(|e| format!("--pid {}: {e}", w[1])));
+    let pid = args.windows(2).find(|w| w[0] == "--pid").map(|w| {
+        w[1].parse::<u32>()
+            .map_err(|e| format!("--pid {}: {e}", w[1]))
+    });
     let attached = match pid {
         Some(Ok(pid)) => FmProcess::attach_pid(pid),
         Some(Err(e)) => Err(e),
@@ -104,7 +72,10 @@ fn main() {
     };
     println!(
         "Attached: {}, pid {}, {} @ 0x{:X}",
-        fm.build.display_name(), fm.pid, fm.module_path, fm.gp_base
+        fm.build.display_name(),
+        fm.pid,
+        fm.module_path,
+        fm.gp_base
     );
 
     let gp_size = fm.gp_end - fm.gp_base;
@@ -161,7 +132,10 @@ fn main() {
         return;
     }
     let total: u64 = ranges.iter().map(|(s, e)| e.saturating_sub(*s)).sum();
-    println!("\nScanning {} MB for pointer pairs...", total / (1024 * 1024));
+    println!(
+        "\nScanning {} MB for pointer pairs...",
+        total / (1024 * 1024)
+    );
 
     let fmrte_clubs = fm.build.recorded.fmrte_clubs;
     let fmrte_players = fm.build.recorded.fmrte_players;
@@ -229,9 +203,7 @@ fn main() {
         matches_any.len()
     );
     for (pair_rva, a, b, count, label) in &matches_any {
-        println!(
-            "  gp+0x{pair_rva:08X}  data=0x{a:X}  end=0x{b:X}  count={count:>8}  {label}"
-        );
+        println!("  gp+0x{pair_rva:08X}  data=0x{a:X}  end=0x{b:X}  count={count:>8}  {label}");
     }
 
     println!(
@@ -245,8 +217,6 @@ fn main() {
     big.sort_by_key(|(rva, _, _, _)| *rva);
     for (pair_rva, a, b, count) in big {
         let hint = label_count(*count).unwrap_or_default();
-        println!(
-            "  gp+0x{pair_rva:08X}  data=0x{a:X}  end=0x{b:X}  count={count:>8}  {hint}"
-        );
+        println!("  gp+0x{pair_rva:08X}  data=0x{a:X}  end=0x{b:X}  count={count:>8}  {hint}");
     }
 }

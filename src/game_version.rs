@@ -70,7 +70,12 @@ pub enum Recognition {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DetectionOutcome {
+    /// A recorded build's address set passed the gate.
     MatchesRecorded,
+    /// Scanning found every entity array and class identifier.
+    Complete,
+    /// Scanning found the entity arrays but not every class identifier.
+    Partial,
 }
 
 /// An attached build's recorded identity and resolved module addresses.
@@ -194,8 +199,37 @@ impl GameBuild {
         }
     }
 
+    /// A build whose addresses were found by scanning the module. `recorded`
+    /// supplies the release layout; its addresses are not used.
+    pub fn scanned(
+        recorded: &'static RecordedBuild,
+        storefront: Storefront,
+        addresses: ModuleAddresses,
+        complete: bool,
+    ) -> Self {
+        Self {
+            recorded,
+            addresses,
+            recognition: Recognition::Detected(if complete {
+                DetectionOutcome::Complete
+            } else {
+                DetectionOutcome::Partial
+            }),
+            storefront,
+        }
+    }
+
     pub fn is_detected(self) -> bool {
         matches!(self.recognition, Recognition::Detected(_))
+    }
+
+    /// Addresses came from a scan rather than a recorded build. The worker
+    /// refuses writes on such builds.
+    pub fn is_scanned(self) -> bool {
+        matches!(
+            self.recognition,
+            Recognition::Detected(DetectionOutcome::Complete | DetectionOutcome::Partial)
+        )
     }
 
     /// The recorded build of the same release whose schema pins this module

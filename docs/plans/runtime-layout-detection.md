@@ -1,7 +1,9 @@
 # Plan: runtime layout detection for unrecognised builds
 
-Status: Phase 1 implemented (unverified live). Written 2026-11-13, revised 2026-11-16
-(schema split, two phases, gaps from review).
+Status: Phase 1 implemented. Phase 2a (address scanning, read-only results) implemented;
+arrays verified by forced scans on FM24 and FM26 Steam, FM27 class detection unverified.
+Phase 2b (acceptance warning, editing of scanned builds, on-disk cache) not started.
+Written 2026-11-13, revised 2026-11-20.
 
 ## Goal
 
