@@ -1,6 +1,6 @@
 //! Release layouts and recorded executable identities, selected per attachment.
 
-use crate::fields::{ModuleAddresses, RecordedBuild, ReleaseLayout, fm24, fm26, fm27};
+use crate::fields::{ModuleAddresses, PeIdentity, RecordedBuild, ReleaseLayout, fm24, fm26, fm27};
 
 /// Which Football Manager release a process is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,6 +140,20 @@ impl GameBuild {
         storefront: Storefront::Steam,
     };
 
+    pub const FM27_STEAM_27_0_0_2493426: Self = Self::recorded(&fm27::FM27_STEAM_27_0_0_2493426);
+    pub const FM27_STEAM_27_0_1: Self = Self::recorded(&fm27::FM27_STEAM_27_0_1);
+    pub const FM27_STEAM_27_1: Self = Self::recorded(&fm27::FM27_STEAM_27_1);
+    pub const FM27_GAMEPASS_27_0_0: Self = Self::recorded(&fm27::FM27_GAMEPASS_27_0_0);
+
+    const fn recorded(recorded: &'static RecordedBuild) -> Self {
+        Self {
+            recorded,
+            addresses: recorded.addresses,
+            recognition: Recognition::Recorded,
+            storefront: recorded.storefront,
+        }
+    }
+
     pub const FM27_GAMEPASS: Self = Self {
         recorded: &fm27::FM27_GAMEPASS,
         addresses: fm27::FM27_GAMEPASS.addresses,
@@ -156,13 +170,17 @@ impl GameBuild {
 
     /// Within a storefront, newer packages come first: they are tried first while
     /// waiting for a save, and `resolve` picks the first.
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 10] = [
         Self::FM24_STEAM,
         Self::FM24_EPIC,
         Self::FM26_STEAM,
+        Self::FM27_STEAM_27_1,
+        Self::FM27_STEAM_27_0_1,
+        Self::FM27_STEAM_27_0_0_2493426,
         Self::FM27_STEAM,
         Self::FM27_GAMEPASS_27_1,
         Self::FM27_GAMEPASS,
+        Self::FM27_GAMEPASS_27_0_0,
     ];
 
     /// Attached as Game Pass or using a Game Pass build's addresses, whose
@@ -253,20 +271,21 @@ impl GameBuild {
     /// whose path gave the wrong storefront still gets its own schema; an
     /// unknown fingerprint is left to the attachment's fingerprint gate.
     pub fn with_fingerprint(self, hash: u64) -> Self {
-        if self.fingerprint() != 0 && self.fingerprint() == hash {
-            return Self {
-                recognition: Recognition::Recorded,
-                storefront: self.recorded.storefront,
-                ..self
-            };
-        }
-        Self::ALL
+        self.pinned_by(Some(hash), None).unwrap_or(self)
+    }
+
+    /// Resolve an exact module identity within this release, regardless of storefront.
+    pub(crate) fn pinned_by(self, hash: Option<u64>, pe: Option<PeIdentity>) -> Option<Self> {
+        let mut candidates = Self::ALL
             .into_iter()
-            .find(|b| {
-                let known = b.fingerprint();
-                b.version() == self.version() && known != 0 && known == hash
-            })
-            .unwrap_or(self)
+            .filter(|build| build.version() == self.version());
+        if let Some(hash) = hash.filter(|hash| *hash != 0) {
+            if let Some(build) = candidates.clone().find(|build| build.fingerprint() == hash) {
+                return Some(build);
+            }
+        }
+        let pe = pe.filter(|identity| identity.is_valid())?;
+        candidates.find(|build| build.recorded.pe_identities.contains(&pe))
     }
 
     pub fn version(self) -> GameVersion {
@@ -313,12 +332,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolve_round_trips_every_build() {
+    fn every_build_with_an_identity_can_be_pinned() {
         for build in GameBuild::ALL {
+            let resolved = GameBuild::resolve(build.version(), build.storefront()).unwrap();
+            if build.fingerprint() != 0 {
+                assert_eq!(
+                    resolved.pinned_by(Some(build.fingerprint()), None),
+                    Some(build)
+                );
+            }
+            for &pe in build.recorded.pe_identities {
+                assert_eq!(resolved.pinned_by(None, Some(pe)), Some(build));
+            }
+        }
+    }
+
+    #[test]
+    fn fm27_candidates_try_newer_packages_first() {
+        for (storefront, expected) in [
+            (Storefront::Steam, GameBuild::FM27_STEAM_27_1),
+            (Storefront::GamePass, GameBuild::FM27_GAMEPASS_27_1),
+        ] {
             assert_eq!(
-                GameBuild::resolve(build.version(), build.storefront())
-                    .map(|resolved| resolved.with_fingerprint(build.fingerprint())),
-                Ok(build)
+                GameBuild::resolve(GameVersion::Fm27, storefront),
+                Ok(expected)
             );
         }
     }
@@ -374,8 +411,7 @@ mod tests {
             assert_eq!(gamepass.with_fingerprint(0), gamepass);
         }
         assert_eq!(
-            GameBuild::FM27_GAMEPASS
-                .with_fingerprint(GameBuild::FM27_GAMEPASS_27_1.fingerprint()),
+            GameBuild::FM27_GAMEPASS.with_fingerprint(GameBuild::FM27_GAMEPASS_27_1.fingerprint()),
             GameBuild::FM27_GAMEPASS_27_1
         );
     }

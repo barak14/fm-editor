@@ -15,7 +15,9 @@ use std::time::{Duration, Instant};
 
 use crate::club;
 use crate::player;
-use crate::process::layout_validate::{select_waiting_candidate, validate_save};
+use crate::process::layout_validate::{
+    select_waiting_candidate, supplement_recorded_classes, validate_save,
+};
 use crate::process::{self, DetectionStatus, FmProcess};
 use crate::staff;
 
@@ -491,6 +493,9 @@ pub(super) fn worker_loop(
                             PingTransition::SaveReady => {
                                 save_wait = SaveWait::default();
                                 let validated = validate_save(f);
+                                if validated.is_ok() && supplement_recorded_classes(f) {
+                                    f.log_detection_note("checked FM27 class RVAs from RTTI");
+                                }
                                 if !f.detection.pinned {
                                     f.log_detection_note("save gate ran");
                                 }

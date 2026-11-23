@@ -1334,18 +1334,18 @@ impl eframe::App for FmEditorApp {
             }
 
             ui.horizontal(|ui| {
+                let warning = build_warning(self.attached_build);
                 match self.conn {
                     ConnState::Ready(pid) => {
-                        let detected = self.attached_build.is_some_and(GameBuild::is_detected);
                         let response = ui.colored_label(
-                            if detected {
+                            if warning.is_some() {
                                 egui::Color32::from_rgb(255, 193, 7)
                             } else {
                                 egui::Color32::from_rgb(76, 175, 80)
                             },
                             format!("\u{25CF} Connected to {}", self.game_label(pid)),
                         );
-                        if let Some(warning) = build_warning(self.attached_build) {
+                        if let Some(warning) = warning {
                             response.on_hover_text(warning);
                         }
                     }
@@ -1357,14 +1357,13 @@ impl eframe::App for FmEditorApp {
                                 self.game_label(pid)
                             ),
                         );
-                        if let Some(warning) = build_warning(self.attached_build) {
+                        if let Some(warning) = warning {
                             response.on_hover_text(warning);
                         }
                     }
                     ConnState::ReadOnly(pid) => {
-                        let detected = self.attached_build.is_some_and(GameBuild::is_detected);
                         let response = ui.colored_label(
-                            if detected {
+                            if warning.is_some() {
                                 egui::Color32::from_rgb(255, 193, 7)
                             } else {
                                 egui::Color32::from_rgb(255, 152, 0)
@@ -1374,7 +1373,7 @@ impl eframe::App for FmEditorApp {
                                 self.game_label(pid)
                             ),
                         );
-                        if let Some(warning) = build_warning(self.attached_build) {
+                        if let Some(warning) = warning {
                             response.on_hover_text(warning);
                         }
                     }
@@ -2149,7 +2148,7 @@ fn patch_player_list_buffers(player: &mut PlayerRecord, addr: u64, bytes: &[u8])
     }
 }
 
-/// Hover text for the version label of a build that is not pinned.
+/// Hover text for a detected build or one whose recorded addresses are not checked here.
 fn build_warning(build: Option<GameBuild>) -> Option<&'static str> {
     match build {
         Some(build) if build.is_scanned() => Some(
@@ -2158,6 +2157,9 @@ fn build_warning(build: Option<GameBuild>) -> Option<&'static str> {
         Some(build) if build.is_detected() => {
             Some("This build hasn't been validated. Back up your save before editing.")
         }
+        Some(build) if !build.recorded.checked_here => Some(
+            "This build's addresses come from another source and haven't been checked here. Back up your save before editing.",
+        ),
         _ => None,
     }
 }

@@ -8,6 +8,8 @@ Player and Human Manager overviews use compact identity strips above independent
 
 In Human Manager, read-only Roles follow Knowledge. Player Status follows Identity in the left personal-details column; morale is shown and edited as a numeric 1–20 rating rather than descriptive level names.
 
+FM27 Staff and Human Manager screens show additional coaching, data analysis and tactical-style ratings in their existing groups. The club's read-only **Stadium** tab also shows the numeric environment code. These fields come from [published Windows layouts](fm27/memory-layout.md#fields-imported-from-jackhamerp24) and have not been checked here in a live save.
+
 The left sidebar groups **Players**, **Staff** and **Clubs** under Browse, with **Human Manager** under Management. Connection controls have their own Game Connection block. Back/Forward/Reload remain at the top; **Undo** and **Change history** are in the editing toolbar above the main workspace, not among navigation destinations. Compact identity strips keep profile context visible without a tall banner.
 
 When a game's version is known, the window title and sidebar heading identify it (for example, **FM27 Editor**); worktree titles retain their branch suffix. The connection block shows Connected/Waiting for save rather than repeating version and PID. The status bar retains attached-game details.

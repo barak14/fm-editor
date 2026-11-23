@@ -706,6 +706,19 @@ pub struct ModuleAddresses {
     pub human_manager_vtable_rva: u64,
 }
 
+/// Build identity from the PE COFF timestamp and optional-header image size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PeIdentity {
+    pub timestamp: u32,
+    pub size_of_image: u32,
+}
+
+impl PeIdentity {
+    pub(crate) fn is_valid(self) -> bool {
+        self.timestamp != 0 && self.size_of_image != 0
+    }
+}
+
 /// Recorded executable metadata and its release's record layouts.
 #[derive(Clone, Copy)]
 pub struct RecordedBuild {
@@ -715,11 +728,11 @@ pub struct RecordedBuild {
     pub addresses: ModuleAddresses,
     /// Project fingerprint of the first 64 KB of the build's game module.
     /// Zero means uncalibrated; a matching nonzero hash pins this recorded build.
-    /// Other hashes require the runtime layout gate before editing.
-    ///
-    /// Recording a fingerprint requires independent in-game witnesses and matching
-    /// build documentation. The detection report and log expose the module hash.
+    /// Record the source, date and exact build in the matching layout documentation.
     pub fingerprint: u64,
+    pub pe_identities: &'static [PeIdentity],
+    /// Whether this build's mapping has been confirmed in game here.
+    pub checked_here: bool,
     // FMRTE reference counts — used by `src/bin/scan_arrays.rs` to
     // validate candidate RVA pairs. Per-version because FMRTE's own
     // numbers shift between game versions.
@@ -1206,6 +1219,114 @@ mod player_schema_tests {
             ] {
                 assert_ne!(gp, st, "Game Pass {name} inherits the Steam value");
             }
+        }
+    }
+
+    #[test]
+    fn imported_fm27_builds_have_their_own_addresses_and_pe_identities() {
+        for (build, original, expected, fingerprint, identities) in [
+            (
+                &fm27::FM27_STEAM_27_0_0_2493426,
+                &fm27::FM27_STEAM,
+                [
+                    0x57057D0, 0x5705818, 0x5705988, 0x5705750, 0, 0x4CF2CC8, 0x4F77A08, 0x4CC286C,
+                ],
+                0xCB99_521F_57D4_2B51,
+                &[(0x6AE565AF, 0x1821C000)][..],
+            ),
+            (
+                &fm27::FM27_STEAM_27_0_1,
+                &fm27::FM27_STEAM,
+                [
+                    0x5820810, 0x5820858, 0x58209C8, 0x5820790, 0, 0x4DF4E38, 0x508FCB8, 0,
+                ],
+                0,
+                &[(0x6AE8B5A4, 0x17CB9000), (0x6AF38E5C, 0x185FA000)],
+            ),
+            (
+                &fm27::FM27_STEAM_27_1,
+                &fm27::FM27_STEAM,
+                [
+                    0x587B8B8, 0x587B900, 0x587BA70, 0x587B838, 0, 0x4E52C38, 0x50EAC28, 0,
+                ],
+                0,
+                &[(0x6AF5C68F, 0x18878000)],
+            ),
+            (
+                &fm27::FM27_GAMEPASS_27_0_0,
+                &fm27::FM27_GAMEPASS,
+                [
+                    0x5683DC0, 0x5683E08, 0x5683F78, 0x5683D40, 0x56257C8, 0x4C9FD78, 0x4F20D28, 0,
+                ],
+                0,
+                &[(0x6AE563A1, 0x175DA000)],
+            ),
+        ] {
+            let [
+                humans,
+                staff,
+                clubs,
+                stadium,
+                date,
+                finance,
+                player_coach,
+                manager,
+            ] = expected;
+            assert_eq!(
+                build.addresses,
+                ModuleAddresses {
+                    rva_humans_data: humans,
+                    rva_humans_end: humans + 8,
+                    rva_staff_data: staff,
+                    rva_staff_end: staff + 8,
+                    rva_clubs_data: clubs,
+                    rva_clubs_end: clubs + 8,
+                    rva_stadium_base: stadium,
+                    rva_current_date: date,
+                    full_finance_vtable_rva: finance,
+                    player_coach_vtable_rva: player_coach,
+                    human_manager_vtable_rva: manager,
+                },
+                "{}",
+                build.schema_name
+            );
+            assert_eq!(build.fingerprint, fingerprint, "{}", build.schema_name);
+            assert!(
+                build
+                    .pe_identities
+                    .iter()
+                    .map(|pe| (pe.timestamp, pe.size_of_image))
+                    .eq(identities.iter().copied()),
+                "{}",
+                build.schema_name
+            );
+            assert!(!build.checked_here);
+            let counts = |b: &RecordedBuild| {
+                (
+                    b.fmrte_players,
+                    b.fmrte_staff,
+                    b.fmrte_clubs,
+                    b.fmrte_humans,
+                )
+            };
+            assert_eq!(counts(build), counts(original));
+        }
+    }
+
+    #[test]
+    fn checked_fm27_gamepass_builds_also_have_pe_identities() {
+        for (build, timestamp, size_of_image) in [
+            (&fm27::FM27_GAMEPASS, 0x6AE8CF77, 0x17969000),
+            (&fm27::FM27_GAMEPASS_27_1, 0x6AF5C8C6, 0x179AD000),
+        ] {
+            assert!(build.checked_here);
+            assert_eq!(
+                build.pe_identities,
+                &[PeIdentity {
+                    timestamp,
+                    size_of_image
+                }]
+            );
         }
     }
 

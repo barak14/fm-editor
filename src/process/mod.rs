@@ -12,6 +12,7 @@
 mod detection_log;
 pub mod layout_detect;
 pub mod layout_validate;
+pub mod rtti;
 mod version_resource;
 
 #[cfg(windows)]
@@ -25,7 +26,7 @@ mod linux;
 use self::linux as backend;
 
 use self::layout_validate::GateReport;
-use crate::fields::{ModuleAddresses, ReleaseLayout};
+use crate::fields::{ModuleAddresses, PeIdentity, ReleaseLayout};
 use crate::game_date::GameDate;
 use crate::game_version::{GameBuild, GameVersion, Storefront};
 
@@ -82,6 +83,7 @@ pub struct DetectionReport {
     pub release: GameVersion,
     pub storefront: Storefront,
     pub module_hash: Option<u64>,
+    pub pe_identity: Option<PeIdentity>,
     pub pinned: bool,
     /// Debug-only `FME_FORCE_DETECT=1`: skip recorded address sets and scan.
     pub force_scan: bool,
@@ -97,11 +99,16 @@ impl DetectionReport {
         let hash = self
             .module_hash
             .map_or_else(|| "unavailable".into(), |hash| format!("0x{hash:016X}"));
+        let pe = self.pe_identity.map_or_else(
+            || "unavailable".into(),
+            |pe| format!("0x{:08X}/0x{:08X}", pe.timestamp, pe.size_of_image),
+        );
         let mut summary = format!(
-            "{} {}; module hash: {}; pinned: {}; candidates: {}; chosen: {}; status: {:?}",
+            "{} {}; module hash: {}; PE identity: {}; pinned: {}; candidates: {}; chosen: {}; status: {:?}",
             self.release.display_name(),
             self.storefront.display_name(),
             hash,
+            pe,
             self.pinned,
             self.candidates.join(", "),
             self.chosen.unwrap_or("none"),
@@ -122,27 +129,23 @@ impl DetectionReport {
 fn attachment_build(
     path_build: GameBuild,
     module_hash: Option<u64>,
+    pe_identity: Option<PeIdentity>,
     ignore_fingerprint: bool,
 ) -> (GameBuild, DetectionReport) {
-    let matched = module_hash.map_or(path_build, |hash| path_build.with_fingerprint(hash));
-    let pinned = !ignore_fingerprint
-        && matched.fingerprint() != 0
-        && module_hash == Some(matched.fingerprint());
-    let storefront = if pinned {
-        matched.storefront()
+    let matched = if ignore_fingerprint {
+        None
     } else {
-        path_build.storefront()
+        path_build.pinned_by(module_hash, pe_identity)
     };
+    let pinned = matched.is_some();
+    let storefront = matched.unwrap_or(path_build).storefront();
     let candidates = GameBuild::candidates(path_build.version(), storefront);
-    let build = if pinned {
-        matched
-    } else {
-        GameBuild::detected(candidates[0], storefront)
-    };
+    let build = matched.unwrap_or_else(|| GameBuild::detected(candidates[0], storefront));
     let detection = DetectionReport {
         release: build.version(),
         storefront,
         module_hash,
+        pe_identity,
         pinned,
         force_scan: false,
         candidates: candidates
@@ -350,8 +353,7 @@ fn has_gdk_config(exe_path: &str) -> bool {
 /// packages, `Program Files\WindowsApps`. Epic installs live under
 /// `Epic Games`. Other locations retain the historical Steam default;
 /// metadata identifies the release, not the storefront or compatible offsets.
-/// The attachment's module fingerprint corrects a wrong hint between
-/// recorded builds of one release (`GameBuild::with_fingerprint`).
+/// The attachment's module identity corrects a wrong hint between recorded builds of one release.
 fn storefront_of(path: &str, has_gdk_config: bool) -> Storefront {
     let lower = path.to_lowercase().replace('\\', "/");
     if has_gdk_config || lower.contains("/xboxgames/") || lower.contains("/windowsapps/") {
@@ -377,6 +379,7 @@ pub struct FmProcess {
     pub module_path: String,
     pub build: GameBuild,
     pub detection: DetectionReport,
+    rtti: std::sync::OnceLock<rtti::Index>,
 }
 
 impl FmProcess {
@@ -413,7 +416,8 @@ impl FmProcess {
         // instead of erroring on the first field read later.
         backend::read_bytes(&handle, gp_base, 2)
             .map_err(|e| format!("attached to pid {pid} but cannot read its memory: {e}"))?;
-        let module_hash = hash_module_header(&gp_path);
+        let module_header = read_module_header(&gp_path);
+        let header = module_header.as_deref().ok();
         let debug_flag = |name: &str| {
             cfg!(debug_assertions) && std::env::var(name).is_ok_and(|value| value == "1")
         };
@@ -421,13 +425,14 @@ impl FmProcess {
         let ignore_fingerprint = force_scan || debug_flag("FME_IGNORE_FINGERPRINT");
         let (build, mut detection) = attachment_build(
             path_build,
-            module_hash.as_ref().ok().copied(),
+            header.map(hash_module_header),
+            header.and_then(parse_pe_identity),
             ignore_fingerprint,
         );
         detection.force_scan = force_scan;
         let mut report = detection.summary();
-        if let Err(error) = module_hash {
-            report.push_str(&format!("\nmodule hash unavailable: {error}"));
+        if let Err(error) = module_header {
+            report.push_str(&format!("\nmodule header unavailable: {error}"));
         }
         detection_log::record(pid, &report);
         Ok(Self {
@@ -438,6 +443,7 @@ impl FmProcess {
             module_path: gp_path,
             build,
             detection,
+            rtti: std::sync::OnceLock::new(),
         })
     }
 
@@ -458,7 +464,7 @@ impl FmProcess {
     /// Observed on-disk module header fingerprint, using the attachment gate's
     /// algorithm. Reporting it does not calibrate or override that gate.
     pub fn module_header_hash(&self) -> Result<u64, String> {
-        hash_module_header(&self.module_path)
+        read_module_header(&self.module_path).map(|bytes| hash_module_header(&bytes))
     }
 
     /// Read the current in-game date through this attachment's verified schema.
@@ -612,26 +618,54 @@ fn sniff_version(module_path: &str) -> Result<GameVersion, String> {
     ))
 }
 
-/// Project fingerprint of the first 64 KB of a module file.
-/// The historical multiplier below differs from standard FNV-1a. Keep it
-/// unchanged so existing calibrated schemas retain their compatibility gate.
-///
-/// Used as a lightweight build fingerprint to detect when FM has been
-/// patched and the schema should be re-verified. A file that cannot be read
-/// (e.g. a Store install under the access-restricted `WindowsApps` folder)
-/// is an error naming the path, not a hash that merely fails to match.
-fn hash_module_header(path: &str) -> Result<u64, String> {
+fn read_module_header(path: &str) -> Result<Vec<u8>, String> {
     use std::io::Read;
     let mut bytes = Vec::with_capacity(65536);
     std::fs::File::open(path)
         .and_then(|f| f.take(65536).read_to_end(&mut bytes))
         .map_err(|e| format!("cannot read {path}: {e}"))?;
+    Ok(bytes)
+}
+
+/// Project fingerprint of the first 64 KiB of a module file.
+/// The historical multiplier differs from standard FNV-1a.
+fn hash_module_header(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
-    for &b in &bytes {
+    for &b in bytes {
         h ^= b as u64;
         h = h.wrapping_mul(0x100000000001b3);
     }
-    Ok(h)
+    h
+}
+
+fn parse_pe_identity(bytes: &[u8]) -> Option<PeIdentity> {
+    fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
+        Some(u32::from_le_bytes(
+            bytes.get(offset..offset + 4)?.try_into().ok()?,
+        ))
+    }
+
+    if !bytes.starts_with(b"MZ") {
+        return None;
+    }
+    let pe_offset = usize::try_from(read_u32(bytes, 0x3C)?).ok()?;
+    if pe_offset < 0x40 {
+        return None;
+    }
+    let coff = bytes.get(pe_offset..)?.strip_prefix(b"PE\0\0")?;
+    let timestamp = read_u32(coff, 4)?;
+    let optional_size = u16::from_le_bytes(coff.get(16..18)?.try_into().ok()?) as usize;
+    let optional = coff.get(20..)?.get(..optional_size)?;
+    let magic = u16::from_le_bytes(optional.get(..2)?.try_into().ok()?);
+    if !matches!(magic, 0x10B | 0x20B) {
+        return None;
+    }
+    let size_of_image = read_u32(optional, 56)?;
+    let pe = PeIdentity {
+        timestamp,
+        size_of_image,
+    };
+    pe.is_valid().then_some(pe)
 }
 
 #[cfg(test)]
@@ -641,7 +675,8 @@ mod tests {
     #[test]
     fn fingerprints_pin_only_calibrated_builds() {
         for recorded in GameBuild::ALL {
-            let (build, report) = attachment_build(recorded, Some(recorded.fingerprint()), false);
+            let (build, report) =
+                attachment_build(recorded, Some(recorded.fingerprint()), None, false);
             if recorded.fingerprint() == 0 {
                 assert!(build.is_detected());
                 assert_eq!(report.status, DetectionStatus::AwaitingSave);
@@ -657,7 +692,7 @@ mod tests {
     #[test]
     fn unpinned_builds_await_validation() {
         for hash in [None, Some(0x1234)] {
-            let (build, report) = attachment_build(GameBuild::FM24_EPIC, hash, false);
+            let (build, report) = attachment_build(GameBuild::FM24_EPIC, hash, None, false);
             assert!(build.is_detected());
             assert_eq!(build.storefront(), Storefront::Epic);
             assert_eq!(build.recorded.schema_name, "FM24_EPIC");
@@ -672,10 +707,10 @@ mod tests {
     fn fingerprints_correct_storefront_unless_forced_to_detect() {
         let steam = GameBuild::FM24_STEAM;
         let epic = GameBuild::FM24_EPIC;
-        let (build, report) = attachment_build(steam, Some(epic.fingerprint()), false);
+        let (build, report) = attachment_build(steam, Some(epic.fingerprint()), None, false);
         assert_eq!(build, epic);
         assert_eq!(report.storefront, Storefront::Epic);
-        let (build, report) = attachment_build(steam, Some(epic.fingerprint()), true);
+        let (build, report) = attachment_build(steam, Some(epic.fingerprint()), None, true);
         assert!(build.is_detected());
         assert_eq!(build.storefront(), Storefront::Steam);
         assert_eq!(report.status, DetectionStatus::AwaitingSave);
@@ -684,11 +719,17 @@ mod tests {
 
     #[test]
     fn detection_summary_includes_hash_candidates_and_failure() {
-        let (_, mut report) = attachment_build(GameBuild::FM24_STEAM, Some(0x1234), false);
+        let pe = PeIdentity {
+            timestamp: 0x12,
+            size_of_image: 0x34,
+        };
+        let (_, mut report) =
+            attachment_build(GameBuild::FM24_STEAM, Some(0x1234), Some(pe), false);
         report.status = DetectionStatus::Failed("players failed validation".into());
         let summary = report.summary();
         for expected in [
             "0x0000000000001234",
+            "PE identity: 0x00000012/0x00000034",
             "FM24_STEAM",
             "FM24_EPIC",
             "players failed validation",
@@ -696,6 +737,84 @@ mod tests {
         ] {
             assert!(summary.contains(expected), "{summary}");
         }
+    }
+
+    #[test]
+    fn pe_identity_pins_an_imported_build_unless_forced_to_detect() {
+        let path = GameBuild::FM27_GAMEPASS_27_1;
+        let imported = GameBuild::FM27_STEAM_27_0_1;
+        for &pe in imported.recorded.pe_identities {
+            let (build, report) = attachment_build(path, Some(0x1234), Some(pe), false);
+            assert_eq!(build, imported);
+            assert_eq!(report.storefront, Storefront::Steam);
+            assert_eq!(report.status, DetectionStatus::Pinned);
+            assert_eq!(report.chosen, Some(imported.schema_name()));
+            assert_eq!(report.pe_identity, Some(pe));
+            assert!(report.pinned);
+
+            let (build, report) = attachment_build(path, Some(0x1234), Some(pe), true);
+            assert!(build.is_detected());
+            assert_eq!(report.storefront, Storefront::GamePass);
+            assert_eq!(report.status, DetectionStatus::AwaitingSave);
+            assert!(!report.pinned);
+
+            let (build, report) = attachment_build(GameBuild::FM26_STEAM, None, Some(pe), false);
+            assert_eq!(build.version(), GameVersion::Fm26);
+            assert!(!report.pinned);
+        }
+    }
+
+    #[test]
+    fn zero_and_unknown_pe_identities_do_not_pin() {
+        let path = GameBuild::FM27_STEAM_27_1;
+        let known = path.recorded.pe_identities[0];
+        for pe in [
+            PeIdentity {
+                timestamp: 0,
+                ..known
+            },
+            PeIdentity {
+                size_of_image: 0,
+                ..known
+            },
+            PeIdentity {
+                size_of_image: known.size_of_image + 0x1000,
+                ..known
+            },
+        ] {
+            let (build, report) = attachment_build(path, Some(0), Some(pe), false);
+            assert!(build.is_detected());
+            assert!(!report.pinned);
+        }
+    }
+
+    #[test]
+    fn pe_identity_parser_checks_header_signature_size_and_magic() {
+        let mut bytes = [0u8; 0x148];
+        bytes[..2].copy_from_slice(b"MZ");
+        bytes[0x3C..0x40].copy_from_slice(&0x40_u32.to_le_bytes());
+        bytes[0x40..0x44].copy_from_slice(b"PE\0\0");
+        bytes[0x48..0x4C].copy_from_slice(&0x6AE565AF_u32.to_le_bytes());
+        bytes[0x54..0x56].copy_from_slice(&0xF0_u16.to_le_bytes());
+        bytes[0x58..0x5A].copy_from_slice(&0x20B_u16.to_le_bytes());
+        bytes[0x90..0x94].copy_from_slice(&0x1821C000_u32.to_le_bytes());
+        assert_eq!(
+            parse_pe_identity(&bytes),
+            Some(PeIdentity {
+                timestamp: 0x6AE565AF,
+                size_of_image: 0x1821C000,
+            })
+        );
+        for boundary in [0, 0x3F, 0x42, 0x54, 0x90, 0x147] {
+            assert_eq!(parse_pe_identity(&bytes[..boundary]), None);
+        }
+        for offset in [0, 0x3F, 0x40, 0x58] {
+            let mut invalid = bytes;
+            invalid[offset] = 0xFF;
+            assert_eq!(parse_pe_identity(&invalid), None, "offset {offset:#x}");
+        }
+        bytes[0x54] = 59;
+        assert_eq!(parse_pe_identity(&bytes), None);
     }
 
     #[test]
@@ -838,7 +957,7 @@ mod tests {
                 }
             },
         );
-        assert_eq!(result, Ok(GameBuild::FM27_STEAM));
+        assert_eq!(result, Ok(GameBuild::FM27_STEAM_27_1));
         assert!(
             report.contains("Unity") && report.contains("6000.3.18f1"),
             "{report}"
@@ -1012,8 +1131,10 @@ mod tests {
         let long = dir.join("long.bin");
         std::fs::write(&short, vec![7u8; 65536]).unwrap();
         std::fs::write(&long, [vec![7u8; 65536], vec![9u8; 100]].concat()).unwrap();
-        let h = |p: &std::path::Path| hash_module_header(p.to_str().unwrap());
-        assert_eq!(h(&short), h(&long));
+        let h = |p: &std::path::Path| {
+            read_module_header(p.to_str().unwrap()).map(|bytes| hash_module_header(&bytes))
+        };
+        assert_eq!(h(&short).unwrap(), h(&long).unwrap());
         let missing = h(&dir.join("missing.bin")).unwrap_err();
         assert!(missing.contains("missing.bin"), "{missing}");
         std::fs::remove_dir_all(&dir).unwrap();

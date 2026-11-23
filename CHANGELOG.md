@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Import five FM27 Steam and Game Pass packages from Jackhamerp24's offsets and pin them by PE identity. Show a backup warning on builds not checked here.
+- Discover missing FM27 class addresses from RTTI and add imported FM27 field mappings.
+
 ## 0.5.0 (prerelease)
 
 FM24 Epic and FM27 Game Pass 27.1 become recorded builds. Other builds of FM24, FM26 and FM27 are validated at runtime instead of refused, and builds whose addresses moved can be opened read-only from a module scan.

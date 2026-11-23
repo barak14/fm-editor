@@ -1,7 +1,8 @@
 # Plan: runtime layout detection for unrecognised builds
 
-Status: Phase 1 implemented. Phase 2a (address scanning, read-only results) implemented;
-arrays verified by forced scans on FM24 and FM26 Steam, FM27 class detection unverified.
+Status: Phase 1 implemented. Phase 2a (address scanning, read-only results) implemented.
+Forced scans verified arrays on FM24 and FM26 Steam and the prior FM27 census on
+Game Pass 27.1. FM27 RTTI-based detection has not been checked live.
 Phase 2b (acceptance warning, editing of scanned builds, on-disk cache) not started.
 Written 2026-11-13, revised 2026-11-20.
 
@@ -288,20 +289,33 @@ failing step.
    samples is the humans array. Derive staff/clubs/stadium from a recorded
    build's relative offsets within the cluster and score each with its own
    checks; if one fails, scan for that array alone.
-2. **Class identifiers (vtables).** Count vtables (first qword, pointing into
-   the module) across each array:
-   - player-coach: the class in the humans array whose identity fields decode
-     only at `player_person_offset + player_coach_shift`;
-   - human manager: the class in the staff array whose identity decodes only
-     with `human_manager_shift` applied;
-   - full finance: among club finance objects, the class whose budget fields
-     decode as plausible money values (FM27: ~900 clubs; the small class
-     shares the same base layout). On Steam and Game Pass the small class
-     vtable sits 0x4D0 below the full one; a cross-check, not the rule.
-   Only classes whose RVA is non-zero in the release's recorded builds are
-   searched (FM24 and FM26 have none). A class not found gets RVA 0 and its
-   dependent fields (finance sub-record, player-coach handling) are dropped
-   rather than read with the wrong shape.
+2. **Class identifiers (RTTI first, census fallback).** Read x64 MSVC RTTI
+   from non-executable initialized-data PE sections in the attached module,
+   using section flags rather than names. Cache the class index per attachment
+   and log its build time and class count. The installed FM26 and FM27
+   `game_plugin.dll` files contain RTTI. FM24's `fm.exe` is packed on disk, but
+   its unpacked in-memory image has RTTI too (live check 2026-11-23, FM24 Steam
+   24.4.2+2081827 at the main menu: 11,819 type names in the image, including
+   `db::CLUB_FINANCE`, `db::ACTUAL_PLAYER_AND_NON_PLAYER` and
+   `db::HUMAN_NON_PLAYER`). FM24 still uses no class RVAs, and its packed
+   sections exceed the 64 MiB per-section read cap, so using RTTI there needs
+   a different section selection.
+   - Player-coach and full finance use the offset-zero vftables of
+     `db::ACTUAL_PLAYER_AND_NON_PLAYER` and `db::CLUB_FINANCE`, respectively.
+   - A `db::HUMAN_NON_PLAYER` manager starts with a **vbptr**, not a vftable
+     pointer. Match secondary vftables at their RTTI-provided subobject
+     offsets in staff entries. The stored class identifier is the RVA of the
+     vbtable pointed to by the first qword, and must agree across matches.
+   - If a class is absent from the index, fall back to a census of first
+     qwords pointing into the module. Player-coach and human-manager
+     candidates must decode with their corresponding identity shifts; full
+     finance candidates must decode plausible budget fields. If both methods
+     find different RVAs, log the disagreement and use RTTI. If RTTI finds
+     the class but cannot resolve a unique identifier, leave the RVA at 0.
+   Only classes used by a release's recorded builds are searched (FM27 only).
+   On a recorded or matched FM27 build, after the save passes the gate,
+   RTTI can also fill a zero class RVA for that save. Recheck decoding before
+   keeping the fill, report it, and never overwrite a recorded nonzero RVA.
 3. **Current date (best effort).** The date only feeds displayed ages and
    never affects the outcome. Scan for statics holding a plausible
    DateDayYear (as `scan_arrays --date` does) in one pass. Use the candidate

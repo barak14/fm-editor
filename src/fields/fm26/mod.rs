@@ -103,4 +103,6 @@ pub static FM26_STEAM: RecordedBuild = RecordedBuild {
     // Project fingerprint of the first 64 KB of game_plugin.dll for the FM26
     // build verified against the 2026-10 patch. Other hashes require validation.
     fingerprint: 0x3039_4AFE_C086_E3DC,
+    pe_identities: &[],
+    checked_here: true,
 };

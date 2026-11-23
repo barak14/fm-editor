@@ -19,7 +19,7 @@ pub(crate) use stadium::FIELDS as STADIUM_FIELDS;
 pub(crate) use staff::FIELDS as STAFF_FIELDS;
 pub(crate) use staff::STAFF_SUB_RECORDS;
 
-use crate::fields::{ModuleAddresses, RecordedBuild, ReleaseLayout};
+use crate::fields::{ModuleAddresses, PeIdentity, RecordedBuild, ReleaseLayout};
 use crate::game_version::{GameVersion, Storefront};
 
 pub static FM27: ReleaseLayout = ReleaseLayout {
@@ -100,6 +100,8 @@ pub static FM27_STEAM: RecordedBuild = RecordedBuild {
 
     // Not calibrated: attach reports the running game_plugin.dll hash.
     fingerprint: 0,
+    pe_identities: &[],
+    checked_here: true,
 };
 
 /// FM27 schema, PC Game Pass build (Microsoft GDK, Xbox app install), Store
@@ -113,6 +115,11 @@ pub static FM27_GAMEPASS: RecordedBuild = RecordedBuild {
     schema_name: "FM27_GAMEPASS",
     // game_plugin.dll of Store package 0.9.2435.0 (2026-11-12).
     fingerprint: 0xAAD1_D2D3_AD51_8F23,
+    // Jackhamerp24/Football-Manager-27-Editor offsets/27.0.1+2494687-gamepass.json (80f2d27, 2026-11-23), not checked here.
+    pe_identities: &[PeIdentity {
+        timestamp: 0x6AE8CF77,
+        size_of_image: 0x17969000,
+    }],
     addresses: ModuleAddresses {
         // Current game date, same encoding as Steam: raw 0x07EA1AC2 (day 194,
         // Mon 13 Jul 2026) on a new save. Only date-shaped static with that value.
@@ -144,6 +151,11 @@ pub static FM27_GAMEPASS: RecordedBuild = RecordedBuild {
 pub static FM27_GAMEPASS_27_1: RecordedBuild = RecordedBuild {
     schema_name: "FM27_GAMEPASS_27_1",
     fingerprint: 0x136C_8A4D_64A3_35FD,
+    // Jackhamerp24/Football-Manager-27-Editor offsets/27.1.0+2505117-gamepass.json (80f2d27, 2026-11-23), not checked here.
+    pe_identities: &[PeIdentity {
+        timestamp: 0x6AF5C8C6,
+        size_of_image: 0x179AD000,
+    }],
     addresses: ModuleAddresses {
         // Raw 0x07EA1AC2 (day 194, 13 Jul 2026), the only 2026 date-shaped
         // static near the arrays; the module scan found 7 date-shaped words there.
@@ -164,6 +176,113 @@ pub static FM27_GAMEPASS_27_1: RecordedBuild = RecordedBuild {
         full_finance_vtable_rva: 0x4A707B8,
         player_coach_vtable_rva: 0x4C9ECB8,
         human_manager_vtable_rva: 0x4A471CC,
+    },
+    ..FM27_GAMEPASS
+};
+
+// Jackhamerp24/Football-Manager-27-Editor offsets/27.0.0+2493426-steam.json (80f2d27, 2026-11-23), not checked here.
+pub static FM27_STEAM_27_0_0_2493426: RecordedBuild = RecordedBuild {
+    schema_name: "FM27_STEAM_27_0_0_2493426",
+    // Fingerprint and HUMAN_NON_PLAYER vbtable from the installed DLL (2026-11-23), not checked in game.
+    fingerprint: 0xCB99_521F_57D4_2B51,
+    pe_identities: &[PeIdentity {
+        timestamp: 0x6AE565AF,
+        size_of_image: 0x1821C000,
+    }],
+    checked_here: false,
+    addresses: ModuleAddresses {
+        rva_humans_data: 0x57057D0,
+        rva_humans_end: 0x57057D8,
+        rva_staff_data: 0x5705818,
+        rva_staff_end: 0x5705820,
+        rva_clubs_data: 0x5705988,
+        rva_clubs_end: 0x5705990,
+        rva_stadium_base: 0x5705750,
+        rva_current_date: 0,
+        full_finance_vtable_rva: 0x4CF2CC8,
+        player_coach_vtable_rva: 0x4F77A08,
+        human_manager_vtable_rva: 0x4CC286C,
+    },
+    ..FM27_STEAM
+};
+
+// Jackhamerp24/Football-Manager-27-Editor offsets/27.0.1+2494687-steam.json and offsets/27.0.1+2503222-steam.json (80f2d27, 2026-11-23), not checked here.
+pub static FM27_STEAM_27_0_1: RecordedBuild = RecordedBuild {
+    schema_name: "FM27_STEAM_27_0_1",
+    fingerprint: 0,
+    pe_identities: &[
+        PeIdentity {
+            timestamp: 0x6AE8B5A4,
+            size_of_image: 0x17CB9000,
+        },
+        PeIdentity {
+            timestamp: 0x6AF38E5C,
+            size_of_image: 0x185FA000,
+        },
+    ],
+    checked_here: false,
+    addresses: ModuleAddresses {
+        rva_humans_data: 0x5820810,
+        rva_humans_end: 0x5820818,
+        rva_staff_data: 0x5820858,
+        rva_staff_end: 0x5820860,
+        rva_clubs_data: 0x58209C8,
+        rva_clubs_end: 0x58209D0,
+        rva_stadium_base: 0x5820790,
+        rva_current_date: 0,
+        full_finance_vtable_rva: 0x4DF4E38,
+        player_coach_vtable_rva: 0x508FCB8,
+        human_manager_vtable_rva: 0,
+    },
+    ..FM27_STEAM
+};
+
+// Jackhamerp24/Football-Manager-27-Editor offsets/27.1.0+2505117-steam.json (80f2d27, 2026-11-23), not checked here.
+pub static FM27_STEAM_27_1: RecordedBuild = RecordedBuild {
+    schema_name: "FM27_STEAM_27_1",
+    fingerprint: 0,
+    pe_identities: &[PeIdentity {
+        timestamp: 0x6AF5C68F,
+        size_of_image: 0x18878000,
+    }],
+    checked_here: false,
+    addresses: ModuleAddresses {
+        rva_humans_data: 0x587B8B8,
+        rva_humans_end: 0x587B8C0,
+        rva_staff_data: 0x587B900,
+        rva_staff_end: 0x587B908,
+        rva_clubs_data: 0x587BA70,
+        rva_clubs_end: 0x587BA78,
+        rva_stadium_base: 0x587B838,
+        rva_current_date: 0,
+        full_finance_vtable_rva: 0x4E52C38,
+        player_coach_vtable_rva: 0x50EAC28,
+        human_manager_vtable_rva: 0,
+    },
+    ..FM27_STEAM
+};
+
+// Jackhamerp24/Football-Manager-27-Editor offsets/27.0.0+2493426-gamepass.json (80f2d27, 2026-11-23), not checked here.
+pub static FM27_GAMEPASS_27_0_0: RecordedBuild = RecordedBuild {
+    schema_name: "FM27_GAMEPASS_27_0_0",
+    fingerprint: 0,
+    pe_identities: &[PeIdentity {
+        timestamp: 0x6AE563A1,
+        size_of_image: 0x175DA000,
+    }],
+    checked_here: false,
+    addresses: ModuleAddresses {
+        rva_humans_data: 0x5683DC0,
+        rva_humans_end: 0x5683DC8,
+        rva_staff_data: 0x5683E08,
+        rva_staff_end: 0x5683E10,
+        rva_clubs_data: 0x5683F78,
+        rva_clubs_end: 0x5683F80,
+        rva_stadium_base: 0x5683D40,
+        rva_current_date: 0x56257C8,
+        full_finance_vtable_rva: 0x4C9FD78,
+        player_coach_vtable_rva: 0x4F20D28,
+        human_manager_vtable_rva: 0,
     },
     ..FM27_GAMEPASS
 };

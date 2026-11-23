@@ -19,9 +19,8 @@ for an all-Non-Contract club policy; direct player-contract conversion remains
 disabled. Read the [evidence, separate-copy requirements and trial instructions](docs/fm27/contract-type-investigation.md#guarded-club-policy-workaround-implemented-live-trial-outstanding)
 before using it. Offer controls, Undo, policy persistence and an accepted Part Time deal have
 been tested; accepted-contract reload and salary-payment checks remain.
-The trial and contract-inspection diagnostics require a pinned recorded FM27 Steam
-build; they stay unavailable on detected builds, including FM27 Steam until its
-module fingerprint is recorded.
+The trial and contract-inspection diagnostics require the specific witnessed
+Windows FM27 Steam fingerprint; imported builds do not enable them.
 
 - **Players** — attributes, positions, CA/PA, personality, reputation, date of birth, traits;
   club, nationality, place of birth, international caps; contract wage, expiry, squad status,
@@ -71,6 +70,7 @@ Live name/UID filtering, ability and age filters, and sortable results.
 | FM26 | Main target (2026-10 patch) | [docs/fm26/memory-layout.md](docs/fm26/memory-layout.md) |
 | FM27 | In progress — most fields verified against a live save | [docs/fm27/memory-layout.md](docs/fm27/memory-layout.md) |
 | FM27 (Game Pass) | Bring-up on Store packages 0.9.2435.0 (27.0.1) and 0.9.2524.0 (27.1) — players, staff, clubs, date and manager read correctly; one edit/Undo checked in game on 0.9.2435.0 | [Game Pass build](docs/fm27/memory-layout.md#game-pass-build) |
+| FM27 (imported) | Steam 27.0.0+2493426, 27.0.1+2494687, 27.0.1+2503222 and 27.1.0+2505117; Game Pass 27.0.0+2493426 — from another editor's offsets, not checked here | [Imported builds](docs/fm27/memory-layout.md#imported-builds) |
 
 The release is detected from the game module's Windows PE product metadata:
 `fm.exe` for FM24, `game_plugin.dll` for FM26/FM27 (their exe reports the Unity
@@ -80,8 +80,9 @@ names. Explicit unsupported/conflicting FM product names are rejected rather
 than overridden by the directory. This works on Windows and Linux/Proton.
 
 Storefront detection remains separate, using install-location hints and the
-Game Pass manifest. A module fingerprint matching a recorded build of the same
-release pins that build and corrects the storefront hint, even for a moved install.
+Game Pass manifest. A matching module fingerprint or PE timestamp and image size
+pins a recorded build of the same release and corrects the storefront hint, even
+for a moved install.
 Unrecognised locations retain the historical Steam default. FM24 Epic uses Steam's
 layout and addresses; only a few of its fields have Epic witnesses, and the
 maintainer cannot test it. FM27 Game Pass has its own recorded module addresses;
@@ -99,10 +100,10 @@ log entry contains the found addresses, which can be recorded once they are
 confirmed in game. Unknown releases are refused. Matching or scanned addresses do
 not establish that every field has been independently verified on that build.
 
-Matched, unpinned builds show an **amber version label** with a backup warning;
-while waiting for validation it adds **(checking layout…)**. FM27 Steam currently
-has no recorded fingerprint, so it follows this path and stays amber even after
-passing. **Back up your save before editing.** The gate runs again after every
+Matched, unpinned builds and pinned builds whose mappings haven't been checked
+here show an **amber version label** with a backup warning. While waiting for
+validation, the label adds **(checking layout…)**. **Back up your save before
+editing.** The gate runs again after every
 save load/reload; pinned builds also run it, but a failure warns instead of blocking.
 If a save is loaded but the editor keeps waiting and reports **No save found —
 this build may be unsupported**, the build's addresses have probably moved;

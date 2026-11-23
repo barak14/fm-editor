@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use crate::bridge::entity_load::{load_club_view, read_club_field_u32, resolve_club_sub_ptr};
 use crate::fields::Encoding;
-use crate::game_version::GameBuild;
+use crate::game_version::{GameBuild, GameVersion};
 use crate::player::{self, is_valid_ptr};
 use crate::staff;
 
@@ -371,6 +371,14 @@ fn stable_candidate_counts(
 
 /// Validate the current save, trying stable fallback candidates for unpinned builds.
 pub fn validate_save(fm: &mut FmProcess) -> Result<Option<String>, String> {
+    if fm.build.version() == GameVersion::Fm27 && !fm.build.is_scanned() {
+        let mut recorded = fm.build.recorded.addresses;
+        for class in layout_detect::Class::ALL {
+            if *class.address(&mut recorded) == 0 {
+                *class.address(&mut fm.build.addresses) = 0;
+            }
+        }
+    }
     let report = run_gate(fm);
     let passed = report.passed();
     let summary = report.summary();
@@ -412,6 +420,60 @@ pub fn validate_save(fm: &mut FmProcess) -> Result<Option<String>, String> {
     fm.detection.chosen = Some(build_label(fm.build));
     fm.detection.status = DetectionStatus::Validated;
     Ok(None)
+}
+
+pub(crate) fn supplement_recorded_classes(fm: &mut FmProcess) -> bool {
+    use layout_detect::Class;
+
+    if fm.build.version() != GameVersion::Fm27
+        || fm.build.is_scanned()
+        || !fm.detection.gate.as_ref().is_some_and(GateReport::passed)
+    {
+        return false;
+    }
+
+    let bases = GameBuild::candidates(fm.build.version(), fm.build.storefront());
+    let mut extra_notes = Vec::new();
+    for class in Class::ALL.into_iter().filter(|class| class.used_by(&bases)) {
+        let original = fm.addresses();
+        if *class.address(&mut fm.build.addresses) != 0 {
+            continue;
+        }
+        let Some(Ok(rva)) = class.from_rtti(fm) else {
+            continue;
+        };
+        *class.address(&mut fm.build.addresses) = rva;
+        let report = run_gate(fm);
+        let label = class.label();
+        let note = if let Some(failure) = report.first_failure() {
+            fm.build.addresses = original;
+            format!(
+                "{label}: MSVC RTTI candidate gp+0x{rva:X} rejected by {} check",
+                failure.name
+            )
+        } else {
+            fm.detection.gate = Some(report);
+            format!("{label}: filled missing RVA gp+0x{rva:X} from MSVC RTTI")
+        };
+        let check = match class {
+            Class::PlayerCoach => "players",
+            Class::HumanManager => "staff",
+            Class::Finance => "club finance",
+        };
+        extra_notes.push((check, note));
+    }
+    if let Some(report) = &mut fm.detection.gate {
+        for (name, note) in &extra_notes {
+            if let Some(check) = report.checks.iter_mut().find(|check| check.name == *name) {
+                let destination = check.note.get_or_insert_with(String::new);
+                if !destination.is_empty() {
+                    destination.push_str("; ");
+                }
+                destination.push_str(note);
+            }
+        }
+    }
+    !extra_notes.is_empty()
 }
 
 /// Validate the attached process's current build (fm.build / fm.addresses()).

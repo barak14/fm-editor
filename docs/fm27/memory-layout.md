@@ -848,7 +848,7 @@ Compare against a Steam build at the same patch where possible.
 - Formation IDs 0, 65 and 68 and the six formation bytes FM does not show.
 - Favoured-club tie reason codes 0 and 4.
 - Stadium array root (`rva_stadium_base`) and stride.
-- Player condition, sharpness and fatigue. Leads only (2026-11-01, Spurs,
+- Player condition and sharpness are [source-mapped](#fields-imported-from-jackhamerp24), not confirmed against FM's UI. Local observations (2026-11-01, Spurs,
   13 Jul): u16 +0x25C reads 10000 for every fit Spurs player and 9405-9479
   for the five injured ones (Kudus, van de Ven, Kulusevski, Xavi Simons,
   Odobert). u16 +0x258 reads 3500 for the same five and about 5000-6400 for
@@ -969,3 +969,148 @@ Merino 23 and Rice 41 match their Arsenal shirts. Spurs' balance (finance+0x0C)
 reads 173,975,262 and FM shows £173,975,262. Facility labels: Academy Coaching
 16 "Good" (Spurs) and 17 "Excellent" (Arsenal); Youth Recruitment 18 "Excellent"
 (Chelsea).
+
+## Fields imported from Jackhamerp24
+
+Source **W**: [Jackhamerp24/Football-Manager-27-Editor `offsets/layouts/windows.json`](https://github.com/Jackhamerp24/Football-Manager-27-Editor/blob/80f2d27/offsets/layouts/windows.json), commit `80f2d27`, fetched 2026-11-23; **not checked here**. Checked record paths, types, scales and masks against all eight Windows profiles in the same `offsets/` tree:
+
+- Steam: `27.0.0+2486695`, `27.0.0+2493426`, `27.0.1+2494687`, `27.0.1+2503222`, `27.1.0+2505117`.
+- Game Pass: `27.0.0+2493426`, `27.0.1+2494687`, `27.1.0+2505117`.
+
+Every field in the additions table has the same placement and representation in those profiles. Module RVAs and class addresses are build-specific, not record fields. `contract` below is player `+0x330` → contract; `info` is club `+0x100` → info; `finance` is club `+0x150` → full-size finance. Compact finance is not imported. `DateDayYear` is a packed two-word date; where the low word contains flags, read only its low nine bits as day-of-year and preserve the others on any future write. Nonnegative signed source fields use the equivalent existing unsigned encoding only within the source's documented valid domain.
+
+| Key | Offset | Source type | Encoding | Source |
+| --- | --- | --- | --- | --- |
+| `p_sharpness` | `+0x258` | i16 | `RawCapped(10000)`, 100 per percentage point | W |
+| `p_fitness` | `+0x25C` | i16 | `RawCapped(10000)`, 100 per percentage point | W |
+| `p_body_type` | `+0x230` | u8 | `Direct`, body type code | W |
+| `p_nationality_info` | `+0x26E` | u8 | `Direct`, nationality status code | W |
+| `p_contract_loyalty_bonus` | `contract+0x38` | i32 | `RawU32`, nonnegative £/week | W |
+| `p_future_playing_time` | `contract+0xB8` | u8 | `Direct`, playing time code | W |
+| `p_future_playing_time_year` | `contract+0xBC` | i16 | `Raw`, use only positive valid years | W |
+| `s_coaching_player` | `+0x2A` | u8 | `Encoded`, x5 | W |
+| `s_judge_team_data` | `+0x3D` | u8 | `Encoded`, x5 | W |
+| `s_present_data` | `+0x3E` | u8 | `Encoded`, x5 | W |
+| `s_flamboyancy` | `+0x24` | u8 | `Direct` | W |
+| `s_free_roles` | `+0x15` | u8 | `Direct` | W |
+| `s_marking` | `+0x17` | u8 | `Direct` | W |
+| `s_offside` | `+0x18` | u8 | `Direct` | W |
+| `s_sitting_back` | `+0x20` | u8 | `Direct` | W |
+| `s_use_of_playmaker` | `+0x21` | u8 | `Direct` | W |
+| `s_use_of_subs` | `+0x22` | u8 | `Direct` | W |
+| `c_ownership_type` | `info+0x129` | u8 | `Direct`, ownership code | W |
+| `c_chairperson_title` | `info+0x12A` | u8 | `Direct`, title code | W |
+| `c_chairman_status` | `info+0xDE` | i16 | `Raw`, nonnegative 0–10000; not owner type/status | W |
+| `c_morale` | `info+0x121` | u8 | `Direct` | W |
+| `c_youth_importance` | `info+0x126` | u8 | `Direct` | W |
+| `c_transfer_revenue_pct` | `finance+0x7D0` | i32 | `RawU32`, 0–100% | W |
+| `c_rich_benefactor` | `finance+0x34` | u8 | `Direct`, benefactor code | W |
+| `c_stadium_rental` | `finance+0x7F8` | i32 | `RawU32`, nonnegative £/year | W |
+| `c_max_wage` | `finance+0x80C` | i32 | `RawU32`, nonnegative | W |
+| `c_embargo_start` | `finance+0x24` | date | `DateDayYear` | W |
+| `c_embargo_end` | `finance+0x28` | date | `DateDayYear` | W |
+| `c_embargo_appeal` | `finance+0x2C` | date | `DateDayYear` | W |
+| `c_embargo_age` | `finance+0x30` | u8 | `Direct` | W |
+| `c_embargo_reason` | `finance+0x33` | u8 | `Direct`, reason code | W |
+| `st_environment` | `+0xB0` | u8 | `Direct`, environment code | W |
+| `st_pitch_last_relaid` | `+0x28` | date | `DateDayYear` | W |
+| `st_pitch_relay_required` | `+0x2C` | date | `DateDayYear` | W |
+| `st_build_date` | `+0x30` | date | `DateDayYear` | W |
+| `st_rebuild_date` | `+0x34` | date | `DateDayYear` | W |
+| `st_latitude` | `+0x70` | f32 | `F32Raw` | W |
+| `st_longitude` | `+0x74` | f32 | `F32Raw` | W |
+| `st_seat_colour` | `+0x78` | u32 | `RawU32`, `0xAARRGGBB` | W |
+| `st_min_pitch_length` | `+0xA0` | i16 | `Raw`, decimetres (metres × 10) | W |
+| `st_min_pitch_width` | `+0xA2` | i16 | `Raw`, decimetres (metres × 10) | W |
+| `st_max_pitch_length` | `+0xA4` | i16 | `Raw`, decimetres (metres × 10) | W |
+| `st_max_pitch_width` | `+0xA6` | i16 | `Raw`, decimetres (metres × 10) | W |
+| `st_pitch_condition` | `+0xA8` | i16 | `RawCapped(200)` | W |
+| `st_decay` | `+0xAA` | u8 | `Direct` | W |
+| `st_pitch_deterioration` | `+0xAC` | u8 | `Direct` | W |
+| `st_pitch_type` | `+0xAD` | u8 | `Direct`, pitch type code | W |
+| `st_pitch_recovery` | `+0xAE` | u8 | `Direct` | W |
+| `st_national_team_use` | `+0xB1` | u8 | `Direct`, usage code | W |
+| `st_national_u21_use` | `+0xB2` | u8 | `Direct`, usage code | W |
+| `st_national_u19_use` | `+0xB3` | u8 | `Direct`, usage code | W |
+| `st_owner_type` | `+0xB4` | u8 | `Direct`, owner type code | W |
+
+The existing staff and human-manager attribute panels pick up the standard staff fields, and the read-only Stadium tab can show the environment code. Other additions are schema-only: no condition, new contract, club finance or pitch editing controls were wired.
+
+### Corroborated existing offsets
+
+| Record | Count | Matches |
+| --- | ---: | --- |
+| Player | 98 | 54 scaled attributes `+0x15F..+0x194`, 14 positions (`+0x150` and `+0x152..+0x15E`; source does not map sweeper), eight personality bytes `+0x2F8..+0x2FF`, names/UID/DOB `+0x2C8/+0x2D8/+0x2E0/+0x2E8/+0x294/+0x310`, height `+0x22E`, CA/PA `+0x264/+0x266`, three reputations `+0x25E/+0x260/+0x262`, morale `+0x26C`, caps/goals `+0x3BC/+0x3BE/+0x3C0/+0x3C1`, four appearance bytes `+0x315..+0x318`, joined club date `+0x3A4`. |
+| Staff | 51 | 38 existing standard ratings (21 scaled, 17 direct); CA/PA and reputations `+0xD4..+0xDC`. In staff coordinates, ID `+0x10C`, names `+0x140/+0x150/+0x158/+0x160`, nation pointer `+0x168`, personality block `+0x170`, DOB `+0x188`; the source expresses these relative to the person block at `+0x100` for ordinary staff. |
+| Club/team | 29 | Club ID `+0x0C`, gender `+0xB9`, full/short names `+0xC0/+0xC8`, senior-team reputation `+0xA8`; info year `+0xD8`, season tickets `+0xC0`, social followers `+0xF8`, training `+0x120`, youth facilities/coaching/recruitment `+0x12B..+0x12D`, first four supporter fractions `+0x106..+0x109` and six supporter ratings `+0x114..+0x119`; attendance `club+0xB0 → +0x68/+0x6C/+0x70`; full finance balance `+0x0C`, transfer budget remaining `+0x7C4`, wage budget `+0x808`, used `+0x814`. |
+| Player contract | 6 | Wage `+0x20`, expiry `+0x48`, playing time `+0x54`, squad number `+0x5D`, status flags `+0x57` (loan bit `0x02`, in the profiles that specify it), read-only type byte `+0xC3` (scoped Steam `27.0.0+2486695` inspection). Player contract and contract team/club paths also agree. |
+| Stadium | 10 | UID `+0x0C`, name `+0x40`, owner `+0x90`, five capacities `+0x7C..+0x8C`, length/width `+0x98/+0x9A` in decimetres. All remain read-only in this UI. |
+
+Agreement here is on offsets, not a new write verification. For example, source contract number is signed with `-1` unset (the existing widget uses the equivalent `0xFF` sentinel); club balance is signed i32 even though the schema's legacy `Raw` annotation and the panel's four-byte read do not make that signedness explicit. Steam `27.0.0+2486695` also matches the existing policy club class RVA `0x4CDA1F8`, contract class RVA `0x4B00AE8`, and contract owner pointer at `+0x08`; no policy or type editor changes are implied.
+
+### Conflicts (existing mappings kept)
+
+| Field | Our schema | Source |
+| --- | --- | --- |
+| Asking price | Player `+0x238`; `+0x234` is the separately witnessed market value | `+0x234` |
+| Senior debut | Player `+0x3A8` | Calls that slot **Arrived in Country** |
+| Contract start | Player `+0x250` | Contract `+0x44` |
+| Contract signed | Contract `+0x44` | Reads contract `+0x4C` as signed (`joinedDate` in the JSON) |
+| Injury type name | Injury type object `+0x20` | Injury type object `+0x18` |
+| Club nation | `+0xE8` (the club's own nation) | `+0xD8` (the league's nation in our samples) |
+| Average match ticket price | Finance `+0x864` | Finance `+0x10` |
+| Casual supporters | Info `+0x10A` | Info `+0x10B` |
+| Other/corporate supporters | Info `+0x10B` called Other | Calls `+0x10A` Corporate |
+| Corporate facilities | Finance `+0x8A9` | `+0x8A9` before 27.1.0; `+0x8AD` on 27.1.0 Steam and Game Pass. Kept the witnessed mapping, not validated on 27.1.0. |
+
+### Skipped leads
+
+| Lead | Source offsets and reason not imported |
+| --- | --- |
+| Signed player condition and happiness | `p_fatigue` `+0x25A` i16 can be negative. Contract happiness `+0x5A` and playing-time happiness `+0x5C` are signed i8. No signed encoding. |
+| Season transfer budget | Finance `+0x7C8` signed i32; source supports negatives. No signed encoding. `+0x7C4` already covers remaining budget. |
+| Wage bill and former entries | Finance wage bill `+0x810`, spend this season `+0x4CC`, month transfer spend `+0x29C`, player sale totals `+0x32C/+0x55C`; derived/history counters, no read-only field flag. Wage used `+0x814` already has a read-only UI row. |
+| Player/contract flags | Player non-EU in Italy `+0x278/0x08`, retirement after current spell `+0x2A1/0x80`, retirement planned `+0x2A0/0x01`; contract rolling `+0x2B/0x08`. No bit-mask encoding. |
+| Partial player/contract fields | Player person index `+0x290` not in 27.0.0; previous playing time `contract+0x55` not in 27.0.0; no new generic contract type field. |
+| Club status and colours | Status `+0x16A` not in 27.0.0 source profiles. Foreground/background `+0xB0 → +0xA0/+0xA8` (u32 colours) not in Steam `27.0.0+2486695`; would need the `stadium` sub-record grown from `0x98` to `0xAC` only when the path is validated. |
+| Staff human-manager ratings | Human-only, unshifted `+0x42D..+0x433`: financial control, squad discipline, club/player loyalty, tactical consistency, domestic-player bias, hands-on approach, media handling. Raw u8, 1–100; regular staff buffers are `0x240` bytes. The manager read already spans these offsets (`0x240 + 0x340`) but truncates; retain these bytes only for a verified manager, not by increasing the generic staff read size. |
+| Staff extras and allowances | Embedded person `+0x134/+0x136` caps/goals only specified from 27.0.1 onward, licence/roles `+0x13C/+0xD0` already mapped. On 27.1.0, team manager `+0x80`, manager MSCC `+0x388`, extra staffing `mscc+0x116C`. |
+| Stadium international dimensions | `+0x9C/+0x9E`, present as `intLength`/`intWidth` throughout (typed fields omitted in some profiles); signed decimetres with a nonpositive unset sentinel (`0xFFFF` observed), not an unsigned length. |
+| Stadium flags and stands | `+0xB6`: covered `0x01`, undersoil heating `0x02`, extinct `0x04`, retractable roof `0x40`, not for continental finals `0x80`; `+0xAB`: training ground `0x04`, digital boards `0x40`. Stand data pointer `+0x20`, eight `0x08`-byte records, flags `+0x07`. No bit-mask encoding or new list support. |
+| Stadium list locator | Windows `stadium.listOffset` is not uniform: `0x560` (Steam 27.0.0 and Game Pass 27.1.0), `0x640` (Steam 27.0.1), `0x580` (Steam 27.1.0), `0x540` (Game Pass 27.0.0), `0x780` (Game Pass 27.0.1). This is the source's list-container path, not an offset in a stadium record. |
+| Player medical, relations and preferences | Medical `+0xF8` (injuries stride `0x38`, bans vector `+0x18`, stride `0x20`); relations `+0x300`, stride `0x10`; preferred moves `+0x348`; languages `+0x378`, stride `0x10`; tactics holder `+0x100`, role vector `+0xC0`. Existing code here is unchanged. |
+| Promises/career plans and cohesion | Player promise holder `+0x360`, stride `0x60`; career plan `+0x350`, stride `0x10`; cohesion vector `+0x18`, stride `0x08` in its container. |
+| Contract lists and offers | Unhappiness pointer `+0x30`, stride `0x1C`; clauses `+0x68` already read here; pending holder at player `+0x328`, pending clauses `+0x60`; current loan holder player `+0x338`. |
+| Team and staff lists | Team squad `+0x38`, captain `+0x88`, vice captain `+0x90`, classification `+0x28`, age limit `+0x2C`; club team list `+0x18`, details `+0xA0`, medical/coaching/scouting staff `+0x60/+0x78/+0x90`. No new pointers or derived classifications imported. |
+| Club finance lists | Sponsors club `+0x130` (stride `0x18`), debts club `+0x100 → +0x50` (stride `0x1C`), statements finance `+0x278` (five periods, stride `0x118`, income `+0x9C`). |
+| Club relationship and planning lists | Relationships club `+0x48`, stride `0x10`; vision `+0xC8 → +0x78`; affiliations `+0x118`, stride `0x38`; regional divisions `+0x138`, stride `0x0C`; transfer clauses `+0xB0` (source lookup is class-sensitive). |
+| Nations, competitions, awards, cities | Nation from player `+0x2F0`, nation UID/name `+0x0C/+0x18`; competition from team `+0x50`, UID/name/reputation `+0x0C/+0x40/+0x188`; award UID/name/reputation `+0x0C/+0x30/+0x80`; city from player `+0x308`, UID/name/nation `+0x0C/+0x18/+0x20`. No independent entity model yet. |
+| Patches, hooks and unlockables | Outside this record import, including manager unlockable bits at manager `+0x3FC` on 27.1.0. |
+
+## Imported builds
+
+These Windows layouts come from [Jackhamerp24/Football-Manager-27-Editor](https://github.com/Jackhamerp24/Football-Manager-27-Editor/tree/80f2d27/offsets), commit `80f2d27`, fetched 2026-11-23. The imported addresses have not been checked in a live save here.
+
+| Build | Source profile | Source date | PE timestamp / SizeOfImage | Current date RVA | Human manager |
+|-------|----------------|-------------|-----------------------------|------------------|---------------|
+| Steam 27.0.0+2493426 | `offsets/27.0.0+2493426-steam.json` | 2026-11-23 | `0x6AE565AF` / `0x1821C000` | Unknown | `0x4CC286C` from the installed DLL |
+| Steam 27.0.1+2494687 | `offsets/27.0.1+2494687-steam.json` | 2026-11-23 | `0x6AE8B5A4` / `0x17CB9000` | Unknown | Runtime RTTI lookup |
+| Steam 27.0.1+2503222 | `offsets/27.0.1+2503222-steam.json` | 2026-11-23 | `0x6AF38E5C` / `0x185FA000` | Unknown | Runtime RTTI lookup |
+| Steam 27.1.0+2505117 | `offsets/27.1.0+2505117-steam.json` | 2026-11-23 | `0x6AF5C68F` / `0x18878000` | Unknown | Runtime RTTI lookup |
+| Game Pass 27.0.0+2493426 | `offsets/27.0.0+2493426-gamepass.json` | 2026-11-23 | `0x6AE563A1` / `0x175DA000` | `0x56257C8` (packed `DateDayYear`) | Runtime RTTI lookup |
+
+The two Steam 27.0.1 packages share one address set. Staff, clubs and stadium
+RVAs are derived from the player-data RVA using the deltas in existing FM27
+schemas: `+0x48`, `+0x1B8` and `-0x80`, respectively. Each player, staff and
+club vector's end pointer is 8 bytes after its data pointer. The source also
+supplies the full-finance and player-coach class RVAs. The already-recorded
+Game Pass 27.0.1 and 27.1 builds also gain PE identities from their profiles.
+
+The installed Steam 27.0.0+2493426 DLL matches the profile's PE identity and
+has module-header fingerprint `0xCB99521F57D42B51`. Its `HUMAN_NON_PLAYER`
+object starts with a virtual-base table pointer, not a virtual function table
+pointer. The table at RVA `0x4CC286C` holds signed 32-bit entries `[0, 0x440,
+0x468]`, and MSVC RTTI identifies secondary vftables at RVAs `0x4CC28D8`
+and `0x4CC2888` with matching subobject offsets `0x440` and `0x468`. The
+recorded Steam 27.0.0+2486695 vbtable is `0x4CC086C`, a build delta of `0x2000`.
+The manager's person-block shift remains `0x340` (`0x440 - 0x100`).

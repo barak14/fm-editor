@@ -97,6 +97,8 @@ pub static FM24_STEAM: RecordedBuild = RecordedBuild {
     // FNV-1a-style hash (see `process::hash_dll_header`) of the first 64 KB
     // of fm.exe for the FM24 build this schema was verified against.
     fingerprint: 0xFB39_952A_2028_7907,
+    pe_identities: &[],
+    checked_here: true,
 };
 
 /// FM24 schema, Epic Games Store build (Windows, 24.4.2+2081827).
@@ -109,5 +111,6 @@ pub static FM24_EPIC: RecordedBuild = RecordedBuild {
     storefront: Storefront::Epic,
     schema_name: "FM24_EPIC",
     fingerprint: 0x8FA1_13DB_9DCD_8883,
+    checked_here: false,
     ..FM24_STEAM
 };

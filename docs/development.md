@@ -242,16 +242,27 @@ recorded build, a forced scan must reproduce its recorded arrays, stadium and cl
 RVAs exactly, and the date must match or be 0. Checked 2026-11-20 on FM24 Steam
 (24.4.2) and FM26 Steam (26.3.2): arrays and stadium matched; date 0 on both
 (FM24 has several date-shaped statics in the window; FM26 has no recorded date).
-FM27 class detection (player-coach, human-manager, full finance) ran live on
-2026-11-20 on Game Pass 27.1 (package 0.9.2524.0) before it was recorded; after
-recording it, a forced scan reproduced its arrays, stadium and class RVAs, date
-0 (7 date-shaped candidates in the window). FM27 Steam has not been scanned.
+FM27 class scanning uses the attached module's MSVC RTTI first, and falls
+back to the class census when RTTI lacks the class. Managers are matched by
+their secondary vftables in the staff array; the class RVA is the vbtable
+referenced by the first qword, not either secondary vftable. On a recorded or
+matched FM27 build, the editor can also use RTTI to fill missing class RVAs
+after the save passes the gate. The detection report records those fills;
+existing nonzero RVAs are never replaced. The installed FM26/FM27 DLLs have
+RTTI; FM24's executable is packed on disk, but its unpacked in-memory image has
+RTTI (checked live 2026-11-23). FM24 uses no class RVAs yet.
 
-Promoting a matched build to a recorded/pinned build requires independently known
-in-game values for at least two entities, the exact build/storefront and source/date
-of the evidence, plus the module fingerprint. Update the recorded build in
-`src/fields/<version>/` and its matching memory-layout document together. A passing
-gate, an inherited mapping or an unverified fingerprint lead is not that evidence.
+The prior census-based FM27 class scan ran live on 2026-11-20 on Game Pass
+27.1 (package 0.9.2524.0), reproducing its recorded arrays, stadium and
+class RVAs; it returned date 0 (7 date-shaped candidates). The RTTI-based path
+has not been checked live on FM27.
+
+A build can be recorded/pinned from any credible source: our own live research, a
+contributor, another editor's published offsets or a Cheat Engine table. Record the
+exact build/storefront, the source and date, and the module fingerprint or PE
+identity, and mark anything not confirmed against in-game values here as "not
+checked here". Update the recorded build in `src/fields/<version>/` and its matching
+memory-layout document together. The validation gate still runs on every save load.
 
 ## Read-only memory tools
 

@@ -13,6 +13,7 @@ use super::layout_validate::{
     GateCheck, PersonSample, PlayerSample, entry, indices, person_validity, range, score,
     score_players, score_staff,
 };
+use super::rtti;
 
 const CHUNK: u64 = 1024 * 1024;
 const PAGE: u64 = 4096;
@@ -66,7 +67,7 @@ fn module_address(fm: &FmProcess, rva: u64, size: usize) -> Result<u64, String> 
     )
 }
 
-fn module_read(fm: &FmProcess, rva: u64, size: usize) -> Result<Vec<u8>, String> {
+pub(crate) fn module_read(fm: &FmProcess, rva: u64, size: usize) -> Result<Vec<u8>, String> {
     fm.read_bytes(module_address(fm, rva, size)?, size)
 }
 
@@ -572,6 +573,137 @@ fn unique_rva(mut matches: impl Iterator<Item = u64>) -> Result<u64, &'static st
     Ok(first)
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum Class {
+    PlayerCoach,
+    HumanManager,
+    Finance,
+}
+
+impl Class {
+    pub(crate) const ALL: [Self; 3] = [Self::PlayerCoach, Self::HumanManager, Self::Finance];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::PlayerCoach => "player-coach class",
+            Self::HumanManager => "human-manager class",
+            Self::Finance => "finance class",
+        }
+    }
+
+    pub(crate) fn address(self, addresses: &mut ModuleAddresses) -> &mut u64 {
+        match self {
+            Self::PlayerCoach => &mut addresses.player_coach_vtable_rva,
+            Self::HumanManager => &mut addresses.human_manager_vtable_rva,
+            Self::Finance => &mut addresses.full_finance_vtable_rva,
+        }
+    }
+
+    pub(crate) fn used_by(self, bases: &[&RecordedBuild]) -> bool {
+        bases.iter().any(|base| {
+            let mut addresses = base.addresses;
+            *self.address(&mut addresses) != 0
+        })
+    }
+
+    pub(crate) fn from_rtti(self, fm: &FmProcess) -> Option<Result<u64, &'static str>> {
+        let tables = rtti::index(fm).class(match self {
+            Self::PlayerCoach => rtti::PLAYER_COACH,
+            Self::HumanManager => rtti::HUMAN_MANAGER,
+            Self::Finance => rtti::FINANCE,
+        })?;
+        if !matches!(self, Self::HumanManager) {
+            return Some(unique_rva(
+                tables.iter().filter(|v| v.offset == 0).map(|v| v.rva),
+            ));
+        }
+
+        let addresses = fm.addresses();
+        let data = addresses.rva_staff_data;
+        let end = addresses.rva_staff_end;
+        let entries = module_address(fm, data, 8)
+            .and_then(|_| module_address(fm, end, 8))
+            .and_then(|_| fm.read_ptr_array(data, end));
+        let Ok((data, _, count)) = entries else {
+            return Some(Err("staff array unreadable"));
+        };
+        if count > 2_000_000 {
+            return Some(Err("staff array count exceeds scan limit"));
+        }
+        let tables: Vec<_> = tables
+            .iter()
+            .filter(|table| table.offset != 0)
+            .filter_map(|table| {
+                let ptr = fm.gp_base.checked_add(table.rva)?;
+                (ptr < fm.gp_end && is_valid_ptr(ptr)).then_some((u64::from(table.offset), ptr))
+            })
+            .collect();
+        let result = human_manager_vbtable(
+            (0..count).filter_map(|index| entry(fm, data, index, 8).ok()),
+            &tables,
+            fm.gp_base..fm.gp_end,
+            |address| fm.read_u64(range(address, 8).ok()?).ok(),
+        );
+        Some(result)
+    }
+}
+
+fn human_manager_vbtable(
+    objects: impl Iterator<Item = u64>,
+    tables: &[(u64, u64)],
+    module: std::ops::Range<u64>,
+    mut read: impl FnMut(u64) -> Option<u64>,
+) -> Result<u64, &'static str> {
+    // A manager starts with a vbptr; its RTTI identifies the secondary vftables.
+    let mut found = None;
+    for object in objects {
+        if !tables.iter().any(|&(offset, expected)| {
+            object.checked_add(offset).and_then(&mut read) == Some(expected)
+        }) {
+            continue;
+        }
+        let vbtable = read(object)
+            .filter(|&ptr| ptr != module.start && is_valid_ptr(ptr) && module.contains(&ptr))
+            .ok_or("RTTI-matched manager has no valid module vbtable")?;
+        let rva = vbtable - module.start;
+        if found.is_some_and(|previous| rva != previous) {
+            return Err("multiple qualifying RVAs");
+        }
+        found = Some(rva);
+    }
+    found.ok_or("no qualifying candidate")
+}
+
+fn prefer_rtti(
+    class: Class,
+    rtti: Option<Result<u64, &'static str>>,
+    census: Result<u64, &'static str>,
+    notes: &mut Vec<String>,
+) -> Result<u64, &'static str> {
+    let label = class.label();
+    match rtti {
+        None => census,
+        Some(Ok(rva)) => {
+            if let Ok(other) = census
+                && other != rva
+            {
+                notes.push(format!(
+                    "{label}: MSVC RTTI gp+0x{rva:X} differs from census gp+0x{other:X}; using RTTI"
+                ));
+            } else {
+                notes.push(format!("{label}: identified by MSVC RTTI"));
+            }
+            Ok(rva)
+        }
+        Some(Err(reason)) => {
+            notes.push(format!(
+                "{label}: MSVC RTTI class found, but {reason}; ignoring census"
+            ));
+            Err(reason)
+        }
+    }
+}
+
 fn identity_class(
     fm: &mut FmProcess,
     array: Array,
@@ -922,35 +1054,16 @@ fn scan_addresses(fm: &mut FmProcess) -> Result<ScanResult, String> {
     };
     fm.build.addresses = addresses;
     let mut missing = Vec::new();
-    if bases
-        .iter()
-        .any(|base| base.addresses.player_coach_vtable_rva != 0)
-    {
-        addresses.player_coach_vtable_rva = record_class(
-            identity_class(fm, humans, false, &mut notes),
-            "player-coach class",
-            &mut missing,
-            &mut notes,
-        );
-    }
-    if bases
-        .iter()
-        .any(|base| base.addresses.human_manager_vtable_rva != 0)
-    {
-        addresses.human_manager_vtable_rva = record_class(
-            identity_class(fm, staff, true, &mut notes),
-            "human-manager class",
-            &mut missing,
-            &mut notes,
-        );
-    }
-    if bases
-        .iter()
-        .any(|base| base.addresses.full_finance_vtable_rva != 0)
-    {
-        addresses.full_finance_vtable_rva = record_class(
-            finance_class(fm, clubs, &mut notes),
-            "finance class",
+    for class in Class::ALL.into_iter().filter(|class| class.used_by(&bases)) {
+        let from_rtti = class.from_rtti(fm);
+        let from_census = match class {
+            Class::PlayerCoach => identity_class(fm, humans, false, &mut notes),
+            Class::HumanManager => identity_class(fm, staff, true, &mut notes),
+            Class::Finance => finance_class(fm, clubs, &mut notes),
+        };
+        *class.address(&mut addresses) = record_class(
+            prefer_rtti(class, from_rtti, from_census, &mut notes),
+            class.label(),
             &mut missing,
             &mut notes,
         );
@@ -967,6 +1080,61 @@ fn scan_addresses(fm: &mut FmProcess) -> Result<ScanResult, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn human_manager_uses_consistent_primary_vbtable_from_secondary_rtti_matches() {
+        let base = 0x20000;
+        let managers = [0x40000, 0x42000];
+        let decoy = 0x44000;
+        let secondary = [(0x440, base + 0x100), (0x468, base + 0x200)];
+        let mut words = BTreeMap::from([
+            (managers[0], base + 0x14),
+            (managers[0] + secondary[0].0, secondary[0].1),
+            (managers[1], base + 0x14),
+            (managers[1] + secondary[1].0, secondary[1].1),
+            (decoy, base + 0x24),
+            (decoy + secondary[0].0, secondary[1].1),
+        ]);
+        let resolve = |words: &BTreeMap<_, _>| {
+            human_manager_vbtable(
+                managers.into_iter().chain([decoy, u64::MAX]),
+                &secondary,
+                base..base + 0x1000,
+                |address| words.get(&address).copied(),
+            )
+        };
+        assert_eq!(resolve(&words), Ok(0x14));
+        words.insert(managers[1], base + 0x24);
+        assert_eq!(resolve(&words), Err("multiple qualifying RVAs"));
+        words.insert(managers[1], base + 0x1000);
+        assert_eq!(
+            resolve(&words),
+            Err("RTTI-matched manager has no valid module vbtable")
+        );
+        words.clear();
+        assert_eq!(resolve(&words), Err("no qualifying candidate"));
+    }
+
+    #[test]
+    fn rtti_takes_precedence_over_disagreeing_census() {
+        let mut notes = Vec::new();
+        let class = Class::HumanManager;
+        assert_eq!(
+            prefer_rtti(class, Some(Ok(0x100)), Ok(0x200), &mut notes),
+            Ok(0x100)
+        );
+        assert!(notes[0].contains("differs from census gp+0x200"));
+        assert!(
+            prefer_rtti(
+                class,
+                Some(Err("multiple qualifying RVAs")),
+                Ok(0x200),
+                &mut notes
+            )
+            .is_err()
+        );
+        assert_eq!(prefer_rtti(class, None, Ok(0x200), &mut notes), Ok(0x200));
+    }
 
     fn pair_bytes(data: u64, end: u64) -> [u8; 16] {
         let mut bytes = [0; 16];

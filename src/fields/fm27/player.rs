@@ -4,9 +4,12 @@
 //! Verified mappings carry witness notes below; other inherited FM26
 //! offsets remain unverified on FM27 (see docs/fm27/memory-layout.md).
 
-use crate::fields::{direct, date, encoded, fm_string, pointer, raw, raw_u32, sub_date, sub_direct, sub_fm_string, sub_raw_u32, Field, SubRecord, SubRecordParent};
 use crate::fields::Category::*;
 use crate::fields::Entity::Player;
+use crate::fields::{
+    date, direct, encoded, fm_string, pointer, raw, raw_capped, raw_u32, sub_date, sub_direct,
+    sub_fm_string, sub_raw, sub_raw_u32, Field, SubRecord, SubRecordParent,
+};
 
 /// Independently witnessed FM27 morale labels; other levels must stay numeric.
 pub(crate) const MORALE_LABELS: &[(u8, &str)] = &[
@@ -166,9 +169,10 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "p_dirtiness",       label: "Dirtiness",         entity: Player, category: Hidden,   offset: encoded(0x0188) },
         Field { key: "p_versatility",     label: "Versatility",       entity: Player, category: Hidden,   offset: encoded(0x0190) },
 
-        // Condition (offsets unknown)
-        Field { key: "p_sharpness",    label: "Sharpness",        entity: Player, category: Condition,   offset: None },
-        Field { key: "p_fitness",      label: "Fitness",           entity: Player, category: Condition,   offset: None },
+        // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here. Both are 0–10000.
+        Field { key: "p_sharpness",    label: "Sharpness",        entity: Player, category: Condition,   offset: raw_capped(0x0258, 10000) },
+        Field { key: "p_fitness",      label: "Fitness",          entity: Player, category: Condition,   offset: raw_capped(0x025C, 10000) },
+        // Jadedness at +0x25A can be negative; there is no signed encoding.
         Field { key: "p_fatigue",      label: "Fatigue",           entity: Player, category: Condition,   offset: None },
 
         // Personality (at +0x2F8)
@@ -261,6 +265,10 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "p_contract_signed",  label: "Contract Signed",  entity: Player, category: Contract,   offset: sub_date("contract", 0x44)    },
         Field { key: "p_contract_expiry",  label: "Contract Expiry",  entity: Player, category: Contract,   offset: sub_date("contract", 0x48)    },
         Field { key: "p_squad_number",     label: "Squad Number",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x5D)  },
+        // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here.
+        Field { key: "p_contract_loyalty_bonus", label: "Loyalty Bonus (£ p/w)", entity: Player, category: Contract, offset: sub_raw_u32("contract", 0x38) },
+        Field { key: "p_future_playing_time", label: "Future Playing Time", entity: Player, category: Contract, offset: sub_direct("contract", 0xB8) },
+        Field { key: "p_future_playing_time_year", label: "Future Playing Time Year", entity: Player, category: Contract, offset: sub_raw("contract", 0xBC) },
         // Verified: Bentancur / Brandon Austin bit 0 = Listed; Aaron Maguire
         // bit 1 = Loa. Preserve FM's other flag bits (e.g. Yamal 0x40).
         Field { key: "p_list_flags",       label: "Listing Flags",    entity: Player, category: Contract,   offset: sub_direct("contract", 0x57)  },
@@ -291,6 +299,9 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "p_hair_colour",      label: "Hair Colour",      entity: Player, category: General,    offset: direct(0x0316) },
         Field { key: "p_hair_length",      label: "Hair Length",      entity: Player, category: General,    offset: direct(0x0317) },
         Field { key: "p_skin_tone",        label: "Skin Tone",        entity: Player, category: General,    offset: direct(0x0318) },
+        // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here.
+        Field { key: "p_body_type",        label: "Body Type",          entity: Player, category: General, offset: direct(0x0230) },
+        Field { key: "p_nationality_info", label: "Nationality Info", entity: Player, category: General, offset: direct(0x026E) },
 
         // Person base struct (embedded at +0x258)
         Field { key: "p_ca",           label: "Current Ability",  entity: Player, category: Ability,     offset: raw(0x0264) },
@@ -326,3 +337,24 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "p_uid",          label: "UID",              entity: Player, category: General,     offset: raw_u32(0x0294) },
         Field { key: "p_traits",       label: "Traits (PPMs)",    entity: Player, category: Traits,      offset: raw(0x0348) }, // 64-bit bitmask, bit = PPM_ID - 1
 ];
+
+#[cfg(test)]
+mod tests {
+    use crate::fields::fm27::FM27;
+    use crate::fields::{read_field_int, Encoding};
+
+    #[test]
+    fn fm27_condition_mappings_read_two_bytes_at_their_own_slots() {
+        let mut player = vec![0; FM27.player_struct_size];
+        player[0x258..0x25A].copy_from_slice(&8910_u16.to_le_bytes());
+        player[0x25A..0x25C].copy_from_slice(&(-150_i16).to_le_bytes());
+        player[0x25C..0x25E].copy_from_slice(&10000_u16.to_le_bytes());
+
+        for (key, expected) in [("p_sharpness", 8910), ("p_fitness", 10000)] {
+            let field = FM27.field(key).unwrap();
+            assert_eq!(field.offset.unwrap().encoding(), Encoding::RawCapped(10000));
+            assert_eq!(read_field_int(&(), &player, field), Some(expected));
+        }
+        assert!(FM27.offset_of("p_fatigue").is_none());
+    }
+}

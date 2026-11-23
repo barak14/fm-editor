@@ -17,9 +17,9 @@
 //! UNVERIFIED: copied from the FM26 schema as the FM27 starting point.
 //! Every offset below must be re-verified against FM27 witnesses.
 
-use crate::fields::{fm_string, pointer, raw, raw_u32, Field};
 use crate::fields::Category::*;
 use crate::fields::Entity::Stadium;
+use crate::fields::{date, direct, fm_string, pointer, raw, raw_capped, raw_u32, Encoding, Field, FieldLocation};
 
 pub(crate) const FIELDS: &[Field] = &[
     // ── Identity ─────────────────────────────────────────────────────────
@@ -50,7 +50,29 @@ pub(crate) const FIELDS: &[Field] = &[
     // Stadium → Tottenham. Null for non-club owners (Etihad, Wembley, MCG).
     Field { key: "st_club_ptr",      label: "Club Owner",      entity: Stadium, category: Internal, offset: pointer(0x90) },
 
-    // ── Unmapped after the 2026-10 patch ─────────────────────────────────
-    Field { key: "st_environment",   label: "Environment",     entity: Stadium, category: General, offset: None },
+    // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here.
+    Field { key: "st_environment",       label: "Environment",          entity: Stadium, category: General, offset: direct(0xB0) },
+    Field { key: "st_pitch_last_relaid",  label: "Pitch Last Relaid",    entity: Stadium, category: General, offset: date(0x28) },
+    Field { key: "st_pitch_relay_required", label: "Pitch Relay Required", entity: Stadium, category: General, offset: date(0x2C) },
+    Field { key: "st_build_date",        label: "Build Date",           entity: Stadium, category: General, offset: date(0x30) },
+    Field { key: "st_rebuild_date",      label: "Rebuild Date",         entity: Stadium, category: General, offset: date(0x34) },
+    Field { key: "st_latitude",    label: "Latitude",    entity: Stadium, category: General, offset: Some(FieldLocation::Direct { offset: 0x70, encoding: Encoding::F32Raw }) },
+    Field { key: "st_longitude",   label: "Longitude",   entity: Stadium, category: General, offset: Some(FieldLocation::Direct { offset: 0x74, encoding: Encoding::F32Raw }) },
+    Field { key: "st_seat_colour",       label: "Seat Colour",          entity: Stadium, category: General, offset: raw_u32(0x78) },
+    Field { key: "st_min_pitch_length",  label: "Min Pitch Length (dm)", entity: Stadium, category: General, offset: raw(0xA0) },
+    Field { key: "st_min_pitch_width",   label: "Min Pitch Width (dm)",  entity: Stadium, category: General, offset: raw(0xA2) },
+    Field { key: "st_max_pitch_length",  label: "Max Pitch Length (dm)", entity: Stadium, category: General, offset: raw(0xA4) },
+    Field { key: "st_max_pitch_width",   label: "Max Pitch Width (dm)",  entity: Stadium, category: General, offset: raw(0xA6) },
+    Field { key: "st_pitch_condition",   label: "Pitch Condition",      entity: Stadium, category: General, offset: raw_capped(0xA8, 200) },
+    Field { key: "st_decay",             label: "Decay",                entity: Stadium, category: General, offset: direct(0xAA) },
+    Field { key: "st_pitch_deterioration", label: "Pitch Deterioration Rate", entity: Stadium, category: General, offset: direct(0xAC) },
+    Field { key: "st_pitch_type",        label: "Pitch Type",           entity: Stadium, category: General, offset: direct(0xAD) },
+    Field { key: "st_pitch_recovery",    label: "Pitch Recovery Rate",  entity: Stadium, category: General, offset: direct(0xAE) },
+    Field { key: "st_national_team_use", label: "National Team Use",     entity: Stadium, category: General, offset: direct(0xB1) },
+    Field { key: "st_national_u21_use",  label: "National U21 Use",      entity: Stadium, category: General, offset: direct(0xB2) },
+    Field { key: "st_national_u19_use",  label: "National U19 Use",      entity: Stadium, category: General, offset: direct(0xB3) },
+    Field { key: "st_owner_type",        label: "Owner Type",           entity: Stadium, category: General, offset: direct(0xB4) },
+
+    // The club stadium panel reads this key as u8, not the u16 pitch condition.
     Field { key: "st_condition",     label: "Condition",       entity: Stadium, category: General, offset: None },
 ];

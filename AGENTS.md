@@ -7,7 +7,7 @@ storefront. Prefer making an unrecognised build work safely at runtime over
 refusing it.
 
 Schemas are selected per attached build (release + storefront), not globally.
-A **recorded** build has a schema in `src/fields/` with documented evidence. An
+A **recorded** build has a schema in `src/fields/` with its documented source. An
 **unrecognised** build of a supported release reuses that release's record
 layouts; its module addresses must be confirmed or detected at runtime and
 validated by decoding before use (plan: `docs/plans/runtime-layout-detection.md`).
@@ -22,18 +22,19 @@ Detected builds are marked as unvalidated in the status bar.
 - **Schema-only offsets.** Resolve memory offsets through the attached process or
   record's schema (`fm.schemas()` / `build.schemas()`, a `ReleaseLayout`). No hardcoded layout offsets
   in readers, writers or UI. Keep different attachments/builds independent.
-- **Evidence before recording a mapping.** Confirm new or changed recorded mappings
-  against at least two entities with independently known in-game values. Evidence
-  can come from someone else for builds the maintainer does not own (other
-  storefronts, retired releases) when it is recorded with its source, date and exact
-  build. Inherited notes from another build are leads, not evidence.
+- **Record mappings with their source.** A mapping may be recorded from any credible
+  source: our own live research, a contributor, another editor's published offsets
+  or a Cheat Engine table. Record where it came from, the date and the exact build,
+  and mark it "not checked here" until it is confirmed against in-game values on that
+  build. Live confirmation is welcome but not a precondition; the runtime decoding
+  check, pointer validation and confirmed undo are the safety net.
 - **Validate detected layouts.** Runtime-detected addresses must pass a decoding
   check on sample players, staff and clubs before any read is shown; refuse to
   attach when it fails rather than display guesses. Release-specific record layouts
   are never detected or guessed; an unknown release (e.g. FM28) is refused.
 - **Schema + documentation together.** Update `src/fields/<version>/` and the matching
   `docs/<version>/memory-layout.md` in the same change. Record build, encoding and
-  witnesses; label unverified coverage honestly.
+  source; label coverage that has not been checked here honestly.
 - **Validate pointers and buffers.** Every dereference needs
   `ptr > 0x10000 && ptr < 0x7FFFFFFFFFFF` plus checked read/range handling. Missing,
   invalid or unmapped data must not panic, fabricate a value or trigger a write.
@@ -66,7 +67,7 @@ Detected builds are marked as unvalidated in the status bar.
 |---|---|
 | Rust code | `cargo check` and relevant tests; `cargo test` for integration |
 | Runtime/UI behaviour | `bash Tools/build-and-launch.sh`, then exercise the affected workflow; inspect UI changes at desktop and narrow sizes |
-| Field mapping | Live FM verification for the affected build against independently known in-game values, or recorded contributed evidence for a build the maintainer cannot run; read-only mappings require no test writes |
+| Field mapping | Live FM verification against in-game values where the build is available here; otherwise record the mapping's source and mark it not checked here. Read-only mappings require no test writes |
 | Write path | Live FM verification on a build available here; round-trip an edit through Undo and confirm restoration |
 | Layout detection | Force detection on each available build and confirm it reproduces that build's recorded addresses; confirm the validation check refuses a wrong layout |
 | Documentation only | Check paths, links and consistency; no game launch needed |

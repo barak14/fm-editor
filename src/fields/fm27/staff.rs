@@ -36,6 +36,8 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "s_technical",    label: "Technical",        entity: Staff, category: Coaching,      offset: encoded(0x036) },
         Field { key: "s_set_pieces",   label: "Set Pieces",       entity: Staff, category: Coaching,      offset: encoded(0x043) },
         Field { key: "s_youngsters",   label: "Youngsters",       entity: Staff, category: Coaching,      offset: direct(0x01C) },
+        // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here.
+        Field { key: "s_coaching_player", label: "Coaching Players",  entity: Staff, category: Coaching, offset: encoded(0x02A) },
 
         // Mental
         Field { key: "s_authority",       label: "Authority",         entity: Staff, category: Mental,      offset: direct(0x014) },
@@ -50,6 +52,9 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "s_negotiating",     label: "Negotiating",       entity: Staff, category: Knowledge,   offset: encoded(0x041) },
         Field { key: "s_tactical_knowl",  label: "Tactical Knowledge",entity: Staff, category: Knowledge,   offset: encoded(0x031) },
         Field { key: "s_data_analysis",   label: "Data Analysis",     entity: Staff, category: Knowledge,   offset: encoded(0x03C) },
+        // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here.
+        Field { key: "s_judge_team_data", label: "Judging Team Data", entity: Staff, category: Knowledge, offset: encoded(0x03D) },
+        Field { key: "s_present_data",    label: "Presenting Data",   entity: Staff, category: Knowledge, offset: encoded(0x03E) },
 
         // Medical
         Field { key: "s_physiotherapy",   label: "Physiotherapy",     entity: Staff, category: Medical,     offset: encoded(0x030) },
@@ -67,6 +72,14 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "s_hardness",      label: "Train Hardness",    entity: Staff, category: TacticalStyle, offset: direct(0x026) },
         Field { key: "s_dirtiness",     label: "Dirtiness",         entity: Staff, category: TacticalStyle, offset: encoded(0x038) },
         Field { key: "s_versatility",   label: "Versatility",       entity: Staff, category: TacticalStyle, offset: encoded(0x03B) },
+        // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here.
+        Field { key: "s_flamboyancy",       label: "Flamboyancy",       entity: Staff, category: TacticalStyle, offset: direct(0x024) },
+        Field { key: "s_free_roles",        label: "Free Roles",        entity: Staff, category: TacticalStyle, offset: direct(0x015) },
+        Field { key: "s_marking",           label: "Marking",           entity: Staff, category: TacticalStyle, offset: direct(0x017) },
+        Field { key: "s_offside",           label: "Offside",           entity: Staff, category: TacticalStyle, offset: direct(0x018) },
+        Field { key: "s_sitting_back",      label: "Sitting Back",      entity: Staff, category: TacticalStyle, offset: direct(0x020) },
+        Field { key: "s_use_of_playmaker",  label: "Use of Playmaker",  entity: Staff, category: TacticalStyle, offset: direct(0x021) },
+        Field { key: "s_use_of_subs",       label: "Use of Substitutions", entity: Staff, category: TacticalStyle, offset: direct(0x022) },
 
         // Board Relations
         Field { key: "s_buying_players", label: "Buying Players",   entity: Staff, category: BoardRelations, offset: direct(0x01E) },

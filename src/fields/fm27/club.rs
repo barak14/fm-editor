@@ -5,9 +5,12 @@
 //! UNVERIFIED: copied from the FM26 schema as the FM27 starting point.
 //! Every offset below must be re-verified against FM27 witnesses.
 
-use crate::fields::{fm_string, pointer, raw, raw_u32, sub_direct, sub_f32, sub_fm_string, sub_raw, Field, SubRecord, SubRecordParent};
 use crate::fields::Category::*;
 use crate::fields::Entity::Club;
+use crate::fields::{
+    fm_string, pointer, raw, raw_u32, sub_date, sub_direct, sub_f32, sub_fm_string, sub_raw,
+    sub_raw_u32, Field, SubRecord, SubRecordParent,
+};
 
 /// Sub-records reachable from the club base pointer.
 ///
@@ -125,6 +128,13 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "c_sup_temperament", label: "Temperament",   entity: Club, category: General, offset: sub_direct("info", 0x118) },
     Field { key: "c_sup_expectations",label: "Expectations",  entity: Club, category: General, offset: sub_direct("info", 0x119) },
 
+    // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here.
+    Field { key: "c_ownership_type",   label: "Ownership Type",   entity: Club, category: General, offset: sub_direct("info", 0x129) },
+    Field { key: "c_chairperson_title", label: "Chairperson Title", entity: Club, category: General, offset: sub_direct("info", 0x12A) },
+    Field { key: "c_chairman_status",  label: "Chairman Status",   entity: Club, category: General, offset: sub_raw("info", 0xDE) },
+    Field { key: "c_morale",           label: "Club Morale",       entity: Club, category: General, offset: sub_direct("info", 0x121) },
+    Field { key: "c_youth_importance", label: "Youth Importance",  entity: Club, category: Facilities, offset: sub_direct("info", 0x126) },
+
     // ── Finance sub-record (+0x150 from club base) ────────────────────────
     // FM27: balance is at finance+0x0C (FM26 +0x14 reads ~1.14-1.15bn for every
     // club). Witnesses: Spurs £173.9M (confirmed on FM27's finance screen),
@@ -157,6 +167,17 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "c_wage_spend",         label: "Current Wage Total", entity: Club, category: Finance,    offset: sub_raw("finance", 0x814) },
     Field { key: "c_wage_total",         label: "Wage Budget",        entity: Club, category: Finance,    offset: sub_raw("finance", 0x808) },
     Field { key: "c_youth_grant",        label: "Youth Grant Income", entity: Club, category: Finance,    offset: sub_raw("finance", 0x7DC) },
+
+    // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here.
+    Field { key: "c_transfer_revenue_pct", label: "Transfer Revenue Available (%)", entity: Club, category: Finance, offset: sub_raw_u32("finance", 0x7D0) },
+    Field { key: "c_rich_benefactor",  label: "Rich Benefactor",    entity: Club, category: Finance, offset: sub_direct("finance", 0x34) },
+    Field { key: "c_stadium_rental",   label: "Stadium Rental (£ p/y)", entity: Club, category: Finance, offset: sub_raw_u32("finance", 0x7F8) },
+    Field { key: "c_max_wage",         label: "Max Wage",           entity: Club, category: Finance, offset: sub_raw_u32("finance", 0x80C) },
+    Field { key: "c_embargo_start",    label: "Embargo Start",      entity: Club, category: Finance, offset: sub_date("finance", 0x24) },
+    Field { key: "c_embargo_end",      label: "Embargo End",        entity: Club, category: Finance, offset: sub_date("finance", 0x28) },
+    Field { key: "c_embargo_appeal",   label: "Embargo Appeal Date", entity: Club, category: Finance, offset: sub_date("finance", 0x2C) },
+    Field { key: "c_embargo_age",      label: "Embargo Age Restriction", entity: Club, category: Finance, offset: sub_direct("finance", 0x30) },
+    Field { key: "c_embargo_reason",   label: "Embargo Reason",     entity: Club, category: Finance, offset: sub_direct("finance", 0x33) },
 
 
     // ── Stadium sub-record (+0xB0 from club base) ─────────────────────────
