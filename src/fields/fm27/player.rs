@@ -7,77 +7,92 @@
 use crate::fields::Category::*;
 use crate::fields::Entity::Player;
 use crate::fields::{
-    date, direct, encoded, fm_string, pointer, raw, raw_capped, raw_u32, sub_date, sub_direct,
-    sub_fm_string, sub_raw, sub_raw_u32, Field, SubRecord, SubRecordParent,
+    Field, SubRecord, SubRecordParent, date, direct, encoded, fm_string, pointer, raw, raw_capped,
+    raw_i16, raw_u32, sub_date, sub_direct, sub_fm_string, sub_i8, sub_raw, sub_raw_u32,
 };
 
 /// Independently witnessed FM27 morale labels; other levels must stay numeric.
 pub(crate) const MORALE_LABELS: &[(u8, &str)] = &[
-    (2, "Extremely Poor"), (3, "Very Poor"), (5, "Quite Poor"),
-    (6, "Fairly Poor"), (7, "Slightly Poor"), (8, "Fair"), (9, "Fairly Okay"),
-    (10, "Okay"), (11, "Fairly Good"), (12, "Quite Good"),
-    (13, "Good"), (14, "Really Good"), (20, "Perfect"),
+    (2, "Extremely Poor"),
+    (3, "Very Poor"),
+    (5, "Quite Poor"),
+    (6, "Fairly Poor"),
+    (7, "Slightly Poor"),
+    (8, "Fair"),
+    (9, "Fairly Okay"),
+    (10, "Okay"),
+    (11, "Fairly Good"),
+    (12, "Quite Good"),
+    (13, "Good"),
+    (14, "Really Good"),
+    (20, "Perfect"),
 ];
 
 /// FM27 Steam, 13 Jul 2026 witness save. Medical: Kudus, van de Ven,
 /// Kulusevski, Xavi Simons, Odobert (injuries); Mudryk (ban), Porro and
 /// Bentancur (holiday). Relations: Senesi / Gray (nationalities),
 /// Bentancur / van Hecke / Gray (favoured clubs). Clauses: Kudus / van Hecke.
-pub(crate) const FM27_PLAYER_LISTS: crate::fields::PlayerListLayout = crate::fields::PlayerListLayout {
-    medical_ptr: 0xF8,
-    medical_null_is_empty: false,
-    // An editor write of £55M showed in FM after a game day (2026-10-31).
-    transfer_value_editable: true,
-    injuries_vec: 0x00,
-    injury_size: 0x38,
-    injury_type_ptr: 0x08,
-    injury_type_name: 0x20,
-    injury_start: 0x20,
-    injury_full_days: 0x28,
-    injury_light_days: 0x2A,
-    absences_vec: 0x18,
-    absence_size: 0x20,
-    absence_kind: 0x05,
-    absence_start: 0x10,
-    absence_days: 0x16,
-    absence_ban: 0x19,
-    absence_holiday: 0x1F,
-    absence_kinds: &[(0x19, "Suspension/ban"), (0x1F, "Holiday")],
-    relations_ptr: 0x300,
-    relations_vec: 0x00,
-    relation_size: 16,
-    relation_target: 0x00,
-    relation_kind: 0x0A,
-    relation_type: 0x0B,
-    relation_strength: 0x0C,
-    // Reason u8 at +0x08: 1 as a supporter, 2 as a player (FM27 Personal
-    // tab: Mbappé Monaco/PSG player, R. Madrid supporter; Haaland Bryne,
-    // Man City, Leeds supporter; Litmanen Liverpool supporter, Ajax and
-    // Reipas player). +0x0D (0x4E/0x4F/0) is not the reason.
-    relation_reason: 0x08,
-    kind_club: 1,
-    kind_nation: 8,
-    type_other_nationality: 9,
-    type_favoured_club: 3,
-    nation_name: 0x18,
-    club_name: 0xC0,
-    favoured_club_reasons: &[(1, "As a supporter"), (2, "As a player")],
-    clauses_vec: 0x68,
-    clause_size: 8,
-    clause_amount: 0x00,
-    clause_value: 0x04,
-    clause_type: 0x06,
-    clause_types: &[
-        (0x20, "Appearance Fee"), (0x21, "Goal Bonus"), (0x22, "Clean Sheet Bonus"),
-        (0x26, "Unused Substitute Fee"), (0x27, "Assist Bonus"),
-        (0x05, "Relegation Wage Drop"), (0x16, "Optional Contract Extension By Club"),
-    ],
-    clause_amount_types: &[0x20, 0x21, 0x22, 0x26, 0x27],
-    clause_percent_types: &[0x05],
-    clause_year_types: &[0x16],
-};
+pub(crate) const FM27_PLAYER_LISTS: crate::fields::PlayerListLayout =
+    crate::fields::PlayerListLayout {
+        medical_ptr: 0xF8,
+        medical_null_is_empty: false,
+        // An editor write of £55M showed in FM after a game day (2026-10-31).
+        transfer_value_editable: true,
+        injuries_vec: 0x00,
+        injury_size: 0x38,
+        injury_type_ptr: 0x08,
+        injury_type_name: 0x20,
+        injury_start: 0x20,
+        injury_full_days: 0x28,
+        injury_light_days: 0x2A,
+        absences_vec: 0x18,
+        absence_size: 0x20,
+        absence_kind: 0x05,
+        absence_start: 0x10,
+        absence_days: 0x16,
+        absence_ban: 0x19,
+        absence_holiday: 0x1F,
+        absence_kinds: &[(0x19, "Suspension/ban"), (0x1F, "Holiday")],
+        relations_ptr: 0x300,
+        relations_vec: 0x00,
+        relation_size: 16,
+        relation_target: 0x00,
+        relation_kind: 0x0A,
+        relation_type: 0x0B,
+        relation_strength: 0x0C,
+        // Reason u8 at +0x08: 1 as a supporter, 2 as a player (FM27 Personal
+        // tab: Mbappé Monaco/PSG player, R. Madrid supporter; Haaland Bryne,
+        // Man City, Leeds supporter; Litmanen Liverpool supporter, Ajax and
+        // Reipas player). +0x0D (0x4E/0x4F/0) is not the reason.
+        relation_reason: 0x08,
+        kind_club: 1,
+        kind_nation: 8,
+        type_other_nationality: 9,
+        type_favoured_club: 3,
+        nation_name: 0x18,
+        club_name: 0xC0,
+        favoured_club_reasons: &[(1, "As a supporter"), (2, "As a player")],
+        clauses_vec: 0x68,
+        clause_size: 8,
+        clause_amount: 0x00,
+        clause_value: 0x04,
+        clause_type: 0x06,
+        clause_types: &[
+            (0x20, "Appearance Fee"),
+            (0x21, "Goal Bonus"),
+            (0x22, "Clean Sheet Bonus"),
+            (0x26, "Unused Substitute Fee"),
+            (0x27, "Assist Bonus"),
+            (0x05, "Relegation Wage Drop"),
+            (0x16, "Optional Contract Extension By Club"),
+        ],
+        clause_amount_types: &[0x20, 0x21, 0x22, 0x26, 0x27],
+        clause_percent_types: &[0x05],
+        clause_year_types: &[0x16],
+    };
 
 /// Player sub-records, resolved by `player::read_player_at`.
+#[rustfmt::skip]
 pub(crate) const PLAYER_SUB_RECORDS: &[SubRecord] = &[
     // Contract: pointer at player+0x330. contract+0x08 points back at the
     // player's person object (player+0x288) for every witness, which is how
@@ -98,6 +113,7 @@ pub(crate) const PLAYER_SUB_RECORDS: &[SubRecord] = &[
     SubRecord { id: "birth_city", parent: SubRecordParent::Direct,     ptr_offset: 0x308, size: 0x20 },
 ];
 
+#[rustfmt::skip]
 pub(crate) const FIELDS: &[Field] = &[
         // =====================================================================
         // Technical
@@ -172,8 +188,8 @@ pub(crate) const FIELDS: &[Field] = &[
         // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here. Both are 0–10000.
         Field { key: "p_sharpness",    label: "Sharpness",        entity: Player, category: Condition,   offset: raw_capped(0x0258, 10000) },
         Field { key: "p_fitness",      label: "Fitness",          entity: Player, category: Condition,   offset: raw_capped(0x025C, 10000) },
-        // Jadedness at +0x25A can be negative; there is no signed encoding.
-        Field { key: "p_fatigue",      label: "Fatigue",           entity: Player, category: Condition,   offset: None },
+        // FMLibreEditor profiles/fm27/layout.toml (3db3d77, 2026-11-23), not checked here.
+        Field { key: "p_fatigue",      label: "Jadedness",        entity: Player, category: Condition,   offset: raw_i16(0x025A) },
 
         // Personality (at +0x2F8)
         Field { key: "p_adaptability",    label: "Adaptability",     entity: Player, category: Personality, offset: direct(0x02F8) },
@@ -265,6 +281,9 @@ pub(crate) const FIELDS: &[Field] = &[
         Field { key: "p_contract_signed",  label: "Contract Signed",  entity: Player, category: Contract,   offset: sub_date("contract", 0x44)    },
         Field { key: "p_contract_expiry",  label: "Contract Expiry",  entity: Player, category: Contract,   offset: sub_date("contract", 0x48)    },
         Field { key: "p_squad_number",     label: "Squad Number",     entity: Player, category: Contract,   offset: sub_direct("contract", 0x5D)  },
+        // FMLibreEditor profiles/fm27/layout.toml (3db3d77, 2026-11-23), not checked here.
+        Field { key: "p_contract_happiness", label: "Contract Happiness", entity: Player, category: Contract, offset: sub_i8("contract", 0x5A) },
+        Field { key: "p_playing_time_happiness", label: "Playing Time Happiness", entity: Player, category: Contract, offset: sub_i8("contract", 0x5C) },
         // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here.
         Field { key: "p_contract_loyalty_bonus", label: "Loyalty Bonus (£ p/w)", entity: Player, category: Contract, offset: sub_raw_u32("contract", 0x38) },
         Field { key: "p_future_playing_time", label: "Future Playing Time", entity: Player, category: Contract, offset: sub_direct("contract", 0xB8) },
@@ -341,13 +360,13 @@ pub(crate) const FIELDS: &[Field] = &[
 #[cfg(test)]
 mod tests {
     use crate::fields::fm27::FM27;
-    use crate::fields::{read_field_int, Encoding};
+    use crate::fields::{Encoding, HasSubRecords, SubRecordId, read_field_int, read_field_signed};
 
     #[test]
     fn fm27_condition_mappings_read_two_bytes_at_their_own_slots() {
         let mut player = vec![0; FM27.player_struct_size];
         player[0x258..0x25A].copy_from_slice(&8910_u16.to_le_bytes());
-        player[0x25A..0x25C].copy_from_slice(&(-150_i16).to_le_bytes());
+        player[0x25A..0x25C].copy_from_slice(&(-500_i16).to_le_bytes());
         player[0x25C..0x25E].copy_from_slice(&10000_u16.to_le_bytes());
 
         for (key, expected) in [("p_sharpness", 8910), ("p_fitness", 10000)] {
@@ -355,6 +374,30 @@ mod tests {
             assert_eq!(field.offset.unwrap().encoding(), Encoding::RawCapped(10000));
             assert_eq!(read_field_int(&(), &player, field), Some(expected));
         }
-        assert!(FM27.offset_of("p_fatigue").is_none());
+        let jadedness = FM27.field("p_fatigue").unwrap();
+        assert_eq!(read_field_signed(&(), &player, jadedness), Some(-500));
+        assert_eq!(read_field_signed(&(), &player[..0x25B], jadedness), None);
+        assert_eq!(read_field_int(&(), &player, jadedness), None);
+    }
+
+    #[test]
+    fn fm27_contract_happiness_fields_read_signed_bytes() {
+        struct Contract([u8; 0x5E]);
+        impl HasSubRecords for Contract {
+            fn sub_record(&self, id: SubRecordId) -> Option<&[u8]> {
+                (id == "contract").then_some(self.0.as_slice())
+            }
+        }
+        let mut contract = Contract([0xFF; 0x5E]);
+        contract.0[0x5A] = (-4_i8).to_le_bytes()[0];
+        contract.0[0x5C] = 30;
+        for (key, value) in [
+            ("p_contract_happiness", -4),
+            ("p_playing_time_happiness", 30),
+        ] {
+            let field = FM27.field(key).unwrap();
+            assert_eq!(read_field_signed(&contract, &[], field), Some(value));
+            assert_eq!(read_field_signed(&(), &contract.0, field), None);
+        }
     }
 }

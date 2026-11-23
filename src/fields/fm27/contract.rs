@@ -11,8 +11,7 @@ pub(crate) struct ContractInspection {
 }
 
 impl ContractInspection {
-    /// Exact observed byte values only. Do not mask unknown bits or coerce a
-    /// new value to one of the witnessed contract types.
+    /// Exact codes only; do not mask unknown bits.
     pub(crate) fn type_label(&self, value: u8) -> Option<&'static str> {
         self.type_labels
             .iter()
@@ -38,6 +37,12 @@ pub(crate) const STEAM_INSPECTION: ContractInspection = ContractInspection {
     type_labels: &[
         (0, "Part Time Contract"),
         (1, "Full Time Contract"),
+        // FMLibreEditor profiles/fm27/layout.toml (3db3d77, 2026-11-23), not checked here.
+        (2, "Amateur Contract"),
+        (3, "Youth Contract"),
         (4, "Non-Contract"),
+        // FMLibreEditor profiles/fm27/layout.toml (3db3d77, 2026-11-23), not checked here.
+        (10, "Senior Minimum Salary Contract (MLS)"),
+        (11, "Senior Contract (MLS)"),
     ],
 };

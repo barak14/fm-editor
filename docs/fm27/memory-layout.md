@@ -51,9 +51,10 @@ allocation created through gameplay by the user. Its wage is 0, expiry
 
 Bounded code reads establish width 1: setter store RVA **0x2342E73** writes
 `byte ptr [rdi+0xC3]`; serializer **0x2337E0A/0x2337E33** takes that address and
-passes length 1. All other values remain unknown; no masks/default enum or write
-encoder are provided. **Contract +0x26 is a job code.** +0x57 is 0x40 in both Full
-Time and Non-Contract witnesses and is not a reliable type discriminator.
+passes length 1. No masks, default type or write encoder are provided.
+Additional exact labels come from [FMLibreEditor](#corroboration-from-fmlibreeditor).
+**Contract +0x26 is a job code.** +0x57 is 0x40 in both Full Time and Non-Contract
+witnesses and is not a reliable type discriminator.
 
 Metadata is `src/fields/fm27/contract.rs`; generic writable `p_contract_type`
 stays **None**. Current-contract inspection validates fingerprint, class,
@@ -139,7 +140,8 @@ although it reads the same date. The four bytes after the heap copy read
 
 The editor reads the date on attach and on each two-second status poll. It
 calculates ages from it and uses it for Heal, Lift ban and transfer listing.
-Game Pass has its own address (0x53597C8); see [Game Pass build](#game-pass-build).
+Other recorded builds use their own addresses; see [Imported builds](#imported-builds)
+and [Game Pass build](#game-pass-build).
 
 ## Entity arrays (RVA relative to game_plugin.dll)
 
@@ -285,9 +287,9 @@ Academy Coaching "Excellent" = +0x12C (17), Youth Recruitment "Good" = +0x12D
 (15). The FM26 schema had Training and Youth swapped. Academy coaching and
 recruitment have a second copy in the finance object (+0x8A6 / +0x8A7, equal
 to the info copy for all four witnesses), and corporate facilities live only
-there (+0x8A9; Arsenal 19 = "Excellent"). The editor writes both coaching and
-recruitment copies; that write shows in game (see "Live write verification"
-below). FM26's "youth improvement" (+0x126) and "youth academy"
+there (+0x8A9 on the witnessed 27.0 build; Arsenal 19 = "Excellent"). The
+editor writes both coaching and recruitment copies; that write shows in game
+(see "Live write verification" below). FM26's "youth improvement" (+0x126) and "youth academy"
 (+0x121) match nothing on the screen and are unmapped.
 
 Cross-reference: the GPL-3 FM27€0 editor by Anze Alexander
@@ -1048,27 +1050,24 @@ The existing staff and human-manager attribute panels pick up the standard staff
 
 Agreement here is on offsets, not a new write verification. For example, source contract number is signed with `-1` unset (the existing widget uses the equivalent `0xFF` sentinel); club balance is signed i32 even though the schema's legacy `Raw` annotation and the panel's four-byte read do not make that signedness explicit. Steam `27.0.0+2486695` also matches the existing policy club class RVA `0x4CDA1F8`, contract class RVA `0x4B00AE8`, and contract owner pointer at `+0x08`; no policy or type editor changes are implied.
 
-### Conflicts (existing mappings kept)
+### Conflicts
 
 | Field | Our schema | Source |
 | --- | --- | --- |
-| Asking price | Player `+0x238`; `+0x234` is the separately witnessed market value | `+0x234` |
+| Asking price | Player `+0x238`; `+0x234` is the separately witnessed market value | Jackhamerp24 uses `+0x234`; FMLibreEditor agrees with our `+0x238`. |
 | Senior debut | Player `+0x3A8` | Calls that slot **Arrived in Country** |
 | Contract start | Player `+0x250` | Contract `+0x44` |
-| Contract signed | Contract `+0x44` | Reads contract `+0x4C` as signed (`joinedDate` in the JSON) |
+| Contract signed | Contract `+0x44` | Jackhamerp24 reads `+0x4C` as signed (`joinedDate`); FMLibreEditor agrees with `+0x44` and identifies `+0x4C` as joined. |
 | Injury type name | Injury type object `+0x20` | Injury type object `+0x18` |
-| Club nation | `+0xE8` (the club's own nation) | `+0xD8` (the league's nation in our samples) |
-| Average match ticket price | Finance `+0x864` | Finance `+0x10` |
-| Casual supporters | Info `+0x10A` | Info `+0x10B` |
-| Other/corporate supporters | Info `+0x10B` called Other | Calls `+0x10A` Corporate |
-| Corporate facilities | Finance `+0x8A9` | `+0x8A9` before 27.1.0; `+0x8AD` on 27.1.0 Steam and Game Pass. Kept the witnessed mapping, not validated on 27.1.0. |
+| Club nation | `+0xE8` (the club's own nation) | Jackhamerp24 uses `+0xD8` (the league's nation in our samples); FMLibreEditor agrees with `+0xE8`. |
+| Average match ticket price | Finance `+0x864` | Jackhamerp24 uses `+0x10`; FMLibreEditor agrees with `+0x864`. |
+| Supporter mix | Info `+0x106..+0x10B`: hardcore, core, family, fair-weather, corporate, casual | Both sources agree. FM27 retains the shared key `c_sup_other` but labels it **Corporate %** and reads `+0x10A`; Casual moves to `+0x10B`. FM24 and FM26 are unchanged. |
+| Corporate facilities | Finance `+0x8A9` before 27.1.0; `+0x8AD` on Steam, Game Pass and Epic 27.1.0 | Both sources agree on the move. FMLibreEditor reports 30 of 30 Steam clubs reading the old value at `+0x8AD`, and zero at `+0x8A9`. Epic uses the matching Steam layout. Not checked here on 27.1.0. |
 
 ### Skipped leads
 
 | Lead | Source offsets and reason not imported |
 | --- | --- |
-| Signed player condition and happiness | `p_fatigue` `+0x25A` i16 can be negative. Contract happiness `+0x5A` and playing-time happiness `+0x5C` are signed i8. No signed encoding. |
-| Season transfer budget | Finance `+0x7C8` signed i32; source supports negatives. No signed encoding. `+0x7C4` already covers remaining budget. |
 | Wage bill and former entries | Finance wage bill `+0x810`, spend this season `+0x4CC`, month transfer spend `+0x29C`, player sale totals `+0x32C/+0x55C`; derived/history counters, no read-only field flag. Wage used `+0x814` already has a read-only UI row. |
 | Player/contract flags | Player non-EU in Italy `+0x278/0x08`, retirement after current spell `+0x2A1/0x80`, retirement planned `+0x2A0/0x01`; contract rolling `+0x2B/0x08`. No bit-mask encoding. |
 | Partial player/contract fields | Player person index `+0x290` not in 27.0.0; previous playing time `contract+0x55` not in 27.0.0; no new generic contract type field. |
@@ -1087,17 +1086,56 @@ Agreement here is on offsets, not a new write verification. For example, source 
 | Nations, competitions, awards, cities | Nation from player `+0x2F0`, nation UID/name `+0x0C/+0x18`; competition from team `+0x50`, UID/name/reputation `+0x0C/+0x40/+0x188`; award UID/name/reputation `+0x0C/+0x30/+0x80`; city from player `+0x308`, UID/name/nation `+0x0C/+0x18/+0x20`. No independent entity model yet. |
 | Patches, hooks and unlockables | Outside this record import, including manager unlockable bits at manager `+0x3FC` on 27.1.0. |
 
+## Corroboration from FMLibreEditor
+
+[FMLibreEditor Windows FM27 profiles](https://github.com/tozmoz/FMLibreEditor/tree/3db3d77/profiles/fm27),
+commit `3db3d77`, fetched 2026-11-23. These are source observations, not live
+verification here. The PE identities and player, staff and club array RVAs
+match for every overlapping Windows profile. The source also has a Game Pass
+Launch Preview profile (`0.9.2355.0`) that is not imported here.
+
+- The Steam profiles supply the previously missing packed `DateDayYear` static
+  RVAs. The Epic 27.1.0 profile adds a PE identity and shares the Steam 27.1.0
+  addresses. FMLibreEditor reports that Epic was linked about four minutes
+  after Steam 26620374 and that its probe found every observed address in
+  the same place. The editor reuses the Steam stadium and class addresses.
+- `layout.toml` and the 27.1.0 profiles resolve the supporter and corporate
+  facilities conflicts above and corroborate asking price, contract signed,
+  club nation and ticket price.
+- `layout.toml` maps signed player jadedness (`p_fatigue`, player `+0x25A`,
+  i16), contract happiness (`+0x5A`, i8) and playing-time happiness
+  (`+0x5C`, i8). The editor allows jadedness edits from −500 to 1,000 and
+  shows both happiness scores read-only. The new signed encodings also allow
+  Jackhamerp24's season transfer budget (`finance+0x7C8`, i32 pounds) to be
+  shown read-only without changing the existing budget at `+0x7C4`.
+- The gated, read-only contract inspector uses `contract+0xC3` (u8) for
+  type: 0 Part-Time, 1 Full-Time, 2 Amateur, 3 Youth, 4 Non-Contract,
+  10 Senior Minimum Salary, 11 Senior (MLS). It also reports the job code
+  (`contract+0x26`, u8). No generic type editor or wider inspection access
+  is enabled. The city of birth (`player+0x308` → city name `+0x18`) was already
+  mapped and shown read-only.
+- Unmapped leads: game-generated (`player+0x2A0`, mask `0x08`) and women
+  (`player+0x2A1`, mask `0x10`) have no generic bit-mask field encoding.
+  Director of football (`club+0x148`, staff object pointer) has no existing
+  club-to-staff field resolver.
+
 ## Imported builds
 
-These Windows layouts come from [Jackhamerp24/Football-Manager-27-Editor](https://github.com/Jackhamerp24/Football-Manager-27-Editor/tree/80f2d27/offsets), commit `80f2d27`, fetched 2026-11-23. The imported addresses have not been checked in a live save here.
+The [Jackhamerp24 profiles](https://github.com/Jackhamerp24/Football-Manager-27-Editor/tree/80f2d27/offsets)
+are from commit `80f2d27`; the FMLibreEditor profiles
+are from commit `3db3d77`. Both were fetched 2026-11-23. Imported values are
+not checked here. The original Steam build's date and arrays were checked
+earlier; only its PE identity is imported here.
 
-| Build | Source profile | Source date | PE timestamp / SizeOfImage | Current date RVA | Human manager |
-|-------|----------------|-------------|-----------------------------|------------------|---------------|
-| Steam 27.0.0+2493426 | `offsets/27.0.0+2493426-steam.json` | 2026-11-23 | `0x6AE565AF` / `0x1821C000` | Unknown | `0x4CC286C` from the installed DLL |
-| Steam 27.0.1+2494687 | `offsets/27.0.1+2494687-steam.json` | 2026-11-23 | `0x6AE8B5A4` / `0x17CB9000` | Unknown | Runtime RTTI lookup |
-| Steam 27.0.1+2503222 | `offsets/27.0.1+2503222-steam.json` | 2026-11-23 | `0x6AF38E5C` / `0x185FA000` | Unknown | Runtime RTTI lookup |
-| Steam 27.1.0+2505117 | `offsets/27.1.0+2505117-steam.json` | 2026-11-23 | `0x6AF5C68F` / `0x18878000` | Unknown | Runtime RTTI lookup |
-| Game Pass 27.0.0+2493426 | `offsets/27.0.0+2493426-gamepass.json` | 2026-11-23 | `0x6AE563A1` / `0x175DA000` | `0x56257C8` (packed `DateDayYear`) | Runtime RTTI lookup |
+| Build | Source profile | PE timestamp / SizeOfImage | Packed `DateDayYear` RVA | Human manager |
+|-------|----------------|-----------------------------|--------------------------|---------------|
+| Steam 27.0.0+2486695 (26227640) | `profiles/fm27/steam-26227640.toml` (PE) | `0x6ADFB11C` / `0x19E69000` | `0x56AD378` | `0x4CC086C` |
+| Steam 27.0.0+2493426 (26340721) | `offsets/27.0.0+2493426-steam.json`; `profiles/fm27/steam-26340721.toml` (date) | `0x6AE565AF` / `0x1821C000` | `0x56AF378` | `0x4CC286C` from the installed DLL |
+| Steam 27.0.1+2494687 (26385295) | `offsets/27.0.1+2494687-steam.json`; `profiles/fm27/steam-26385295.toml` (date) | `0x6AE8B5A4` / `0x17CB9000` | `0x57CA3B8` | Runtime RTTI lookup |
+| Steam 27.0.1+2503222 (26577676) | `offsets/27.0.1+2503222-steam.json`; `profiles/fm27/steam-26577676.toml` (date) | `0x6AF38E5C` / `0x185FA000` | `0x57CA3B8` | Runtime RTTI lookup |
+| Steam 27.1.0+2505117 (26620374) | `offsets/27.1.0+2505117-steam.json`; `profiles/fm27/steam-26620374.toml` (date) | `0x6AF5C68F` / `0x18878000` | `0x58268E0` | Runtime RTTI lookup |
+| Game Pass 27.0.0+2493426 | `offsets/27.0.0+2493426-gamepass.json` | `0x6AE563A1` / `0x175DA000` | `0x56257C8` | Runtime RTTI lookup |
+| Epic 27.1.0 | `profiles/fm27/epic-27.1.0.toml` | `0x6AF5C793` / `0x18095000` | `0x58268E0` | Runtime RTTI lookup |
 
 The two Steam 27.0.1 packages share one address set. Staff, clubs and stadium
 RVAs are derived from the player-data RVA using the deltas in existing FM27

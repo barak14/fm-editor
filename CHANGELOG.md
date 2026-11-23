@@ -4,6 +4,7 @@
 
 - Import five FM27 Steam and Game Pass packages from Jackhamerp24's offsets and pin them by PE identity. Show a backup warning on builds not checked here.
 - Discover missing FM27 class addresses from RTTI and add imported FM27 field mappings.
+- Record FM27 Epic 27.1, identify the original Steam build by its PE header, and fill in the missing Steam date addresses from FMLibreEditor. Correct FM27 supporter labels and use the new corporate-facilities offset on 27.1. Add signed jadedness, contract happiness and season transfer budget readings and expand read-only contract inspection. The new mappings were not checked in a live save here.
 
 ## 0.5.0 (prerelease)
 

@@ -14,6 +14,12 @@ const GROUPS: [(Category, &str); 5] = [
     (Category::Goalkeeping, "Goalkeeping"),
 ];
 
+const SIGNED_SUMMARY_KEYS: [&str; 3] = [
+    "p_fatigue",
+    "p_contract_happiness",
+    "p_playing_time_happiness",
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Identity {
     build: GameBuild,
@@ -54,6 +60,7 @@ struct Snapshot {
     pa: Option<u32>,
     wage: Option<u32>,
     expiry: Option<String>,
+    signed_summary: [Option<(&'static str, Option<i32>)>; SIGNED_SUMMARY_KEYS.len()],
     attributes: Vec<Attribute>,
 }
 
@@ -87,6 +94,14 @@ impl Snapshot {
             pa: player.field_int("p_pa").filter(|v| (1..=200).contains(v)),
             wage: contract_wage(player),
             expiry: date_field(player, "p_contract_expiry"),
+            signed_summary: SIGNED_SUMMARY_KEYS.map(|key| {
+                let field = schemas.field(key)?;
+                field.offset?;
+                Some((
+                    field.label,
+                    crate::fields::read_field_signed(player, &player.raw, field),
+                ))
+            }),
             attributes,
         }
     }
@@ -330,12 +345,26 @@ impl PlayerComparison {
         };
         let a = values(self.slots[0].as_ref());
         let b = values(self.slots[1].as_ref());
-        ["Age", "CA", "PA", "Wage (GBP/week)", "Contract expiry"]
+        let mut rows: Vec<_> = ["Age", "CA", "PA", "Wage (GBP/week)", "Contract expiry"]
             .into_iter()
             .zip(a)
             .zip(b)
             .map(|((label, a), b)| (label, a, b))
-            .collect()
+            .collect();
+        for i in 0..SIGNED_SUMMARY_KEYS.len() {
+            let [a, b] = self
+                .slots
+                .each_ref()
+                .map(|slot| slot.as_ref().and_then(|s| s.signed_summary[i]));
+            if let Some((label, _)) = a.or(b) {
+                rows.push((
+                    label,
+                    number(a.and_then(|(_, value)| value)),
+                    number(b.and_then(|(_, value)| value)),
+                ));
+            }
+        }
+        rows
     }
 }
 
@@ -596,6 +625,21 @@ mod tests {
                 comparison.slots[0].as_ref().unwrap().attribute(key),
                 Some(17)
             );
+        }
+    }
+
+    #[test]
+    fn comparison_preserves_negative_signed_summary_values() {
+        let mut p = fixture(GameBuild::FM27_STEAM, 42);
+        set(&mut p, "p_fatigue", &(-500_i16).to_le_bytes());
+        set(&mut p, "p_contract_happiness", &(-4_i8).to_le_bytes());
+        let mut comparison = PlayerComparison::default();
+        comparison.capture(0, &p, None, true);
+        let rows = comparison.summary();
+        for (label, expected) in [("Jadedness", "-500"), ("Contract Happiness", "-4")] {
+            let row = rows.iter().find(|row| row.0 == label).unwrap();
+            assert_eq!(row.1, expected);
+            assert_eq!(row.2, "—");
         }
     }
 

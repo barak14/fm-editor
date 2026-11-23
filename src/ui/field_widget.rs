@@ -4,7 +4,7 @@ use crate::edit_history::{EditGroup, EditPresentation};
 use eframe::egui;
 
 use crate::fields::{Category, Encoding, Entity, Field};
-use crate::settings::{theme_data_id, Theme};
+use crate::settings::{Theme, theme_data_id};
 
 use super::navigation;
 
@@ -357,6 +357,11 @@ pub fn render_field(
         Encoding::Raw => raw_u16_edit(ui, field, raw, u16::MAX, entity_addr),
         Encoding::RawCapped(max) => raw_u16_edit(ui, field, raw, max, entity_addr),
         Encoding::RawU32 => raw_u32_edit(ui, field, raw, entity_addr),
+        Encoding::I8 | Encoding::I16 | Encoding::I32 => {
+            let offset = usize::try_from(field.offset?.offset()).ok()?;
+            info_label(ui, field.label, encoding.decode_signed(raw, offset)?);
+            None
+        }
         Encoding::DateDayYear => dob_edit(ui, raw, field, entity_addr).into_iter().next(),
         // Pointers and strings aren't user-editable via a panel row.
         // RoleIndex fields are rendered by roles_column, not through render_field.
@@ -469,6 +474,57 @@ pub fn raw_u16_edit(
         }
     }
     None
+}
+
+pub fn raw_i16_edit(
+    ui: &mut egui::Ui,
+    field: &Field,
+    raw: &mut [u8],
+    range: std::ops::RangeInclusive<i16>,
+    entity_addr: u64,
+) -> Option<FieldEdit> {
+    let location = field.offset?;
+    if location.encoding() != Encoding::I16 {
+        return None;
+    }
+    let addr = entity_addr.checked_add(location.offset())?;
+    if addr <= 0x10000 || addr.checked_add(2)? >= 0x7FFF_FFFF_FFFF {
+        return None;
+    }
+    let offset = usize::try_from(location.offset()).ok()?;
+    let bytes = raw.get_mut(offset..)?.get_mut(..2)?;
+    let old_bytes: [u8; 2] = (&*bytes).try_into().ok()?;
+    let old = i16::from_le_bytes(old_bytes);
+    if !range.contains(&old) {
+        render_out_of_range_label(ui, field.label, format!("raw={old}"), 60.0);
+        return None;
+    }
+    let mut value = old;
+    let changed = ui
+        .horizontal(|ui| {
+            profile_label(ui, field.label);
+            number_edit(
+                ui,
+                egui::DragValue::new(&mut value)
+                    .update_while_editing(false)
+                    .range(range.clone())
+                    .speed(1.0),
+                60.0,
+            )
+        })
+        .inner;
+    if !changed || value == old || !range.contains(&value) {
+        return None;
+    }
+    let new_bytes = value.to_le_bytes();
+    bytes.copy_from_slice(&new_bytes);
+    Some(FieldEdit {
+        addr,
+        old_raw: old_bytes.to_vec(),
+        new_raw: new_bytes.to_vec(),
+        description: format!("{}: {old} → {value}", field.label),
+        presentation: Some(EditPresentation::new(field.label, old, value)),
+    })
 }
 
 /// Render a u32 raw field (wages, budgets, etc.). No max clamping beyond u32.
@@ -1359,15 +1415,17 @@ mod tests {
         let output = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
                 let response = ui.allocate_ui(egui::vec2(250.0, 0.0), |ui| {
-                    assert!(choice_u8_edit(
-                        ui,
-                        "Ethnicity",
-                        &mut raw,
-                        &f,
-                        0x20000,
-                        &[(1, "Mediterranean/Hispanic")]
-                    )
-                    .is_none());
+                    assert!(
+                        choice_u8_edit(
+                            ui,
+                            "Ethnicity",
+                            &mut raw,
+                            &f,
+                            0x20000,
+                            &[(1, "Mediterranean/Hispanic")]
+                        )
+                        .is_none()
+                    );
                 });
                 assert!(
                     response.response.rect.width() <= 250.5,
@@ -1719,9 +1777,11 @@ mod tests {
         let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
         date_frame(&ctx, &mut raw, 100, true, click_text(&output, "Calendar"));
         let (output, _) = date_frame(&ctx, &mut raw, 100, true, vec![]);
-        assert!(text_shapes(&output.shapes)
-            .iter()
-            .any(|s| s.galley.text() == "[1]"));
+        assert!(
+            text_shapes(&output.shapes)
+                .iter()
+                .any(|s| s.galley.text() == "[1]")
+        );
         let (_, edits) = date_frame(&ctx, &mut raw, 100, true, click_text(&output, "2"));
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].addr, 100);
@@ -1754,9 +1814,10 @@ mod tests {
             let (_, edits) = date_frame(&ctx, &mut raw, 200, ancestor, vec![]);
             assert!(edits.is_empty());
             assert_eq!(raw, original);
-            assert!(ctx
-                .data_mut(|d| d.get_temp::<CalendarDraft>(calendar_id(200, 0)))
-                .is_none());
+            assert!(
+                ctx.data_mut(|d| d.get_temp::<CalendarDraft>(calendar_id(200, 0)))
+                    .is_none()
+            );
             let (_, edits) = date_frame(&ctx, &mut raw, 100, ancestor, vec![]);
             assert!(edits.is_empty());
             if !editing || !ancestor {
@@ -1773,9 +1834,11 @@ mod tests {
             let (output, edits) = date_frame(&ctx, &mut raw, 100, true, vec![]);
             assert!(edits.is_empty());
             assert_eq!(raw, original);
-            assert!(!text_shapes(&output.shapes)
-                .iter()
-                .any(|s| s.galley.text() == "Calendar"));
+            assert!(
+                !text_shapes(&output.shapes)
+                    .iter()
+                    .any(|s| s.galley.text() == "Calendar")
+            );
         }
     }
 
@@ -1890,6 +1953,26 @@ mod tests {
             assert!(labels[2].galley.elided);
             assert!(labels[2].galley.size().x <= 130.0);
         }
+    }
+
+    #[test]
+    fn signed_editor_displays_negative_values_without_clamping_on_render() {
+        let ctx = egui::Context::default();
+        navigation::set_editing_enabled(&ctx, true);
+        let field = field(Encoding::I16, 1);
+        let output = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                for value in [-500_i16, -501] {
+                    let [lo, hi] = value.to_le_bytes();
+                    let mut raw = [0xFF, lo, hi, 0xFF];
+                    assert!(raw_i16_edit(ui, &field, &mut raw, -500..=1000, 0x20000).is_none());
+                    assert_eq!(raw, [0xFF, lo, hi, 0xFF]);
+                }
+            });
+        });
+        let texts = text_shapes(&output.shapes);
+        assert!(texts.iter().any(|t| t.galley.text() == "-500"));
+        assert!(texts.iter().any(|t| t.galley.text() == "raw=-501"));
     }
 
     #[test]
@@ -2138,14 +2221,10 @@ mod tests {
                         assert!(
                             raw_u32_edit(ui, &field(Encoding::RawU32, 0), &mut raw, 0).is_none()
                         );
-                        assert!(ca_pa_edit(
-                            ui,
-                            &mut raw,
-                            &attribute,
-                            &field(Encoding::Direct, 1),
-                            0
-                        )
-                        .is_empty());
+                        assert!(
+                            ca_pa_edit(ui, &mut raw, &attribute, &field(Encoding::Direct, 1), 0)
+                                .is_empty()
+                        );
                         assert!(
                             dob_edit(ui, &mut dob, &field(Encoding::DateDayYear, 0), 0).is_empty()
                         );

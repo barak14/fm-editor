@@ -88,7 +88,7 @@ pub type SubRecordId = &'static str;
 
 /// Where a field lives: either flat in the entity's top-level bytes,
 /// or inside one of the entity's named sub-records.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FieldLocation {
     /// Field lives at `offset` inside the entity's top-level raw buffer.
     Direct { offset: u64, encoding: Encoding },
@@ -141,11 +141,28 @@ pub enum Encoding {
     Raw,            // u16 little-endian, no transformation (reputation, CA, PA)
     RawCapped(u16), // u16 little-endian with an explicit max (e.g. CA/PA → 200, rep → 10000)
     RawU32,         // u32 little-endian, no transformation (wages, budgets)
-    DateDayYear,    // [u16 day_of_year][u16 year]
-    Pointer,        // u64 pointer to sub-object
-    FmString,       // u64 pointer to [u32 len][UTF-8]
-    F32Raw,         // f32 little-endian
-    RoleIndex,      // index into [u8; 15] staff-role sub-record (offset field = byte index)
+    I8,
+    I16,         // i16 little-endian
+    I32,         // i32 little-endian
+    DateDayYear, // [u16 day_of_year][u16 year]
+    Pointer,     // u64 pointer to sub-object
+    FmString,    // u64 pointer to [u32 len][UTF-8]
+    F32Raw,      // f32 little-endian
+    RoleIndex,   // index into [u8; 15] staff-role sub-record (offset field = byte index)
+}
+
+impl Encoding {
+    pub fn decode_signed(self, raw: &[u8], offset: usize) -> Option<i32> {
+        let bytes = raw.get(offset..)?;
+        match self {
+            Self::I8 => Some(i32::from(i8::from_le_bytes([*bytes.first()?]))),
+            Self::I16 => Some(i32::from(i16::from_le_bytes(
+                bytes.get(..2)?.try_into().ok()?,
+            ))),
+            Self::I32 => Some(i32::from_le_bytes(bytes.get(..4)?.try_into().ok()?)),
+            _ => None,
+        }
+    }
 }
 
 /// A sub-record — a block of data reached via pointer chase from the
@@ -218,6 +235,12 @@ pub(crate) const fn raw_u32(offset: u64) -> Option<FieldLocation> {
         encoding: Encoding::RawU32,
     })
 }
+pub(crate) const fn raw_i16(offset: u64) -> Option<FieldLocation> {
+    Some(FieldLocation::Direct {
+        offset,
+        encoding: Encoding::I16,
+    })
+}
 pub(crate) const fn date(offset: u64) -> Option<FieldLocation> {
     Some(FieldLocation::Direct {
         offset,
@@ -269,6 +292,20 @@ pub(crate) const fn sub_raw_u32(container: SubRecordId, offset: u64) -> Option<F
         encoding: Encoding::RawU32,
     })
 }
+pub(crate) const fn sub_i8(container: SubRecordId, offset: u64) -> Option<FieldLocation> {
+    Some(FieldLocation::SubRecord {
+        container,
+        offset,
+        encoding: Encoding::I8,
+    })
+}
+pub(crate) const fn sub_i32(container: SubRecordId, offset: u64) -> Option<FieldLocation> {
+    Some(FieldLocation::SubRecord {
+        container,
+        offset,
+        encoding: Encoding::I32,
+    })
+}
 pub(crate) const fn sub_date(container: SubRecordId, offset: u64) -> Option<FieldLocation> {
     Some(FieldLocation::SubRecord {
         container,
@@ -307,6 +344,8 @@ static FM24_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
     LazyLock::new(|| key_map(&fm24::FM24));
 static FM27_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
     LazyLock::new(|| key_map(&fm27::FM27));
+static FM27_1_KEYS: LazyLock<HashMap<&'static str, &'static Field>> =
+    LazyLock::new(|| key_map(&fm27::FM27_1));
 
 fn decode_u8_enc(byte: u8, encoding: Encoding) -> u8 {
     match encoding {
@@ -406,6 +445,18 @@ pub fn read_field_int<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Opti
         Encoding::RawU32 => read_field_u32(view, raw, f),
         _ => None,
     }
+}
+
+/// Read a signed integer field at its declared width, preserving its sign.
+pub fn read_field_signed<V: HasSubRecords>(view: &V, raw: &[u8], f: &Field) -> Option<i32> {
+    let location = f.offset?;
+    let bytes = match location {
+        FieldLocation::Direct { .. } => raw,
+        FieldLocation::SubRecord { container, .. } => view.sub_record(container)?,
+    };
+    location
+        .encoding()
+        .decode_signed(bytes, usize::try_from(location.offset()).ok()?)
 }
 
 /// Read a u16 field.
@@ -620,9 +671,7 @@ fn label_or_code(table: &[(u8, &'static str)], code: u8, prefix: &str) -> String
         })
 }
 
-/// Record layouts shared by every build of one supported release.
-///
-/// The three release statics are [`fm24::FM24`], [`fm26::FM26`] and [`fm27::FM27`].
+/// Record layouts shared by builds with the same field and sub-record offsets.
 pub struct ReleaseLayout {
     // Field lists per entity.
     pub player_fields: &'static [Field],
@@ -765,6 +814,8 @@ impl ReleaseLayout {
             &*FM24_KEYS
         } else if std::ptr::eq(self, &fm27::FM27) {
             &*FM27_KEYS
+        } else if std::ptr::eq(self, &fm27::FM27_1) {
+            &*FM27_1_KEYS
         } else {
             return self
                 .player_fields
@@ -1229,7 +1280,8 @@ mod player_schema_tests {
                 &fm27::FM27_STEAM_27_0_0_2493426,
                 &fm27::FM27_STEAM,
                 [
-                    0x57057D0, 0x5705818, 0x5705988, 0x5705750, 0, 0x4CF2CC8, 0x4F77A08, 0x4CC286C,
+                    0x57057D0, 0x5705818, 0x5705988, 0x5705750, 0x56AF378, 0x4CF2CC8, 0x4F77A08,
+                    0x4CC286C,
                 ],
                 0xCB99_521F_57D4_2B51,
                 &[(0x6AE565AF, 0x1821C000)][..],
@@ -1238,7 +1290,7 @@ mod player_schema_tests {
                 &fm27::FM27_STEAM_27_0_1,
                 &fm27::FM27_STEAM,
                 [
-                    0x5820810, 0x5820858, 0x58209C8, 0x5820790, 0, 0x4DF4E38, 0x508FCB8, 0,
+                    0x5820810, 0x5820858, 0x58209C8, 0x5820790, 0x57CA3B8, 0x4DF4E38, 0x508FCB8, 0,
                 ],
                 0,
                 &[(0x6AE8B5A4, 0x17CB9000), (0x6AF38E5C, 0x185FA000)],
@@ -1247,10 +1299,19 @@ mod player_schema_tests {
                 &fm27::FM27_STEAM_27_1,
                 &fm27::FM27_STEAM,
                 [
-                    0x587B8B8, 0x587B900, 0x587BA70, 0x587B838, 0, 0x4E52C38, 0x50EAC28, 0,
+                    0x587B8B8, 0x587B900, 0x587BA70, 0x587B838, 0x58268E0, 0x4E52C38, 0x50EAC28, 0,
                 ],
                 0,
                 &[(0x6AF5C68F, 0x18878000)],
+            ),
+            (
+                &fm27::FM27_EPIC_27_1,
+                &fm27::FM27_STEAM_27_1,
+                [
+                    0x587B8B8, 0x587B900, 0x587BA70, 0x587B838, 0x58268E0, 0x4E52C38, 0x50EAC28, 0,
+                ],
+                0,
+                &[(0x6AF5C793, 0x18095000)],
             ),
             (
                 &fm27::FM27_GAMEPASS_27_0_0,

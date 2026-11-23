@@ -5,7 +5,7 @@ use eframe::egui;
 use crate::fields::{self, Category, Entity};
 use crate::player::{self, Absence, GameDate, Injury, ListState, PlayerRecord};
 use crate::ratings;
-use crate::settings::{format_wage, WagePeriod};
+use crate::settings::{WagePeriod, format_wage};
 use crate::ui::field_widget::{self, FieldEdit};
 
 #[derive(PartialEq)]
@@ -823,6 +823,15 @@ fn show_contract(
     } else {
         ui.label("Contract sub-record unavailable.");
     }
+    if player.contract_addr.is_some() {
+        for key in ["p_contract_happiness", "p_playing_time_happiness"] {
+            if let Some(field) = schemas.field(key) {
+                if let Some(value) = fields::read_field_signed(player, &player.raw, field) {
+                    field_widget::info_label(ui, field.label, value);
+                }
+            }
+        }
+    }
     if let Some(f) = schemas.field("p_asking_price") {
         let addr = player.addr;
         edits.extend(field_widget::optional_money_edit(
@@ -888,6 +897,15 @@ fn show_player_status(
                 }
             }
         }
+    }
+    if let Some(field) = schemas.field("p_fatigue") {
+        edits.extend(field_widget::raw_i16_edit(
+            ui,
+            field,
+            &mut player.raw,
+            -500..=1000,
+            addr,
+        ));
     }
     if let Some(off) = layout.and_then(|_| schemas.offset_of("p_value")) {
         let editable = layout.is_some_and(|l| l.transfer_value_editable);
@@ -2730,8 +2748,10 @@ mod tests {
             if width >= 892.0 {
                 let identity = heading("Identity");
                 for attribute in [tech, mental, physical] {
-                    assert!((attribute.top() - identity.top()).abs() < 4.0,
-                        "attributes must start beside personal details: {attribute:?}, {identity:?}");
+                    assert!(
+                        (attribute.top() - identity.top()).abs() < 4.0,
+                        "attributes must start beside personal details: {attribute:?}, {identity:?}"
+                    );
                     assert!(attribute.left() > identity.right());
                 }
                 assert_eq!(tech.left(), set.left());
@@ -3001,12 +3021,15 @@ mod tests {
                             },
                         );
                         let text = painted_text(&output);
-                        assert!(text
-                            .iter()
-                            .any(|(s, _, _)| s == "Contract type: Unknown (read-only)"));
-                        assert!(!text
-                            .iter()
-                            .any(|(s, _, _)| s.contains("Apply Contract Type")));
+                        assert!(
+                            text.iter()
+                                .any(|(s, _, _)| s == "Contract type: Unknown (read-only)")
+                        );
+                        assert!(
+                            !text
+                                .iter()
+                                .any(|(s, _, _)| s.contains("Apply Contract Type"))
+                        );
                         assert!(matches!(tab, PlayerTab::Contract));
                         assert!(edits.is_empty());
                         assert_eq!(player.contract_raw, before);

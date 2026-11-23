@@ -48,6 +48,11 @@ pub static FM27: ReleaseLayout = ReleaseLayout {
     age_reference_year: 2027,
 };
 
+pub static FM27_1: ReleaseLayout = ReleaseLayout {
+    club_fields: club::FIELDS_27_1,
+    ..FM27
+};
+
 /// FM27 Steam build. FM27 is a Unity build like FM26: game logic lives in
 /// `game_plugin.dll`, and the entity RVAs below are relative to its base.
 /// Values not listed as verified in docs/fm27/memory-layout.md are inherited
@@ -100,7 +105,11 @@ pub static FM27_STEAM: RecordedBuild = RecordedBuild {
 
     // Not calibrated: attach reports the running game_plugin.dll hash.
     fingerprint: 0,
-    pe_identities: &[],
+    // FMLibreEditor profiles/fm27/steam-26227640.toml (3db3d77, 2026-11-23), not checked here (27.0.0+2486695).
+    pe_identities: &[PeIdentity {
+        timestamp: 0x6ADFB11C,
+        size_of_image: 0x19E69000,
+    }],
     checked_here: true,
 };
 
@@ -150,6 +159,7 @@ pub static FM27_GAMEPASS: RecordedBuild = RecordedBuild {
 /// 0.9.2524.0").
 pub static FM27_GAMEPASS_27_1: RecordedBuild = RecordedBuild {
     schema_name: "FM27_GAMEPASS_27_1",
+    layout: &FM27_1,
     fingerprint: 0x136C_8A4D_64A3_35FD,
     // Jackhamerp24/Football-Manager-27-Editor offsets/27.1.0+2505117-gamepass.json (80f2d27, 2026-11-23), not checked here.
     pe_identities: &[PeIdentity {
@@ -198,7 +208,8 @@ pub static FM27_STEAM_27_0_0_2493426: RecordedBuild = RecordedBuild {
         rva_clubs_data: 0x5705988,
         rva_clubs_end: 0x5705990,
         rva_stadium_base: 0x5705750,
-        rva_current_date: 0,
+        // FMLibreEditor profiles/fm27/steam-26340721.toml (3db3d77, 2026-11-23), not checked here (27.0.0+2493426).
+        rva_current_date: 0x56AF378,
         full_finance_vtable_rva: 0x4CF2CC8,
         player_coach_vtable_rva: 0x4F77A08,
         human_manager_vtable_rva: 0x4CC286C,
@@ -229,7 +240,9 @@ pub static FM27_STEAM_27_0_1: RecordedBuild = RecordedBuild {
         rva_clubs_data: 0x58209C8,
         rva_clubs_end: 0x58209D0,
         rva_stadium_base: 0x5820790,
-        rva_current_date: 0,
+        // FMLibreEditor profiles/fm27/steam-26385295.toml (3db3d77, 2026-11-23), not checked here (27.0.1+2494687).
+        // FMLibreEditor profiles/fm27/steam-26577676.toml (3db3d77, 2026-11-23), not checked here (27.0.1+2503222).
+        rva_current_date: 0x57CA3B8,
         full_finance_vtable_rva: 0x4DF4E38,
         player_coach_vtable_rva: 0x508FCB8,
         human_manager_vtable_rva: 0,
@@ -240,6 +253,7 @@ pub static FM27_STEAM_27_0_1: RecordedBuild = RecordedBuild {
 // Jackhamerp24/Football-Manager-27-Editor offsets/27.1.0+2505117-steam.json (80f2d27, 2026-11-23), not checked here.
 pub static FM27_STEAM_27_1: RecordedBuild = RecordedBuild {
     schema_name: "FM27_STEAM_27_1",
+    layout: &FM27_1,
     fingerprint: 0,
     pe_identities: &[PeIdentity {
         timestamp: 0x6AF5C68F,
@@ -254,12 +268,25 @@ pub static FM27_STEAM_27_1: RecordedBuild = RecordedBuild {
         rva_clubs_data: 0x587BA70,
         rva_clubs_end: 0x587BA78,
         rva_stadium_base: 0x587B838,
-        rva_current_date: 0,
+        // FMLibreEditor profiles/fm27/steam-26620374.toml (3db3d77, 2026-11-23), not checked here (27.1.0+2505117).
+        rva_current_date: 0x58268E0,
         full_finance_vtable_rva: 0x4E52C38,
         player_coach_vtable_rva: 0x50EAC28,
         human_manager_vtable_rva: 0,
     },
     ..FM27_STEAM
+};
+
+// FMLibreEditor profiles/fm27/epic-27.1.0.toml (3db3d77, 2026-11-23), not checked here.
+// The probe found the same RVAs as Steam 26620374 (27.1.0+2505117), linked about four minutes earlier.
+pub static FM27_EPIC_27_1: RecordedBuild = RecordedBuild {
+    storefront: Storefront::Epic,
+    schema_name: "FM27_EPIC_27_1",
+    pe_identities: &[PeIdentity {
+        timestamp: 0x6AF5C793,
+        size_of_image: 0x18095000,
+    }],
+    ..FM27_STEAM_27_1
 };
 
 // Jackhamerp24/Football-Manager-27-Editor offsets/27.0.0+2493426-gamepass.json (80f2d27, 2026-11-23), not checked here.
@@ -286,3 +313,46 @@ pub static FM27_GAMEPASS_27_0_0: RecordedBuild = RecordedBuild {
     },
     ..FM27_GAMEPASS
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fields::{Entity, sub_direct};
+
+    #[test]
+    fn fm27_1_changes_only_the_corporate_facilities_offset() {
+        for entity in [Entity::Player, Entity::Staff, Entity::Club, Entity::Stadium] {
+            let old = FM27.fields_for(entity);
+            let new = FM27_1.fields_for(entity);
+            assert_eq!(old.len(), new.len());
+            for (old, new) in old.iter().zip(new) {
+                assert_eq!(
+                    (old.key, old.label, old.entity, old.category),
+                    (new.key, new.label, new.entity, new.category)
+                );
+                if old.key != "c_corporate" {
+                    assert_eq!(old.offset, new.offset, "{}", old.key);
+                }
+            }
+        }
+        assert_eq!(
+            FM27.field("c_corporate").unwrap().offset,
+            sub_direct("finance", 0x8A9)
+        );
+        assert_eq!(
+            FM27_1.field("c_corporate").unwrap().offset,
+            sub_direct("finance", 0x8AD)
+        );
+    }
+
+    #[test]
+    fn fm27_supporter_mix_identifies_corporate_and_casual_bytes() {
+        for layout in [&FM27, &FM27_1] {
+            let corporate = layout.field("c_sup_other").unwrap();
+            assert_eq!(corporate.label, "Corporate %");
+            assert_eq!(corporate.offset, sub_direct("info", 0x10A));
+            let casual = layout.field("c_sup_casual").unwrap();
+            assert_eq!(casual.offset, sub_direct("info", 0x10B));
+        }
+    }
+}

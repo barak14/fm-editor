@@ -46,7 +46,7 @@ pub enum Storefront {
     Steam,
     /// PC Game Pass / Microsoft Store (Xbox app) install.
     GamePass,
-    /// Epic Games Store. Only FM24 has an Epic schema.
+    /// Epic Games Store.
     Epic,
 }
 
@@ -143,6 +143,7 @@ impl GameBuild {
     pub const FM27_STEAM_27_0_0_2493426: Self = Self::recorded(&fm27::FM27_STEAM_27_0_0_2493426);
     pub const FM27_STEAM_27_0_1: Self = Self::recorded(&fm27::FM27_STEAM_27_0_1);
     pub const FM27_STEAM_27_1: Self = Self::recorded(&fm27::FM27_STEAM_27_1);
+    pub const FM27_EPIC_27_1: Self = Self::recorded(&fm27::FM27_EPIC_27_1);
     pub const FM27_GAMEPASS_27_0_0: Self = Self::recorded(&fm27::FM27_GAMEPASS_27_0_0);
 
     const fn recorded(recorded: &'static RecordedBuild) -> Self {
@@ -170,7 +171,7 @@ impl GameBuild {
 
     /// Within a storefront, newer packages come first: they are tried first while
     /// waiting for a save, and `resolve` picks the first.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::FM24_STEAM,
         Self::FM24_EPIC,
         Self::FM26_STEAM,
@@ -178,6 +179,7 @@ impl GameBuild {
         Self::FM27_STEAM_27_0_1,
         Self::FM27_STEAM_27_0_0_2493426,
         Self::FM27_STEAM,
+        Self::FM27_EPIC_27_1,
         Self::FM27_GAMEPASS_27_1,
         Self::FM27_GAMEPASS,
         Self::FM27_GAMEPASS_27_0_0,
@@ -352,6 +354,7 @@ mod tests {
         for (storefront, expected) in [
             (Storefront::Steam, GameBuild::FM27_STEAM_27_1),
             (Storefront::GamePass, GameBuild::FM27_GAMEPASS_27_1),
+            (Storefront::Epic, GameBuild::FM27_EPIC_27_1),
         ] {
             assert_eq!(
                 GameBuild::resolve(GameVersion::Fm27, storefront),
@@ -366,7 +369,6 @@ mod tests {
             (GameVersion::Fm24, Storefront::GamePass),
             (GameVersion::Fm26, Storefront::GamePass),
             (GameVersion::Fm26, Storefront::Epic),
-            (GameVersion::Fm27, Storefront::Epic),
         ] {
             let build = GameBuild::resolve(version, storefront).unwrap();
             assert_eq!(build.version(), version);
@@ -417,22 +419,33 @@ mod tests {
     }
 
     #[test]
-    fn storefronts_share_release_layouts_but_not_recorded_metadata() {
+    fn recorded_builds_have_distinct_identities() {
         for (i, a) in GameBuild::ALL.iter().enumerate() {
             for b in &GameBuild::ALL[i + 1..] {
-                assert_eq!(
-                    std::ptr::eq(a.schemas(), b.schemas()),
-                    a.version() == b.version(),
-                    "{a:?} / {b:?}",
-                );
                 assert!(!std::ptr::eq(a.recorded, b.recorded));
-                assert_ne!(
-                    (a.addresses(), a.fingerprint()),
-                    (b.addresses(), b.fingerprint()),
-                    "{a:?} / {b:?}",
-                );
                 assert_ne!(a, b);
             }
+        }
+    }
+
+    #[test]
+    fn fm27_1_builds_use_the_updated_layout() {
+        for build in GameBuild::ALL
+            .into_iter()
+            .filter(|b| b.version() == GameVersion::Fm27)
+        {
+            let expected = if [
+                GameBuild::FM27_STEAM_27_1,
+                GameBuild::FM27_GAMEPASS_27_1,
+                GameBuild::FM27_EPIC_27_1,
+            ]
+            .contains(&build)
+            {
+                &fm27::FM27_1
+            } else {
+                &fm27::FM27
+            };
+            assert!(std::ptr::eq(build.schemas(), expected), "{build:?}");
         }
     }
 

@@ -765,6 +765,27 @@ mod tests {
     }
 
     #[test]
+    fn fm27_epic_is_selected_by_path_and_pinned_by_pe_identity() {
+        let path = r"C:\Program Files\Epic Games\FootballManager27";
+        let exe = format!(r"{path}\fm.exe");
+        let plugin = format!(r"{path}\fm_Data\Plugins\x86_64\game_plugin.dll");
+        let epic = GameBuild::FM27_EPIC_27_1;
+        let (selected, _) =
+            detect_build_from_modules(1, module_info(&exe), module_info(&plugin), |_| {
+                Err("resource missing".into())
+            });
+        assert_eq!(selected, Ok(epic));
+        let steam = GameBuild::FM27_STEAM_27_1;
+        let pe = PeIdentity {
+            timestamp: 0x6AF5C793,
+            size_of_image: 0x18095000,
+        };
+        let (build, report) = attachment_build(steam, None, Some(pe), false);
+        assert_eq!(build, epic);
+        assert_eq!(report.status, DetectionStatus::Pinned);
+    }
+
+    #[test]
     fn zero_and_unknown_pe_identities_do_not_pin() {
         let path = GameBuild::FM27_STEAM_27_1;
         let known = path.recorded.pe_identities[0];

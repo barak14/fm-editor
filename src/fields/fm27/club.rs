@@ -8,8 +8,8 @@
 use crate::fields::Category::*;
 use crate::fields::Entity::Club;
 use crate::fields::{
-    fm_string, pointer, raw, raw_u32, sub_date, sub_direct, sub_f32, sub_fm_string, sub_raw,
-    sub_raw_u32, Field, SubRecord, SubRecordParent,
+    Field, SubRecord, SubRecordParent, fm_string, pointer, raw, raw_u32, sub_date, sub_direct,
+    sub_f32, sub_fm_string, sub_i32, sub_raw, sub_raw_u32,
 };
 
 /// Sub-records reachable from the club base pointer.
@@ -17,6 +17,7 @@ use crate::fields::{
 /// Order matters for the data-driven loader: parents must be listed before
 /// children so that each sub-record's parent buffer is already resolved
 /// when we get to it.
+#[rustfmt::skip]
 pub(crate) const CLUB_SUB_RECORDS: &[SubRecord] = &[
     SubRecord { id: "info",    parent: SubRecordParent::Direct,         ptr_offset: 0x100, size: 0x130 },
     // FM27: the finance object holds the budgets (+0x7C4..) and the facility
@@ -41,6 +42,7 @@ pub(crate) const CLUB_SUB_RECORDS: &[SubRecord] = &[
     SubRecord { id: "home_stadium", parent: SubRecordParent::In("senior_team"),  ptr_offset: 0x78, size: 0xC0 },
 ];
 
+#[rustfmt::skip]
 pub(crate) const FIELDS: &[Field] = &[
     // u64 pointer-vector bounds, verified Huelva -> Huelva B and Granada -> Granada B.
     Field { key: "c_reserve_teams_begin", label: "Reserve teams begin", entity: Club, category: Internal, offset: pointer(0x30) },
@@ -107,15 +109,15 @@ pub(crate) const FIELDS: &[Field] = &[
 
     // ── Info sub-record: supporter profile percentages (+0x106..+0x10B) ─────
     // 6 u8 values that sum to exactly 100. FM27 is FM26 +8.
-    // Order matches FM's supporter profile (hardcore→core→family→fair_weather→casual→other).
     // FM27: S=[10,37,15,19,5,14], MC=[6,32,18,22,3,19], Arsenal=[7,26,24,17,4,22],
     // Liverpool=[7,30,26,15,4,18] (all sum to 100).
     Field { key: "c_sup_hardcore",    label: "Hardcore %",    entity: Club, category: General, offset: sub_direct("info", 0x106) },
     Field { key: "c_sup_core",        label: "Core %",        entity: Club, category: General, offset: sub_direct("info", 0x107) },
     Field { key: "c_sup_family",      label: "Family %",      entity: Club, category: General, offset: sub_direct("info", 0x108) },
     Field { key: "c_sup_fair_weather",label: "Fair Weather %",entity: Club, category: General, offset: sub_direct("info", 0x109) },
-    Field { key: "c_sup_casual",      label: "Casual %",      entity: Club, category: General, offset: sub_direct("info", 0x10A) },
-    Field { key: "c_sup_other",       label: "Other %",       entity: Club, category: General, offset: sub_direct("info", 0x10B) },
+    // FMLibreEditor profiles/fm27/layout.toml (3db3d77, 2026-11-23), not checked here.
+    Field { key: "c_sup_other",       label: "Corporate %",   entity: Club, category: General, offset: sub_direct("info", 0x10A) },
+    Field { key: "c_sup_casual",      label: "Casual %",      entity: Club, category: General, offset: sub_direct("info", 0x10B) },
 
     // ── Info sub-record: supporter attributes (+0x114..+0x119) ───────────────
     // 6 u8 values on a 1-20 scale; FM27 is FM26 +8. Order: loyalty, passion,
@@ -162,6 +164,8 @@ pub(crate) const FIELDS: &[Field] = &[
     // Arsenal / Man City / Liverpool: current total 4,440,326 / 5,352,976 /
     // 5,404,502; budget 4,940,326 / 5,852,976 / 5,754,502.
     Field { key: "c_transfer_budget",    label: "Transfer Budget",    entity: Club, category: Finance,    offset: sub_raw("finance", 0x7C4) },
+    // Jackhamerp24/Football-Manager-27-Editor offsets/layouts/windows.json (80f2d27, 2026-11-23), not checked here.
+    Field { key: "c_season_transfer_budget", label: "Season Transfer Budget", entity: Club, category: Finance, offset: sub_i32("finance", 0x7C8) },
     Field { key: "c_transfer_remaining", label: "Transfer Remaining", entity: Club, category: Finance,    offset: None },
     Field { key: "c_wage_budget",        label: "Wage Budget",        entity: Club, category: Finance,    offset: None },
     Field { key: "c_wage_spend",         label: "Current Wage Total", entity: Club, category: Finance,    offset: sub_raw("finance", 0x814) },
@@ -199,3 +203,24 @@ pub(crate) const FIELDS: &[Field] = &[
     Field { key: "c_stand_type_3",       label: "Stand Type 3",       entity: Club, category: General,    offset: sub_direct("stadium", 0x76) },
     Field { key: "c_stand_type_4",       label: "Stand Type 4",       entity: Club, category: General,    offset: sub_direct("stadium", 0x77) },
 ];
+
+pub(crate) const FIELDS_27_1: &[Field] = &club_fields_27_1();
+
+const fn club_fields_27_1() -> [Field; FIELDS.len()] {
+    let mut output = [const { Field { ..FIELDS[0] } }; FIELDS.len()];
+    let mut found = false;
+    let mut i = 0;
+    while i < FIELDS.len() {
+        output[i] = Field { ..FIELDS[i] };
+        if let b"c_corporate" = FIELDS[i].key.as_bytes() {
+            // FMLibreEditor profiles/fm27/steam-26620374.toml (3db3d77, 2026-11-23), not checked here.
+            // FMLibreEditor profiles/fm27/gamepass-0.9.2524.0.toml (3db3d77, 2026-11-23), not checked here.
+            // FMLibreEditor profiles/fm27/epic-27.1.0.toml (3db3d77, 2026-11-23), not checked here.
+            output[i].offset = sub_direct("finance", 0x8AD);
+            found = true;
+        }
+        i += 1;
+    }
+    assert!(found, "FM27 club fields must contain c_corporate");
+    output
+}

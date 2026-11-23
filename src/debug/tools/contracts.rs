@@ -298,8 +298,8 @@ pub fn run(args: Value, state: &DebugState) -> Result<String, String> {
         "contract_team_address":contract_team.map(|a|format!("0x{a:X}")),
         "contract_raw_hex":hex(raw), "wage": {"raw_value":wage,"unit":"GBP/week", "sentinel_semantics_verified":false},
         "signed":date("p_contract_signed"), "expiry":date("p_contract_expiry"),
-        "contract_type":contract_type, "conversion_supported":false,
-        "limits":"Read-only repeated reads, not atomic. Only exact witnessed type-byte values are labelled; other values/bits remain unknown. Pending/future ownership and conversion requirements unverified. No write or Undo authorization. Wage/expiry do not establish contract type."
+        "contract_type":contract_type, "job":inspected_job(s, raw), "conversion_supported":false,
+        "limits":"Read-only repeated reads, not atomic. Only exact recorded type and job codes are labelled; other values/bits remain unknown. Pending/future ownership and conversion requirements unverified. No write or Undo authorization. Wage/expiry do not establish contract type."
     });
     serde_json::to_string_pretty(&result).map_err(|e| e.to_string())
 }
@@ -309,8 +309,26 @@ fn inspected_type(layout: &ContractInspection, raw: &[u8]) -> Value {
     json!({
         "offset":format!("0x{:X}",layout.type_byte_offset), "width_bytes":1,
         "raw_value":value, "label":value.and_then(|v|layout.type_label(v)),
-        "editable":false, "coverage":"Exact witnessed codes only; conversion unverified"
+        "editable":false, "coverage":"Exact witnessed or externally reported codes only; conversion unverified"
     })
+}
+
+fn inspected_job(s: &'static ReleaseLayout, raw: &[u8]) -> Option<Value> {
+    // FMLibreEditor profiles/fm27/layout.toml (3db3d77, 2026-11-23), not checked here for player contracts.
+    let FieldLocation::SubRecord {
+        container: "contract",
+        offset,
+        encoding: Encoding::Direct,
+    } = s.field("s_job")?.offset?
+    else {
+        return None;
+    };
+    let value = raw.get(usize::try_from(offset).ok()?).copied();
+    Some(json!({
+        "offset":format!("0x{offset:X}"), "width_bytes":1,
+        "raw_value":value, "label":value.and_then(crate::staff::job_name),
+        "editable":false
+    }))
 }
 
 #[cfg(test)]
@@ -498,7 +516,7 @@ mod tests {
     }
 
     #[test]
-    fn only_exact_witnessed_type_bytes_are_labelled_without_mutation() {
+    fn only_exact_recorded_type_bytes_are_labelled_without_mutation() {
         for value in 0u8..=255 {
             let mut bytes = vec![0xA5; STEAM_INSPECTION.type_byte_offset + 1];
             bytes[STEAM_INSPECTION.type_byte_offset] = value;
@@ -507,7 +525,11 @@ mod tests {
             let expected = match value {
                 0 => Some("Part Time Contract"),
                 1 => Some("Full Time Contract"),
+                2 => Some("Amateur Contract"),
+                3 => Some("Youth Contract"),
                 4 => Some("Non-Contract"),
+                10 => Some("Senior Minimum Salary Contract (MLS)"),
+                11 => Some("Senior Contract (MLS)"),
                 _ => None,
             };
             assert_eq!(result["label"].as_str(), expected);
@@ -516,6 +538,26 @@ mod tests {
             assert_eq!(bytes, before);
         }
         let truncated = inspected_type(&STEAM_INSPECTION, &[]);
+        assert!(truncated["raw_value"].is_null());
+        assert!(truncated["label"].is_null());
+    }
+
+    #[test]
+    fn player_contract_job_reuses_staff_schema_and_preserves_unknown_codes() {
+        let s = GameBuild::FM27_STEAM.schemas();
+        let job_offset = s.offset_of("s_job").unwrap();
+        assert_eq!(job_offset, 0x26);
+        for (code, label) in [(1, Some("Player")), (0xFF, None)] {
+            let mut memory = memory();
+            memory.get_mut(&CONTRACT).unwrap()[job_offset] = code;
+            let snapshot = snap(&|a, n| read(&memory, a, n), 0, PLAYER, UID).unwrap();
+            let result = inspected_job(s, &snapshot.contract_raw).unwrap();
+            assert_eq!(result["raw_value"].as_u64(), Some(u64::from(code)));
+            assert_eq!(result["label"].as_str(), label);
+            assert_eq!(result["editable"], false);
+            assert_eq!(snapshot.contract_raw, memory[&CONTRACT]);
+        }
+        let truncated = inspected_job(s, &[]).unwrap();
         assert!(truncated["raw_value"].is_null());
         assert!(truncated["label"].is_null());
     }

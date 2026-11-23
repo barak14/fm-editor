@@ -201,17 +201,17 @@ fn show_facilities(
     if club.info_raw.is_some() {
         ui.add_space(8.0);
         ui.strong("Supporter Profile");
-        for (label, key) in [
-            ("Hardcore %", "c_sup_hardcore"),
-            ("Core %", "c_sup_core"),
-            ("Family %", "c_sup_family"),
-            ("Fair Weather %", "c_sup_fair_weather"),
-            ("Casual %", "c_sup_casual"),
-            ("Other %", "c_sup_other"),
+        for key in [
+            "c_sup_hardcore",
+            "c_sup_core",
+            "c_sup_family",
+            "c_sup_fair_weather",
+            "c_sup_casual",
+            "c_sup_other",
         ] {
             if let Some(f) = schemas.field(key) {
-                if let Some(v) = fields::read_field_u8(club, &club.raw, &f) {
-                    field_widget::info_label(ui, label, format!("{v}%"));
+                if let Some(v) = fields::read_field_u8(club, &club.raw, f) {
+                    field_widget::info_label(ui, f.label, format!("{v}%"));
                 }
             }
         }
@@ -281,6 +281,12 @@ fn show_finance(
         };
         if let Some((buf, base)) = club.sub_record_mut(container) {
             f32_drag(ui, label, buf, offset, base, edits);
+            shown = true;
+        }
+    }
+    if let Some(field) = schemas.field("c_season_transfer_budget") {
+        if let Some(value) = fields::read_field_signed(club, &club.raw, field) {
+            field_widget::info_label(ui, field.label, value);
             shown = true;
         }
     }

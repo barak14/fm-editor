@@ -839,7 +839,7 @@ fn finance_class(
                 return false;
             };
             match encoding {
-                Encoding::Raw | Encoding::RawU32 => plausible_money(raw),
+                Encoding::Raw | Encoding::RawU32 | Encoding::I32 => plausible_money(raw),
                 Encoding::F32Raw => (0.0..=10_000.0).contains(&f32::from_bits(raw)),
                 _ => false,
             }
