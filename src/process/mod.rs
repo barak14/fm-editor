@@ -978,7 +978,7 @@ mod tests {
                 }
             },
         );
-        assert_eq!(result, Ok(GameBuild::FM27_STEAM_27_1));
+        assert_eq!(result, Ok(GameBuild::FM27_STEAM_27_1_1));
         assert!(
             report.contains("Unity") && report.contains("6000.3.18f1"),
             "{report}"

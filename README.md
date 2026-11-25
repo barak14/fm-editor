@@ -70,7 +70,7 @@ Live name/UID filtering, ability and age filters, and sortable results.
 | FM26 | Main target (2026-10 patch) | [docs/fm26/memory-layout.md](docs/fm26/memory-layout.md) |
 | FM27 | In progress — most fields verified against a live save | [docs/fm27/memory-layout.md](docs/fm27/memory-layout.md) |
 | FM27 (Game Pass) | Bring-up on Store packages 0.9.2435.0 (27.0.1) and 0.9.2524.0 (27.1) — players, staff, clubs, date and manager read correctly; one edit/Undo checked in game on 0.9.2435.0 | [Game Pass build](docs/fm27/memory-layout.md#game-pass-build) |
-| FM27 (imported) | Steam 27.0.0+2493426, 27.0.1+2494687, 27.0.1+2503222 and 27.1.0+2505117; Game Pass 27.0.0+2493426; Epic 27.1.0 — from published profiles, not checked here | [Imported builds](docs/fm27/memory-layout.md#imported-builds) |
+| FM27 (imported) | Steam 27.0.0+2493426, 27.0.1+2494687, 27.0.1+2503222, 27.1.0+2505117 and 27.1.1+2511875; Game Pass 27.0.0+2493426; Epic 27.1.0 — from published profiles, not checked here | [Imported builds](docs/fm27/memory-layout.md#imported-builds) |
 
 The release is detected from the game module's Windows PE product metadata:
 `fm.exe` for FM24, `game_plugin.dll` for FM26/FM27 (their exe reports the Unity

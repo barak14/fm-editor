@@ -1305,6 +1305,16 @@ mod player_schema_tests {
                 &[(0x6AF5C68F, 0x18878000)],
             ),
             (
+                &fm27::FM27_STEAM_27_1_1,
+                &fm27::FM27_STEAM_27_1,
+                [
+                    0x587B8B8, 0x587B900, 0x587BA70, 0x587B838, 0x58268E0, 0x4E52C38, 0x50EAAF8,
+                    0x4E2170C,
+                ],
+                0x1300_4084_36D8_2A8F,
+                &[(0x6AFF57A2, 0x1849A000)],
+            ),
+            (
                 &fm27::FM27_EPIC_27_1,
                 &fm27::FM27_STEAM_27_1,
                 [
