@@ -706,6 +706,38 @@ at or past +0x288 to +0xF8, and person-relative sub-record pointers
 (contract, nation, birth city) are resolved with the same shift. Every plain
 player and every player-coach now has a name.
 
+## Steam 27.1.1 build
+
+Steam updated FM27 on 2026-11-25 to Steam build ID **26797085**.
+`game_plugin.dll` reports ProductVersion `27.1.1+2511875` and FileVersion `27.1.1`.
+The editor header fingerprint is **0x1300408436D82A8F**; the PE identity is
+timestamp `0x6AFF57A2`, SizeOfImage `0x1849A000` (the two published profiles
+agree with the installed DLL). The recorded build `FM27_STEAM_27_1_1` in
+`src/fields/fm27/mod.rs` pins both.
+
+With the 27.1.0 addresses the gate failed: players 239/256 (93%, need 95%).
+The 17 failures were player-coaches read unshifted, because the player-coach
+class moved. With the 27.1.1 record the same 256-player sample passes 256/256.
+
+### Evidence (2026-11-26, Linux, Proton, read-only)
+
+A save with 96,161 players, 49,631 staff and 27,196 clubs, in-game year 2028.
+A forced module scan (`FME_FORCE_DETECT=1`, 1.55 s) found the same cluster
+and classes as the published profiles:
+
+| Value | 27.1.0 | 27.1.1 | Evidence |
+|---|---|---|---|
+| Players / staff / clubs data | 0x587B8B8 / 0x587B900 / 0x587BA70 | unchanged | Scan: 61/64, 64/64 and 63/64 valid entries; FMLibreEditor `[arrays]` agrees |
+| Stadium root | 0x587B838 | unchanged | Derived (players −0x80); **unverified** |
+| Current date | 0x58268E0 | unchanged | FMLibreEditor profile (12 of 12 checks on a 19 Oct 2026 save). Here raw 0x07EC4B66: day 102 of 2028, not compared with FM's screen. The scan alone did not settle it (6 date-shaped candidates) |
+| Full-finance class | 0x4E52C38 | unchanged | Jackhamerp24 `club.finance.vtable`; Arsenal's finance object (club+0x150) carries this vtable and decodes: balance £54.4M (+0x0C), transfer budget £38.0M (+0x7C4), season budget £106.8M (+0x7C8), wages £5.8M/£6.0M (+0x808/+0x814), ticket 49.0 (+0x864), corporate 19 at the 27.1 offset +0x8AD |
+| Player-coach class | 0x50EAC28 | **0x50EAAF8** | Jackhamerp24 `playerVtables[1]`; scan census 217/217 valid shifted, 0/217 unshifted; MSVC RTTI |
+| Human-manager class | 0x4E2170C | unchanged | Scan census by MSVC RTTI |
+
+Not checked on this build: the stadium root, the date on FM's own screen, and
+writes. The scan's finance note ("0/13 clubs with plausible money fields") is
+the scan's plausibility rule, not the layout: the fields above decode.
+
 ## Game Pass build
 
 The PC Game Pass (Xbox app) release of FM27 is a separate binary built on the
@@ -1134,6 +1166,7 @@ earlier; only its PE identity is imported here.
 | Steam 27.0.1+2494687 (26385295) | `offsets/27.0.1+2494687-steam.json`; `profiles/fm27/steam-26385295.toml` (date) | `0x6AE8B5A4` / `0x17CB9000` | `0x57CA3B8` | Runtime RTTI lookup |
 | Steam 27.0.1+2503222 (26577676) | `offsets/27.0.1+2503222-steam.json`; `profiles/fm27/steam-26577676.toml` (date) | `0x6AF38E5C` / `0x185FA000` | `0x57CA3B8` | Runtime RTTI lookup |
 | Steam 27.1.0+2505117 (26620374) | `offsets/27.1.0+2505117-steam.json`; `profiles/fm27/steam-26620374.toml` (date) | `0x6AF5C68F` / `0x18878000` | `0x58268E0` | Runtime RTTI lookup |
+| Steam 27.1.1+2511875 (26797085) | `offsets/27.1.1+2511875-steam.json`; `profiles/fm27/steam-26797085.toml` (date); fetched 2026-11-26 | `0x6AFF57A2` / `0x1849A000` | `0x58268E0` | `0x4E2170C` from the live RTTI census, see "Steam 27.1.1 build" |
 | Game Pass 27.0.0+2493426 | `offsets/27.0.0+2493426-gamepass.json` | `0x6AE563A1` / `0x175DA000` | `0x56257C8` | Runtime RTTI lookup |
 | Epic 27.1.0 | `profiles/fm27/epic-27.1.0.toml` | `0x6AF5C793` / `0x18095000` | `0x58268E0` | Runtime RTTI lookup |
 

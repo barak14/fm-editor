@@ -143,6 +143,7 @@ impl GameBuild {
     pub const FM27_STEAM_27_0_0_2493426: Self = Self::recorded(&fm27::FM27_STEAM_27_0_0_2493426);
     pub const FM27_STEAM_27_0_1: Self = Self::recorded(&fm27::FM27_STEAM_27_0_1);
     pub const FM27_STEAM_27_1: Self = Self::recorded(&fm27::FM27_STEAM_27_1);
+    pub const FM27_STEAM_27_1_1: Self = Self::recorded(&fm27::FM27_STEAM_27_1_1);
     pub const FM27_EPIC_27_1: Self = Self::recorded(&fm27::FM27_EPIC_27_1);
     pub const FM27_GAMEPASS_27_0_0: Self = Self::recorded(&fm27::FM27_GAMEPASS_27_0_0);
 
@@ -171,10 +172,11 @@ impl GameBuild {
 
     /// Within a storefront, newer packages come first: they are tried first while
     /// waiting for a save, and `resolve` picks the first.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::FM24_STEAM,
         Self::FM24_EPIC,
         Self::FM26_STEAM,
+        Self::FM27_STEAM_27_1_1,
         Self::FM27_STEAM_27_1,
         Self::FM27_STEAM_27_0_1,
         Self::FM27_STEAM_27_0_0_2493426,
@@ -352,7 +354,7 @@ mod tests {
     #[test]
     fn fm27_candidates_try_newer_packages_first() {
         for (storefront, expected) in [
-            (Storefront::Steam, GameBuild::FM27_STEAM_27_1),
+            (Storefront::Steam, GameBuild::FM27_STEAM_27_1_1),
             (Storefront::GamePass, GameBuild::FM27_GAMEPASS_27_1),
             (Storefront::Epic, GameBuild::FM27_EPIC_27_1),
         ] {
@@ -435,6 +437,7 @@ mod tests {
             .filter(|b| b.version() == GameVersion::Fm27)
         {
             let expected = if [
+                GameBuild::FM27_STEAM_27_1_1,
                 GameBuild::FM27_STEAM_27_1,
                 GameBuild::FM27_GAMEPASS_27_1,
                 GameBuild::FM27_EPIC_27_1,

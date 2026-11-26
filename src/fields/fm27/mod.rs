@@ -277,6 +277,31 @@ pub static FM27_STEAM_27_1: RecordedBuild = RecordedBuild {
     ..FM27_STEAM
 };
 
+/// FM27 Steam patch 27.1.1+2511875 (Steam build ID 26797085, 2026-11-25).
+///
+/// Jackhamerp24/Football-Manager-27-Editor offsets/27.1.1+2511875-steam.json and
+/// FMLibreEditor profiles/fm27/steam-26797085.toml (fetched 2026-11-26). The
+/// arrays, the date and the full-finance class stay where 27.1.0 keeps them;
+/// the player-coach class moved. Fingerprint from the installed DLL.
+/// Evidence in docs/fm27/memory-layout.md ("Steam 27.1.1 build").
+pub static FM27_STEAM_27_1_1: RecordedBuild = RecordedBuild {
+    schema_name: "FM27_STEAM_27_1_1",
+    fingerprint: 0x1300_4084_36D8_2A8F,
+    pe_identities: &[PeIdentity {
+        timestamp: 0x6AFF57A2,
+        size_of_image: 0x1849A000,
+    }],
+    checked_here: false,
+    addresses: ModuleAddresses {
+        player_coach_vtable_rva: 0x50EAAF8,
+        // From the editor's own RTTI census on the live game (2026-11-26);
+        // the same table as the 27.1.0 value checked on 2026-11-18.
+        human_manager_vtable_rva: 0x4E2170C,
+        ..FM27_STEAM_27_1.addresses
+    },
+    ..FM27_STEAM_27_1
+};
+
 // FMLibreEditor profiles/fm27/epic-27.1.0.toml (3db3d77, 2026-11-23), not checked here.
 // The probe found the same RVAs as Steam 26620374 (27.1.0+2505117), linked about four minutes earlier.
 pub static FM27_EPIC_27_1: RecordedBuild = RecordedBuild {
